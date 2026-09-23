@@ -1,0 +1,72 @@
+{
+  "name": "pheebs",
+  "version": "1.0.0",
+  "description": "Local-first telemetry for AI coding agents. See how Claude Code, Cursor, and Codex are actually used, without capturing code or prompts.",
+  "type": "module",
+  "bin": {
+    "pheebs": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "npm run clean && tsc",
+    "prepare": "npm run build && (simple-git-hooks || true)",
+    "postinstall": "node scripts/postinstall.cjs",
+    "preuninstall": "node scripts/preuninstall.cjs",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "check": "biome check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "files": [
+    "dist",
+    "scripts"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.0",
+    "@types/node": "^20.19.43",
+    "@vitest/coverage-v8": "^4.1.9",
+    "lint-staged": "^17.0.7",
+    "simple-git-hooks": "^2.13.1",
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.9"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.5.1",
+    "smol-toml": "^1.6.1",
+    "string-width": "^8.2.2",
+    "wrap-ansi": "^10.0.1"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "npx lint-staged",
+    "pre-push": "npm test"
+  },
+  "lint-staged": {
+    "*.{ts,json}": "biome check --write --no-errors-on-unmatched"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Eversynced/pheebs.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Eversynced/pheebs/issues"
+  },
+  "homepage": "https://github.com/Eversynced/pheebs#readme",
+  "author": "Eversynced",
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "claude-code",
+    "cursor",
+    "codex",
+    "telemetry",
+    "developer-productivity",
+    "ai-coding-agents"
+  ]
+}

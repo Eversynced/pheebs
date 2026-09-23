@@ -1,0 +1,830 @@
+openapi: 3.1.0
+info:
+  title: Pheebs backend contract
+  version: "1.0.0"
+  description: |
+    The routes a Pheebs backend answers. The client holds only a base URL and a
+    per-developer token, so anything implementing this contract is a Pheebs backend.
+
+    Four routes are required: `/ingest`, `/validate-token`, `/classify-prompt` and `/otel`.
+    `/insights` is optional, and `pheebs insights` reads it. Not serving it leaves a backend
+    conformant; the command says so and exits non-zero, which is a report it cannot produce
+    rather than a fault in the backend.
+
+    Read `docs/backend-contract.md` alongside this file: it carries the failure semantics
+    that a schema cannot express, and three of them are easy to get backwards.
+
+    A working implementation is in `examples/backend-node/`.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8787
+    description: The reference backend in examples/backend-node
+  - url: https://{host}
+    description: Your backend
+    variables:
+      host:
+        default: pheebs.example.com
+
+security:
+  - pheebsToken: []
+
+paths:
+  /ingest:
+    post:
+      summary: Accept one event envelope
+      description: |
+        Fire-and-forget. The client never retries and never queues — the local JSONL is the
+        durable copy and a hook must not block the agent. Only 401/403 and 422 mean anything
+        to the client; every other status, including 5xx, is swallowed.
+
+        The client strips `developer` and `logPath` before sending. Identity is stamped
+        server-side from the token; a client-supplied `developer` must be ignored.
+      operationId: ingestEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventEnvelope" }
+      responses:
+        "202":
+          description: Accepted. The body is ignored by the client.
+        "401":
+          description: |
+            Token rejected. The client writes `~/.pheebs/.last-transport-error`, which
+            `pheebs doctor` surfaces to tell the developer to re-set their token.
+        "403":
+          description: Token rejected. Handled identically to 401.
+        "405":
+          description: |
+            Any method but `POST`, carrying `Allow: POST`. See `/insights` for why the status is
+            pinned rather than left to the framework.
+        "422":
+          description: |
+            Unprocessable envelope. The client writes one line to stderr and moves on.
+        "500":
+          description: |
+            Swallowed by the client. Not retried — do not design around client-side retry.
+
+  /validate-token:
+    post:
+      summary: Resolve a token to an identity and its consent flags
+      description: |
+        Unauthenticated: the token being validated travels in the body.
+
+        A 5xx is NOT a verdict. The client treats it as "backend unreachable", degrades
+        offline, and preserves any identity it had already resolved. A 4xx is a real
+        rejection and the token is not stored. Reversing these means a transient blip locks
+        developers out of their own identity.
+      operationId: validateToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: A verdict — allowed or not.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidateResult" }
+        "400":
+          description: Rejected. The client records an `allowed:false` / `unknown` verdict.
+        "405":
+          description: |
+            Any method but `POST`, carrying `Allow: POST`. See `/insights` for why the status is
+            pinned rather than left to the framework.
+        "500":
+          description: |
+            Treated as unreachable, not as a rejection. The client degrades offline.
+
+  /classify-prompt:
+    post:
+      summary: Classify one prompt into a single intent label
+      description: |
+        The only route that receives raw developer content, which brings obligations the
+        others do not:
+
+        - Answer within 2500 ms. The client aborts at that point and degrades.
+        - Enforce consent again server-side. The client checks the token's
+          `prompt_collection` before sending, but a client-side check is not a control.
+        - Do not persist the prompt. The client promises its users that Pheebs does not keep
+          prompt text; a backend that logs prompts breaks that promise on its behalf.
+        - Hold the model credential yourself. The client ships none.
+
+        Every degraded path — non-2xx, `allowed:false`, missing `result.label`, timeout —
+        lands identically: the event records `prompt_intent: "unclassified"`.
+      operationId: classifyPrompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt: { type: string }
+      responses:
+        "200":
+          description: A classification verdict.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClassifyResponse" }
+        "401":
+          description: Token rejected. The client degrades to `unclassified`.
+        "405":
+          description: |
+            Any method but `POST`, carrying `Allow: POST`. See `/insights` for why the status is
+            pinned rather than left to the framework.
+        "500":
+          description: The client degrades to `unclassified`.
+
+  /otel/v1/{signal}:
+    post:
+      summary: OTLP/HTTP passthrough
+      description: |
+        The agent's native OpenTelemetry exporter is pointed here with the Pheebs token as
+        the bearer; the proxy swaps in the real upstream credential before forwarding.
+
+        The point is that no observability credential ships in the client. Pheebs runs on
+        developer machines, where an upstream credential is one you cannot rotate.
+      operationId: otelProxy
+      parameters:
+        - name: signal
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [traces, metrics, logs]
+      requestBody:
+        description: |
+          The client always configures protobuf (`http/protobuf` for Claude Code, `binary` for
+          Codex). A backend that implements only the JSON variant drops every export.
+        required: true
+        content:
+          application/x-protobuf:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Forwarded upstream.
+        "401":
+          description: Token rejected.
+        "405":
+          description: |
+            Any method but `POST`, carrying `Allow: POST`. See `/insights` for why the status is
+            pinned rather than left to the framework.
+
+  /insights:
+    get:
+      summary: The caller's own model-insight report
+      description: |
+        What one developer can see about their own work, and what `pheebs insights` renders.
+        Optional: an implementer produces the sections they can, and a backend that answers
+        `{"days": 30, "sections": {}}` forever is a conformant Pheebs backend. The client draws
+        whatever arrives and says why for whatever does not.
+
+        The response is a map of named sections rather than one report, because they are gated
+        differently and because the set will grow. The three defined today follow the AI
+        Proficiency Model: `repertoire` is Layer 1, which practices the engineer uses;
+        `quality_signals` is Layer 2, what happens to AI output before it ships; `cost` is the
+        third question, could a cheaper model have done this work. A section added later is
+        additive, and a consumer that ignores sections it does not recognize keeps working across
+        every future version.
+
+        **The caller's own data, never anyone else's.** Identity comes from the token, as on
+        `/validate-token`. No peer comparison and no leaderboard: the company's lens is the
+        dashboard layer, this route is the engineer's, and per-developer data seen by anyone but
+        that developer turns a coaching tool into a surveillance one. The single exception is
+        `team_median` on a quality signal, which answers "is this normal here" without naming
+        anyone or ranking anything.
+
+        Availability, not zeros. A section that cannot be computed says so with `enabled: false`
+        and a `reason`. Reporting a real-looking zero to a developer whose data was never
+        collected is worse than saying nothing.
+      operationId: getInsights
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: |
+            Window, counted back from now. A backend may clamp it; report what it actually used
+            in `days` on the response so the reader is never told a window that was not applied.
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 365
+      responses:
+        "200":
+          description: |
+            The sections this backend can produce for this caller. Sections it cannot are either
+            absent or present with `enabled: false` and a `reason`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InsightsResponse" }
+        "401":
+          description: Token rejected.
+        "405":
+          description: |
+            Any method but `GET`, carrying `Allow: GET`. Every route in this contract pins the
+            status, because a framework that answers an unknown path with 404 answers a wrong
+            method the same way unless told otherwise, and a caller cannot tell "no such route"
+            from "wrong verb". It matters most here, on the only route that reads.
+
+            The `Allow` header is required by RFC 9110 and is the machine-readable half: a client
+            that branches on it needs no table of which route takes which verb.
+
+components:
+  securitySchemes:
+    pheebsToken:
+      type: http
+      scheme: bearer
+      description: The per-developer Pheebs token, from `~/.pheebs/.token`.
+
+  schemas:
+    EventEnvelope:
+      type: object
+      description: |
+        One event. The listed fields are always present; everything else is per-event and
+        open-ended, so store extras generically rather than pinning a column per field.
+      required: [timestamp, source, event, codebase, ai_tool, session_id, version]
+      additionalProperties: true
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        source:
+          type: string
+          const: hook
+        event:
+          type: string
+          enum:
+            - session_started
+            - model_switched
+            - prompt_submitted
+            - command_expanded
+            - subagent_spawned
+            - subagent_completed
+            - tool_invoked
+            - tool_use_completed
+            - tool_use_failed
+            - context_compacted
+            - compaction_completed
+            - task_created
+            - task_completed
+            - turn_ended
+            - session_end
+            - permission_requested
+            - artifact_found
+        codebase:
+          type: string
+          description: |
+            `PHEEBS_CODEBASE_ID` if set (an arbitrary string), else `org/repo` from the git
+            remote, else `local/<folder-name>`, else the literal `unknown`.
+          examples: ["acme/api", "local/scratch"]
+        ai_tool:
+          type: string
+          enum: [claude_code, cursor, codex]
+        session_id:
+          type: string
+          description: |
+            The agent's own session id. Two sentinels are reachable and are NOT unique across
+            developers or repos: `unknown` (no session id in the payload) and `scan` (a
+            standalone `pheebs scan`). Do not key sessions on this field alone.
+        version:
+          type: string
+          description: The Pheebs client version that produced the row.
+        developer:
+          type: string
+          deprecated: true
+          description: |
+            Stripped by the client before sending. Documented only so implementers know to
+            ignore it if it ever appears — trusting it lets any token claim any identity.
+        tool_name:
+          type: string
+        duration_ms:
+          type: number
+        model:
+          type: string
+          description: |
+            For `ai_tool: claude_code`, present on `session_started` only — recurring hooks do
+            not carry it. Cursor and Codex copy it off any payload that has it, on any event.
+        from_model:
+          type: string
+          description: |
+            On `model_switched` (claude_code only): the resolved model id the session ran
+            before the switch. Absent when the vendor payload omits it.
+        to_model:
+          type: string
+          description: |
+            On `model_switched` (claude_code only): the resolved model id the session runs
+            after the switch. Together with `session_started.model` this makes a session's
+            model a timeline rather than a single value.
+        switch_source:
+          type: string
+          description: |
+            On `model_switched`: what caused the switch, passed through verbatim — treat it as
+            an opaque string. Claude Code 2.1.267 declares `command`, `picker` and `sdk` for
+            changes a person or an integration asked for, and `auto` (fallback) and `resume`
+            (model restored while resuming) for changes it made on its own. That domain is the
+            vendor's declaration; only `command` has been observed emitted, so do not assume
+            the others arrive.
+        start_source:
+          type: string
+          description: |
+            The vendor's own `source` value, passed through verbatim — treat it as an opaque
+            string. Emitted on `session_started` by claude_code and codex; Cursor never sets it.
+        expansion_type:
+          type: string
+          description: On `command_expanded`, e.g. `slash_command`.
+        agent_type:
+          type: string
+        agent_id:
+          type: string
+        is_interrupt:
+          type: boolean
+        stop_hook_active:
+          type: boolean
+        reason:
+          type: string
+          description: On `session_end`.
+        trigger_type:
+          type: string
+          description: |
+            On `context_compacted`, and for Codex also on `compaction_completed`. The
+            `auto`/`manual` pair is guaranteed only for `claude_code` (it comes from the hook's
+            own CLI argument); Cursor and Codex pass the vendor's raw value through.
+        tool_intent:
+          type: string
+          enum: [test_run, build, typecheck, lint, vcs, read, edit, other]
+          description: Derived locally from the command; the command itself is never sent.
+        vcs_action:
+          type: string
+          enum: [commit, push, pr_create, other]
+        command_name:
+          type: string
+          description: A slash command or skill name.
+        mcp_server_name:
+          type: string
+        role:
+          type: string
+          enum: [review, generate]
+        prompt_length:
+          type: integer
+          description: Character count. The prompt text itself is never sent here.
+        rule_attachment_count:
+          type: integer
+          minimum: 1
+          description: |
+            Cursor only, on `prompt_submitted`: how many rule files were attached to the prompt.
+            Never accompanied by a path — the vendor entry's `file_path` is not read. Absent
+            means "no rule seen", which is NOT the same as a measured zero: Cursor populates
+            attachments on its GUI surface only, so the field is a presence signal and a
+            backend must not default it to 0.
+        permission_mode:
+          type: string
+          description: Claude Code only, present on every event (default | plan | acceptEdits | bypassPermissions).
+        effort:
+          type: string
+          description: |
+            The reasoning effort level, from whichever field the harness puts it in. Claude Code
+            carries it on every event; Cursor carries it on `session_started`, `prompt_submitted`
+            and `turn_ended` only, and only from its GUI — its CLI sends no effort at all, so
+            absence on Cursor is as often the surface as the setting.
+        fast_mode:
+          type: string
+          description: |
+            Cursor only, on the same three events as `effort`. The vendor's undocumented `fast`
+            model setting, passed through verbatim — a STRING, and the only value observed is
+            `"true"`. Do not treat it as a boolean: `"false"` would be truthy.
+        command_source:
+          type: string
+        background_task_count:
+          type: integer
+        session_cron_count:
+          type: integer
+        task_id:
+          type: string
+        task_subject:
+          type: string
+          description: |
+            FREE TEXT — a human- or model-written background-task title, stored verbatim
+            (Claude Code `task_created` / `task_completed`). Size and handle it accordingly;
+            it is not an identifier or an enum.
+        teammate_name:
+          type: string
+          description: Free text, as above.
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        cache_read_tokens:
+          type: integer
+        cache_write_tokens:
+          type: integer
+        status:
+          type: string
+          description: Cursor — how a turn or sub-agent run ended.
+        failure_type:
+          type: string
+          description: Cursor — on `tool_use_failed`.
+        permission_type:
+          type: string
+          description: Codex — on `permission_requested`.
+        approved:
+          type: boolean
+          description: Codex — on `permission_requested`.
+        conversation_id:
+          type: string
+        generation_id:
+          type: string
+        requests_verification:
+          type: boolean
+          description: Rides on the prompt event beside `prompt_intent`, not only in ClassifyResponse.
+        classifier_version:
+          type: string
+          description: Rides on the prompt event beside `prompt_intent`.
+        prompt_intent:
+          type: string
+          description: |
+            The classifier's label, or `unclassified` on every gated or degraded path.
+        task_scope:
+          $ref: "#/components/schemas/TaskScope"
+          description: |
+            Reserved, and not emitted by any released client. It will sit beside `prompt_intent`
+            once the client forwards it from the classifier. Absent whenever the classifier
+            degraded, so absence is not `n/a`.
+        artifact_type:
+          type: string
+          description: Emitted on `artifact_found` by the repo scan.
+          enum:
+            [claude_agents, claude_skills, codex_skills, cursor_commands, mcp_config,
+             eval_harness, context_file, hook_config, plugin_enabled]
+        count:
+          type: integer
+        last_modified_bucket:
+          type: string
+          enum: [today, this_week, this_month, this_quarter, older]
+
+    ValidateResult:
+      type: object
+      required: [allowed]
+      properties:
+        allowed:
+          type: boolean
+          description: |
+            Informational on THIS route: the client does not read it. It branches on `reason`
+            and on the presence of `id`, so a rejection MUST omit `id` — otherwise the token
+            is stored as valid and its identity is used on every event. (`allowed` IS honored
+            on /classify-prompt.)
+        id:
+          type: string
+          description: The stable identity stamped onto events. Omit it to reject.
+        developer:
+          type: string
+        tenant:
+          type: [string, "null"]
+        opt_out:
+          type: boolean
+          description: |
+            Advisory only in the current client — it changes a message printed by
+            `pheebs config set token` and nothing else. It does not suppress ingest and does
+            not gate classification; `prompt_collection: false` is the only field that stops
+            prompt text being sent. Enforce it server-side if you mean it.
+        prompt_collection:
+          type: boolean
+          description: |
+            The tenant's consent gate for /classify-prompt. Cached locally at token-set time
+            and NEVER refreshed automatically — nothing on the hook path revalidates it. So
+            revoking consent does not reach a machine until its developer re-runs
+            `pheebs config set token`. Enforce consent again on every /classify-prompt call;
+            that is the only gate that actually revokes.
+        reason:
+          type: string
+          description: |
+            On rejection, and read ONLY from a 2xx body — the client maps any non-ok status
+            below 500 to `{allowed:false, reason:"unknown"}` without parsing the body, so a
+            403 carrying `revoked` is discarded. Send `revoked` in a 200 verdict.
+          examples: [revoked, unknown]
+
+    ClassifyResponse:
+      type: object
+      required: [allowed]
+      properties:
+        allowed:
+          type: boolean
+          description: |
+            The server-side consent gate. `false` makes the client record `unclassified`.
+        result:
+          type: object
+          required: [label]
+          properties:
+            label:
+              type: string
+              description: The intent label stored as `prompt_intent`.
+            requests_verification:
+              type: boolean
+            classifier_version:
+              type: string
+            task_scope:
+              $ref: "#/components/schemas/TaskScope"
+              description: |
+                Optional. A backend that does not size tasks omits it, and stays conformant.
+
+                Specified ahead of the client: `transports/http.ts` copies only `label`,
+                `requests_verification` and `classifier_version` today, so a `task_scope` sent now
+                is dropped. It will ride onto the prompt event beside `prompt_intent` when the
+                client ships model insight, and the client will never derive it locally.
+
+    TaskScope:
+      type: string
+      enum: [mechanical, bounded, cross_cutting, open_ended, "n/a"]
+      description: |
+        How large the work in a prompt is, described as work rather than as a model tier: a
+        single-file change with an unambiguous spec (`mechanical`), a fix or feature inside known
+        code with a clear verification path (`bounded`), a multi-file change, design decision or
+        unknown-root-cause debugging (`cross_cutting`), or work with no clear finish line
+        (`open_ended`). Only task-shaped and repair-shaped prompts are sized; everything else is
+        `n/a`.
+
+        Deliberately not a model name. Which model is enough for which scope is a consumer's
+        table that changes with every model release; the label on the prompt is not.
+
+    InsightsResponse:
+      type: object
+      required: [days, sections]
+      properties:
+        days:
+          type: integer
+          description: The window actually used, which may be smaller than the one requested.
+        sections:
+          type: object
+          description: |
+            Named sections, and deliberately an open map: a view added later is additive rather
+            than a new contract. Two rules make that hold, and both bind on a consumer.
+
+            Ignore a section you do not recognize, rather than failing on it. Treat a missing
+            section as "this backend does not produce it", which is not the same as a section
+            present with `enabled: false`, which is "this backend produces it, but not for you
+            right now" and says why in `reason`.
+
+            `cost`, `repertoire` and `quality_signals` are defined below, and they follow the AI
+            Proficiency Model's own division: Layer 1 is the harness repertoire, Layer 2 is the
+            quality signals, and cost is the third question. A backend may answer `{}` and stay
+            conformant.
+          properties:
+            cost: { $ref: "#/components/schemas/CostInsights" }
+            repertoire: { $ref: "#/components/schemas/RepertoireInsights" }
+            quality_signals: { $ref: "#/components/schemas/QualitySignalsInsights" }
+          additionalProperties: { $ref: "#/components/schemas/InsightsSection" }
+
+    InsightsSection:
+      type: object
+      description: |
+        What every section shares. A section carries its own availability, because they are
+        gated differently: `repertoire` needs only a valid token, `quality_signals` needs classifier
+        labels for three of its four, and `cost` needs the tenant's prompt-collection consent. One
+        flag over the whole report would hide views the caller is entitled to.
+      required: [enabled]
+      additionalProperties: true
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: string
+          enum: [no_consent, not_implemented, insufficient_data]
+          description: |
+            Why the section is off, present only when `enabled` is false. `no_consent` is not a
+            secret from the caller: `/validate-token` already hands the same client its tenant's
+            `prompt_collection`, and a bare `false` is indistinguishable from a broken backend,
+            which turns a policy answer into a support ticket. `insufficient_data` is the honest
+            answer for a developer with too few sessions to say anything about, and must not be
+            rendered as a zero.
+
+    CostBasis:
+      type: string
+      const: API list-price equivalent, estimated upper bound
+      description: |
+        Carried in the payload rather than left to the reader, and it must be rendered next to
+        every figure in the cost section. Both halves are load-bearing. *List-price equivalent*:
+        on a seat-based plan the real saving is zero. *Estimated upper bound*: the cheaper model
+        was never run, so its token count is unknowable, and a weaker model that needs more turns
+        can cost more than the estimate says it saves.
+
+    CostInsights:
+      description: |
+        Could a cheaper model have done this work. Gated on the tenant's prompt-collection
+        consent, because every figure here descends from reading prompts.
+
+        **Needs the most of an implementer**: per-session token counts from the agent's own
+        telemetry, a price table, and a scope label per prompt. It is the section most likely to
+        stay `not_implemented` on a self-hosted backend, and that is a conformant answer.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          properties:
+            basis: { $ref: "#/components/schemas/CostBasis" }
+            sessions_by_recommended_class:
+              type: array
+              description: |
+                Complete sessions only. A session gets a verdict only when every prompt in it
+                that should carry a scope does; otherwise one dropped label silently lowers the
+                whole session.
+              items:
+                type: object
+                required: [class, sessions]
+                properties:
+                  class:
+                    type: string
+                    description: |
+                      The cheapest class that handles the largest scope seen in the session.
+                      Class names are the backend's own, since the tier map is a consumer table.
+                    examples: [small, medium, large, frontier]
+                  sessions: { type: integer }
+            savings:
+              type: array
+              description: |
+                One row per model of a lower class than the one actually run, per `basis` above.
+                `usd` is not guaranteed positive: cache-read pricing does not scale with the
+                tier, so on a cache-heavy session a cheaper model can cost more. Whether such a
+                row is shown as a negative saving or suppressed is not fixed by this contract.
+              items:
+                type: object
+                required: [model, usd, sessions]
+                properties:
+                  model: { type: string, examples: ["claude-sonnet-5"] }
+                  usd: { type: number }
+                  sessions:
+                    type: integer
+                    description: |
+                      How many sessions the figure is summed over. Zero sessions means a zero
+                      figure: a total summed over nothing cannot be negative.
+            effort_suggestions:
+              type: integer
+              description: |
+                Sessions that ran at a high effort level while their work did not call for it. A
+                count and no dollar figure, because the same model at lower effort is a real
+                lever but not a priced one.
+            scope_distribution:
+              type: array
+              description: |
+                What kind of work the developer brings, which is an insight in itself: a
+                developer whose prompts are mostly `open_ended` may be under-specifying rather
+                than over-modelling.
+              items:
+                type: object
+                required: [scope, prompts]
+                properties:
+                  scope: { $ref: "#/components/schemas/TaskScope" }
+                  prompts: { type: integer }
+            cache:
+              type: object
+              description: Cache behavior, which moves cost more than model choice on long sessions.
+              properties:
+                hit_share: { type: number, minimum: 0, maximum: 1 }
+                unreused_write_share:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  description: Cache writes that were never read back, which is pure cost.
+                share_of_cost: { type: number, minimum: 0, maximum: 1 }
+          # An enabled cost section must carry its basis. The label is the part that keeps a
+          # list-price comparison from reading as money saved, so it is required, not advised.
+          if:
+            properties:
+              enabled: { const: true }
+          then:
+            required: [basis]
+            properties:
+              basis: { $ref: "#/components/schemas/CostBasis" }
+
+    RepertoireInsights:
+      description: |
+        Layer 1 of the AI Proficiency Model: which practices this engineer actually uses. Gated on
+        nothing but a valid token, because it is derived from telemetry the developer already sends
+        and shows it back to them. Every field is optional, so a backend reports what it computes
+        and omits the rest.
+
+        **Implementable from the event stream alone.** Everything here is a rollup of events a
+        Pheebs backend already stores, so a self-hoster can produce this section with no classifier,
+        no model prices and no metrics pipeline.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          properties:
+            sessions:
+              type: integer
+              description: Sessions in the window, the denominator for everything else here.
+            active_weeks:
+              type: integer
+              description: |
+                Weeks carrying at least one session. The model needs two before it places a
+                practice at all, so a backend below that should answer `insufficient_data` rather
+                than report states nobody should read.
+            coverage_index:
+              type: object
+              description: |
+                Practices at Recurring over practices that apply on this engineer's harness mix.
+                Reported as its two parts rather than a percentage, so the consumer renders the
+                share and the denominator without the backend deciding the rounding.
+              properties:
+                recurring: { type: integer }
+                applicable: { type: integer }
+            competencies:
+              type: array
+              description: The profile, one row per competency. This is what the engineer reads.
+              items:
+                type: object
+                required: [name, state]
+                properties:
+                  name:
+                    type: string
+                    examples: [Models, Artifacts, MCP, Evals, Context management, Orchestration]
+                  state:
+                    type: string
+                    enum: [unobserved, adopted, recurring, insufficient_data, "n/a"]
+                    description: |
+                      `n/a` means the harness cannot do it, and it leaves the coverage denominator.
+                      `insufficient_data` means it cannot be judged yet. Collapsing the two
+                      overstates coverage for one engineer and understates it for another.
+                  recurring_share: { type: number, minimum: 0, maximum: 1 }
+            artifact_breadth:
+              type: integer
+              description: |
+                Distinct skills and slash commands invoked. A raw count on purpose: no cutoff has
+                been calibrated, and inventing one would put an arbitrary threshold in a contract.
+            compaction:
+              type: object
+              description: |
+                How this engineer's sessions compact. A high `auto` share against a low `manual`
+                one is a context-discipline signal, not a fault.
+              properties:
+                auto: { type: integer }
+                manual: { type: integer }
+
+    QualitySignalsInsights:
+      description: |
+        Layer 2: what happens to AI output before it ships. Rates and ratios that move in both
+        directions, with no levels and no ranking.
+
+        Three of the four need classifier labels, so a backend without them omits those fields
+        rather than reporting a zero. `verification_coverage` is classifier-independent and is the
+        one that works today.
+
+        **Needs a prompt classifier**, for everything except `verification_coverage`. A backend
+        without one still answers this section honestly with that single signal, which is a real
+        report rather than a degraded one.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          properties:
+            verification_coverage: { $ref: "#/components/schemas/QualitySignal" }
+            pushback_rate: { $ref: "#/components/schemas/QualitySignal" }
+            refinement_to_repair: { $ref: "#/components/schemas/QualitySignal" }
+            wholesale_accept: { $ref: "#/components/schemas/QualitySignal" }
+
+    QualitySignal:
+      type: object
+      required: [value, unit]
+      description: |
+        One signal. `trend` exists so a consumer can draw movement rather than print a number: a
+        rate with no history reads as a verdict, and these are meant to be read as direction.
+      properties:
+        value: { type: number }
+        unit:
+          type: string
+          enum: [share, ratio, count]
+          description: |
+            How to read `value`, `team_median`, `trend` and `large_changes`, which all carry it.
+            Required, because the four signals do not agree: three are shares and
+            `refinement_to_repair` is a ratio, so a renderer without this prints `2.1` as `210%`.
+
+            `share` is 0 to 1 and renders as a percentage. `ratio` is a multiple and renders as
+            `2.1 : 1`. `count` is a whole number of things.
+
+            A consumer that meets a unit it does not know prints the raw value rather than
+            guessing, the same rule as an unrecognized section.
+        team_median:
+          type: number
+          description: |
+            The one team number in this contract, and deliberately a median rather than a list. It
+            answers "is this normal here", which a developer cannot get from their own row. It is
+            not a ranking, not a peer breakdown, and not a leaderboard.
+        trend:
+          type: array
+          description: |
+            Weekly values, oldest first, over whatever history exists. A four-week deployment shows
+            four points rather than a padded series, because padding invents a trend.
+          items: { type: number }
+        large_changes:
+          type: number
+          description: |
+            The same signal recomputed over large changes only, where verification and pushback
+            collapse the most. Omitted where change size is not measurable.

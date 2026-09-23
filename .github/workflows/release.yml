@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+  # Required for npm trusted publishing: it mints the OIDC token npm exchanges for
+  # short-lived publish credentials, and the same token signs the provenance attestation
+  # back to this workflow and commit.
+  id-token: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: node
+
+      - uses: actions/checkout@v4
+        if: ${{ steps.release.outputs.release_created }}
+
+      # Trusted publishing needs Node >= 22.14 with npm >= 11.5.1, and Node 22 still ships
+      # npm 10 — 24 is the lowest line that carries a new enough npm without pinning one.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+        if: ${{ steps.release.outputs.release_created }}
+
+      - run: npm ci
+        if: ${{ steps.release.outputs.release_created }}
+
+      # Authenticated by OIDC against the trusted publisher registered on the package, so no
+      # npm token is stored here. Provenance is generated automatically on a public package
+      # published this way, which is why --provenance is absent.
+      - name: Publish to npm
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm publish --access public
+
+      - run: npm pack
+        if: ${{ steps.release.outputs.release_created }}
+
+      - name: Upload tarball to release
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ steps.release.outputs.tag_name }} pheebs-${{ steps.release.outputs.version }}.tgz
