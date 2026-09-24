@@ -1,6 +1,6 @@
 # AI Proficiency Model
 
-**Last updated:** Sep 20, 2026
+**Last updated:** Sep 24, 2026
 
 > **Scope.** This repository is the capture client. It implements Layer 1: hooks that emit generic
 > events from Claude Code, Cursor, and Codex, and a repo scan for AI-config artifacts. Layer 2 is
@@ -12,9 +12,9 @@
 This document is the canonical source of truth for how Pheebs defines and measures AI proficiency. Proficiency has two dimensions:
 
 - **Layer 1: AI harness repertoire.** Which harness capabilities are in play.
-- **Layer 2: AI quality signals.** How well AI output gets verified, challenged, and refined before it ships.
+- **Layer 2: AI judgement signals.** How well AI output gets verified, challenged, and refined before it ships, and whether the model chosen was the best fit for the work.
 
-Proficiency = repertoire + quality.
+Proficiency = repertoire + judgement.
 
 Both dimensions are measured by Pheebs from telemetry. How Pheebs detects proficiency under the hood (detectors), per-harness availability, and implementation status for everything below live in the [practice registry](ai-proficiency-model-practice-and-signal-registry.md).
 
@@ -285,28 +285,44 @@ Eval harness in active use    ██░░░░░  29%
 
 ---
 
-# Layer 2: AI quality signals
+# Layer 2: AI judgement signals
 
-Layer 2 measures what happens to AI output before it ships: whether it gets verified, challenged, and refined. The signals are continuous rates and ratios computed from session telemetry by Pheebs' Layer 2 pipeline. Signals are computed from the event stream and a prompt classifier. Prompt text is never stored. Signals move in both directions, and there are no levels or rankings.
+Layer 2 measures the judgement applied to the AI loop, on both sides of it. On the output side:
+whether AI output gets verified, challenged, and refined before it ships. On the input side:
+whether the model chosen was the best fit for the work.
+
+The signals are continuous rates and ratios computed from session telemetry by a backend, from
+the event stream and a prompt classifier. Prompt text is never stored. Signals move in both directions,
+and there are no levels or rankings.
 
 ## The signals
 
 | Signal | What it measures |
 | :-- | :-- |
 | **Verification coverage** | The share of AI edits followed by a verification action: a test run, typecheck, lint, or build, or a verification-intent prompt that checks work against a reference (tests, but also a PRD, a spec, acceptance criteria). |
-| **Pushback rate** | How often the engineer challenges or questions AI output rather than accepting it. Questioning collapses precisely when output looks polished, so low pushback on large changes is a risk signal. |
+| **Pushback rate** | How often the engineer challenges or questions AI output rather than accepting it. Questioning collapses precisely when output looks polished, so a session that produced a lot of code and drew no pushback is the risk pattern. |
 | **Refinement-to-repair ratio** | Whether follow-up prompts refine intent (healthy iteration) or repair breakage (rework). |
-| **Wholesale-accept rate** | Large changes accepted with no verification and no pushback, weighted by change size. The composite red flag: the polished-output, no-questions-asked pattern. |
+| **Wholesale-accept rate** | Sessions with no pushback, no repair, and no verification, which ended in approval or silence, weighted by lines changed: a one-line rename barely registers and a session that wrote hundreds of lines counts in proportion. The red flag is polished output plus no questions asked. |
+| **Model-fit rate** | The share of complete sessions whose model class matched the scope of the work. Misses count in both directions: an over-provisioned session burns budget silently, and an under-powered one shows up as repair prompts. |
+
+The first four signals are the output side: they measure calibrated skepticism toward what the AI
+produced. Model-fit is their input side: the same skepticism, pointed at the default
+before the work starts. Running everything on the largest model is the input-side version of
+accepting everything the output says — in both cases the default went unquestioned.
 
 ## Engineer view
 
-One panel: current rates, the trend per signal, and a large-change lens.
+One panel: current rates, the trend per signal, a wholesale-accept lens, and a model-fit lens.
 
-**Rates.** The four signals over the trailing window, next to the team median.
+**Rates.** The five signals over the trailing window, next to the team median.
 
-**Trend.** Weekly values per signal. Trends plot whatever history exists, so a 4-week deployment shows a 4-week trend.
+**Trend.** Weekly values per signal. Trends plot whatever history exists, so a 4-week
+deployment shows a 4-week trend.
 
-**Large changes.** The size-sensitive signals recomputed over large changes only, where verification and pushback collapse the most. The flagged list lives here: the engineer's own large changes that cleared with no verification and no pushback, with repo, files, and size.
+**Wholesale-accept.** The share of AI-edited lines and the share of AI-edited sessions that
+shipped unchallenged.
+
+**Model fit, split.** The fit decision over the engineer's complete sessions.
 
 Example:
 
@@ -318,70 +334,79 @@ Signal                       Pam       Team median
 Verification coverage        62%       48%
 Pushback rate                 9%       14%
 Refinement-to-repair ratio   2.1 : 1   1.4 : 1
-Wholesale-accept rate         6%        4%
+Wholesale-accept rate        21%       33%
+Model-fit rate               35%       55%
 
 Trend, weekly
 
 Verification coverage        44%  ▁▂▂▃▄▅▆▇  62%
 Pushback rate                 7%  ▃▂▃▄▃▃▄▄   9%
 Refinement-to-repair ratio   1.6  ▄▅▄▅▆▆▇▇  2.1
-Wholesale-accept rate         9%  ▇▆▆▅▄▄▃▃   6%
+Wholesale-accept rate        29%  ▇▆▆▅▄▄▃▃  21%
+Model-fit rate               28%  ▂▂▃▃▃▄▄▄  35%
 
-Large changes only
+Wholesale-accept
 
-Verification coverage        41%   (62% overall)
-Pushback rate                 4%   ( 9% overall)
-Wholesale-accept rate        11%   ( 6% overall)
+Lines shipped unchallenged      21%   of all AI-edited lines · team median 33%
+Sessions shipped unchallenged   27%   18 of 66 AI-edited sessions
 
-Flagged, this window
+Model fit, split — 66 complete sessions
 
-api-core    3 files   +388 -12    Tue 14:02
-api-core    2 files   +251 -0     Thu 10:17
+fit               ████░░░░░░░   23 · 35%
+over-provisioned  ███████░░░░   41 · 62%
+under-powered     ░░░░░░░░░░░    2 ·  3%
 
-
-Pam verifies more than the team and her iteration skews
-healthily to refinement, with both trends improving. The gap is
-concentrated in large changes, where her verification drops and her
-wholesale accepts double.
+Pam verifies more than the team and her iteration skews healthily
+to refinement, with both trends improving. Her open question is on
+the input side: two thirds of her sessions ran above the class the
+work needed, and the two that ran below it struggled — the model
+was too small for the work, not too big. Sizing the model to the
+task is the judgement to practice next.
 ```
 
 ## Team view
 
-The team reads three ways.
+The team reads four ways.
 
 ### Signals by engineer
- 
-**Goal:** identify weak signals, same read as the Layer 1 Practice heatmap. Engineers as rows, signals as columns, team median as the last row. A weak signal for one engineer is a coaching conversation. A weak signal across the team is structural, and the fix ships in Layer 1 terms. The strongest cell in a column is who demos.
- 
+
+**Goal:** identify weak signals, same read as the Layer 1 Practice heatmap. Engineers as rows,
+signals as columns, team median as the last row. A weak signal for one engineer is a coaching
+conversation. A weak signal across the team is structural, and the fix ships in Layer 1 terms.
+The strongest cell in a column is someone who could take the lead on sharing practices.
+
 Example:
- 
+
 ```
 Team Dunder Mifflin, trailing 4 weeks
- 
-           Verification  Pushback  Refine:repair  Wholesale
-Michael        71%         22%       2.4 : 1         2%
-Dwight         31%          6%       0.8 : 1        11%
-Jim            55%         17%       1.6 : 1         3%
-Pam            62%          9%       2.1 : 1         6%
-Angela         48%         14%       1.4 : 1         4%
-Andy           42%         12%       1.2 : 1         5%
-Kevin          26%          4%       0.7 : 1        14%
-Stanley        74%         19%       2.6 : 1         1%
-Phyllis        39%         15%       1.3 : 1         4%
------------------------------------------------------------
-Team median    48%         14%       1.4 : 1         4%
- 
-Kevin trails the median on all four: a coaching conversation.
-Stanley leads on all four: he demos.
 
-Weak column (Pushback): even the top of the column questions
-one output in five. Structural. Wire questioning into the loop: a review
-sub-agent and a critique command.
+           Verification  Pushback  Refine:repair  Wholesale  Model-fit
+Michael        71%         22%       2.4 : 1        15%         78%
+Dwight         31%          6%       0.8 : 1        49%         39%
+Jim            55%         17%       1.6 : 1        26%         55%
+Pam            62%          9%       2.1 : 1        21%         35%
+Angela         48%         14%       1.4 : 1        33%         68%
+Andy           42%         12%       1.2 : 1        38%         49%
+Kevin          26%          4%       0.7 : 1        55%         44%
+Stanley        74%         19%       2.6 : 1        12%         84%
+Phyllis        39%         15%       1.3 : 1        41%         59%
+----------------------------------------------------------------------
+Team median    48%         14%       1.4 : 1        33%         55%
+
+Kevin trails the median on all five: a coaching conversation.
+Stanley leads on all five: he shares.
+
+Weak column (Pushback): even the top of the column questions one
+output in five. Structural. Wire questioning into the loop: a
+review sub-agent and a critique command.
+
+Weak column (Model-fit): team median at 55% shows opportunity.
 ```
- 
+
 ### Median movement
- 
-**Goal:** the engineer trend, computed on the team median. Structural fixes ship in Layer 1 terms and the median says whether they had a positive impact.
+
+**Goal:** the engineer trend, computed on the team median. Structural fixes ship in Layer 1
+terms and the median says whether they had a positive impact.
 
 Example:
 
@@ -391,26 +416,55 @@ Team Dunder Mifflin, median, weekly
 Verification coverage    41%  ▂▃▃▄▅▅▆▆  48%   eval harness shipped w3
 Pushback rate            14%  ▄▄▄▄▄▄▄▄  14%
 Refinement-to-repair     1.2  ▃▄▄▄▅▅▅▅  1.4
-Wholesale-accept          7%  ▅▅▅▄▄▄▃▃   4%
+Wholesale-accept         39%  ▅▅▅▄▄▄▃▃  33%
+Model-fit rate           51%  ▄▄▄▄▄▅▅▅  55%   default model changed w5
 ```
 
 ### Wholesale watch
 
-**Goal:** track wholesale-accept at the team grain: the count, the trend, and the repos it concentrates in. The item list is personal. Each engineer sees their own flagged changes in their panel, and a lead reaches an instance through the engineer, same as any code review.
+**Goal:** track wholesale-accept at the team level: the share of lines, the trend, and the repos
+it concentrates in. The headline is the share of AI-edited lines that shipped unchallenged. The
+session count sits beside it.
 
 Example:
 
 ```
 Team Dunder Mifflin
 
-Large changes with no verification and no pushback
+Shipped unchallenged: no pushback, no repair, no verification
 
-This window    ███░░░░░░░   7 of 52  (13%)
-Last window    █████░░░░░  11 of 49  (22%)
+Lines      this window    ███░░░░░░░   31%  of AI-edited lines
+           last window    ████░░░░░░   38%
+Sessions   this window    19 of 52   ·   last window  22 of 49
+A check was asked for but never ran, this window    3 sessions
 
-By repo, this window
+By repo, share of unchallenged lines this window
 
-api-core    ████   4
-billing     ██     2
-web-app     █      1
+api-core    ██████   61%
+billing     ███      27%
+web-app     █        12%
+```
+
+### Dollar savings
+
+**Goal:** put a price on the model-fit gap.
+
+Example:
+
+```
+Team Dunder Mifflin, trailing 30 days
+
+Savings opportunity: $684 of $2,738 list-price spend · 25%
+(API list-price equivalent, estimated upper bound)
+
+Coverage: complete 461 · incomplete 33 · no telemetry 19 · unpriced 4
+(decisions and figures come from complete sessions only)
+
+models actually run   ██████████████▓▓▓▓▒▒▒░    67 · 19 · 12 ·  2%
+work, as sized        ████████▓▓▓▓▓▒▒▒▒▒▒▒▒░    37 · 25 · 33 ·  5%
+
+█ frontier · ▓ large · ▒ medium · ░ small
+
+The gap between the two bars is the opportunity. Half the frontier
+sessions were sized cross_cutting or below.
 ```
