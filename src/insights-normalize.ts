@@ -87,11 +87,11 @@ const SIGNALS: [string, string][] = [
   ["wholesale_accept", "Wholesale-accept rate"],
 ];
 
-const SECTIONS = ["repertoire", "quality_signals", "cost"];
+const SECTIONS = ["repertoire", "judgement_signals", "cost"];
 
 const LABELS: Record<string, string> = {
   repertoire: "Repertoire",
-  quality_signals: "Quality signals",
+  judgement_signals: "Judgement signals",
   cost: "Cost",
 };
 
@@ -286,7 +286,7 @@ function bodyOf(name: string, section: Record<string, unknown>): { body: Body; d
     const { data, dropped } = repertoireOf(section);
     return { body: { kind: "repertoire", data }, dropped };
   }
-  if (name === "quality_signals") {
+  if (name === "judgement_signals") {
     return { body: { kind: "signals", data: signalsOf(section) }, dropped: 0 };
   }
   const { data, dropped } = costOf(section);

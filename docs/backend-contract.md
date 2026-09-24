@@ -133,7 +133,7 @@ you cannot rotate. [`test/no-secrets.test.ts`](../test/no-secrets.test.ts) enfor
   "sections": {
     "cost": { "enabled": false, "reason": "no_consent" },
     "repertoire": { "enabled": true, "sessions": 62, "coverage_index": { "recurring": 9, "applicable": 23 } },
-    "quality_signals": { "enabled": true, "verification_coverage": { "value": 0.62, "team_median": 0.48 } }
+    "judgement_signals": { "enabled": true, "verification_coverage": { "value": 0.62, "team_median": 0.48 } }
   }
 }
 ```
@@ -156,9 +156,9 @@ but not for you right now", and says why in `reason`. Anything added later lands
 section and breaks nobody.
 
 The three defined today are the AI Proficiency Model's own division, not an invention of this
-contract: **`repertoire`** is Layer 1, which practices the engineer uses; **`quality_signals`** is
-Layer 2, what happens to AI output before it ships; **`cost`** is the third question, could a
-cheaper model have done this work.
+contract: **`repertoire`** is Layer 1, which practices the engineer uses; **`judgement_signals`**
+is Layer 2, what happens to AI output before it ships and whether the model behind it was the one
+the work called for; **`cost`** is that last signal priced, not a dimension standing beside them.
 
 That division also tells you what each section costs to build, which matters more than the naming
 if you are implementing this yourself:
@@ -166,15 +166,15 @@ if you are implementing this yourself:
 | Section | What it takes | Realistic for a self-hoster |
 |---|---|---|
 | `repertoire` | Rollups of events you already store | Yes, today, with nothing else |
-| `quality_signals` | A prompt classifier, except for `verification_coverage` | Partly. One signal needs no classifier at all |
+| `judgement_signals` | A prompt classifier, except for `verification_coverage` | Partly. One signal needs no classifier at all |
 | `cost` | Per-session token telemetry, a price table, a scope label per prompt | The most work, and `not_implemented` is a fine answer |
 
 So a backend built on nothing but the ingest stream can answer `repertoire` in full and one signal
-of `quality_signals`, and say `not_implemented` for the rest without being any less conformant.
+of `judgement_signals`, and say `not_implemented` for the rest without being any less conformant.
 
 **They are gated differently, which is why availability is per section.** `repertoire` needs only a
-valid token: it shows a developer their own telemetry back. `quality_signals` needs classifier
-labels for three of its four. `cost` needs the tenant's `prompt_collection` consent, because every
+valid token: it shows a developer their own telemetry back. `judgement_signals` needs classifier
+labels for four of its five. `cost` needs the tenant's `prompt_collection` consent, because every
 figure in it descends from reading prompts. One flag over the whole report would hide views the
 caller is entitled to.
 
@@ -185,12 +185,18 @@ honest answer for a developer with too few sessions, and must never be rendered 
 
 **The caller's own data, never anyone else's.** Identity comes from the token, as on
 `/validate-token`. No peer comparison, no leaderboard. The one exception is `team_median` on a
-quality signal, which answers "is this normal here" without naming anyone.
+judgement signal, which answers "is this normal here" without naming anyone.
 
 ### The `cost` section
 
-Could a cheaper model have done this work: sessions by recommended class, savings per cheaper
-model, an effort-suggestion count, cache behavior, and the distribution of work sizes.
+`model_fit` priced. The same sessions the signal below counts, rendered in dollars at API list
+price: sessions by recommended class, savings per cheaper model, an effort-suggestion count, cache
+behavior, and the distribution of work sizes. A backend that cannot price any of it still reports
+the fit rate in `judgement_signals`, which is the measurement; this section is one way of drawing
+it.
+
+Only the over-provisioned half of the signal reaches a figure here. An under-powered session is
+counted in `model_fit` and priced nowhere, because the stronger model is the arm nobody ran.
 
 **Every figure carries `basis`, which reads `API list-price equivalent, estimated upper bound`,
 and both halves are load-bearing.** *List-price equivalent*: on a seat-based plan the true saving
@@ -222,15 +228,15 @@ understates it for another.
 `artifact_breadth` is a raw count, deliberately. No cutoff has been calibrated, and putting an
 arbitrary threshold in a contract makes it permanent.
 
-### The `quality_signals` section
+### The `judgement_signals` section
 
-Layer 2: verification coverage, pushback rate, refinement-to-repair, wholesale-accept. Rates and
-ratios that move in both directions, with no levels and no ranking.
+Layer 2: verification coverage, pushback rate, refinement-to-repair, wholesale-accept, and
+model-fit. Rates and ratios that move in both directions, with no levels and no ranking.
 
 Each carries `value` and `unit`, and optionally `team_median`, a `trend` of weekly values oldest
 first, and `large_changes`, the same signal over large changes only.
 
-**`unit` is required, and it is not decoration.** The four signals do not agree on one: three are
+**`unit` is required, and it is not decoration.** The five signals do not agree on one: four are
 shares and `refinement_to_repair` is a ratio, so a renderer that assumes percentages prints a
 healthy `2.1 : 1` as `210%`. `share` renders as a percentage, `ratio` as `2.1 : 1`, `count` as a
 whole number, and a unit a consumer does not recognize prints as the raw value rather than a
@@ -238,7 +244,17 @@ guess. **`trend` is not decoration**: a rate
 printed alone reads as a verdict, and these are meant to be read as direction. A four-week
 deployment reports four points rather than a padded series, because padding invents history.
 
-Only `verification_coverage` is classifier-independent. The other three need prompt labels, so a
+**`model_fit` is the fifth, and it carries a `split` as well as a rate.** `value` is the share of
+sessions that ran on the class their work called for, over `sessions`; `split` breaks the same
+count into `fit`, `over_provisioned` and `under_powered`. All three are required together, because
+a split that reports one direction is an argument rather than a signal.
+
+It counts **complete sessions only** — every prompt in the session that should carry a scope
+does — since one dropped label silently lowers the whole session, and a session left out is not
+the same as a session that missed. **A miss in either direction is a miss.** Over-provisioning is
+what `cost` prices; under-powering never carries a dollar figure.
+
+Only `verification_coverage` is classifier-independent. The other four need prompt labels, so a
 backend without them omits those fields rather than reporting a zero.
 
 ## Building one

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.0.0"
+  version: "1.1.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -193,16 +193,16 @@ paths:
         The response is a map of named sections rather than one report, because they are gated
         differently and because the set will grow. The three defined today follow the AI
         Proficiency Model: `repertoire` is Layer 1, which practices the engineer uses;
-        `quality_signals` is Layer 2, what happens to AI output before it ships; `cost` is the
-        third question, could a cheaper model have done this work. A section added later is
-        additive, and a consumer that ignores sections it does not recognize keeps working across
-        every future version.
+        `judgement_signals` is Layer 2, what happens to AI output before it ships and whether the
+        model behind it was the one the work called for; `cost` is that last signal priced, not a
+        dimension of its own. A section added later is additive, and a consumer that ignores
+        sections it does not recognize keeps working across every future version.
 
         **The caller's own data, never anyone else's.** Identity comes from the token, as on
         `/validate-token`. No peer comparison and no leaderboard: the company's lens is the
         dashboard layer, this route is the engineer's, and per-developer data seen by anyone but
         that developer turns a coaching tool into a surveillance one. The single exception is
-        `team_median` on a quality signal, which answers "is this normal here" without naming
+        `team_median` on a judgement signal, which answers "is this normal here" without naming
         anyone or ranking anything.
 
         Availability, not zeros. A section that cannot be computed says so with `enabled: false`
@@ -575,23 +575,23 @@ components:
             present with `enabled: false`, which is "this backend produces it, but not for you
             right now" and says why in `reason`.
 
-            `cost`, `repertoire` and `quality_signals` are defined below, and they follow the AI
-            Proficiency Model's own division: Layer 1 is the harness repertoire, Layer 2 is the
-            quality signals, and cost is the third question. A backend may answer `{}` and stay
-            conformant.
+            `cost`, `repertoire` and `judgement_signals` are defined below, and they follow the
+            AI Proficiency Model's own division: Layer 1 is the harness repertoire, Layer 2 is the
+            judgement signals, and `cost` prices one of those signals rather than standing beside
+            them. A backend may answer `{}` and stay conformant.
           properties:
             cost: { $ref: "#/components/schemas/CostInsights" }
+            judgement_signals: { $ref: "#/components/schemas/JudgementSignalsInsights" }
             repertoire: { $ref: "#/components/schemas/RepertoireInsights" }
-            quality_signals: { $ref: "#/components/schemas/QualitySignalsInsights" }
           additionalProperties: { $ref: "#/components/schemas/InsightsSection" }
 
     InsightsSection:
       type: object
       description: |
         What every section shares. A section carries its own availability, because they are
-        gated differently: `repertoire` needs only a valid token, `quality_signals` needs classifier
-        labels for three of its four, and `cost` needs the tenant's prompt-collection consent. One
-        flag over the whole report would hide views the caller is entitled to.
+        gated differently: `repertoire` needs only a valid token, `judgement_signals` needs
+        classifier labels for four of its five, and `cost` needs the tenant's prompt-collection
+        consent. One flag over the whole report would hide views the caller is entitled to.
       required: [enabled]
       additionalProperties: true
       properties:
@@ -620,8 +620,11 @@ components:
 
     CostInsights:
       description: |
-        Could a cheaper model have done this work. Gated on the tenant's prompt-collection
-        consent, because every figure here descends from reading prompts.
+        `model_fit` priced: the same sessions in dollars, at API list price. A rendering of one
+        judgement signal rather than a dimension beside it, so a backend that cannot price still
+        reports the fit rate in `judgement_signals`, and only the over-provisioned share of it
+        reaches a figure here. Gated on the tenant's prompt-collection consent, because every
+        figure here descends from reading prompts.
 
         **Needs the most of an implementer**: per-session token counts from the agent's own
         telemetry, a price table, and a scope label per prompt. It is the section most likely to
@@ -769,12 +772,13 @@ components:
                 auto: { type: integer }
                 manual: { type: integer }
 
-    QualitySignalsInsights:
+    JudgementSignalsInsights:
       description: |
-        Layer 2: what happens to AI output before it ships. Rates and ratios that move in both
-        directions, with no levels and no ranking.
+        Layer 2: what happens to AI output before it ships, and whether the model behind it was
+        the one the work called for. Rates and ratios that move in both directions, with no levels
+        and no ranking.
 
-        Three of the four need classifier labels, so a backend without them omits those fields
+        Four of the five need classifier labels, so a backend without them omits those fields
         rather than reporting a zero. `verification_coverage` is classifier-independent and is the
         one that works today.
 
@@ -785,12 +789,13 @@ components:
         - $ref: "#/components/schemas/InsightsSection"
         - type: object
           properties:
-            verification_coverage: { $ref: "#/components/schemas/QualitySignal" }
-            pushback_rate: { $ref: "#/components/schemas/QualitySignal" }
-            refinement_to_repair: { $ref: "#/components/schemas/QualitySignal" }
-            wholesale_accept: { $ref: "#/components/schemas/QualitySignal" }
+            verification_coverage: { $ref: "#/components/schemas/JudgementSignal" }
+            pushback_rate: { $ref: "#/components/schemas/JudgementSignal" }
+            refinement_to_repair: { $ref: "#/components/schemas/JudgementSignal" }
+            wholesale_accept: { $ref: "#/components/schemas/JudgementSignal" }
+            model_fit: { $ref: "#/components/schemas/ModelFitSignal" }
 
-    QualitySignal:
+    JudgementSignal:
       type: object
       required: [value, unit]
       description: |
@@ -803,7 +808,7 @@ components:
           enum: [share, ratio, count]
           description: |
             How to read `value`, `team_median`, `trend` and `large_changes`, which all carry it.
-            Required, because the four signals do not agree: three are shares and
+            Required, because the five signals do not agree: four are shares and
             `refinement_to_repair` is a ratio, so a renderer without this prints `2.1` as `210%`.
 
             `share` is 0 to 1 and renders as a percentage. `ratio` is a multiple and renders as
@@ -828,3 +833,41 @@ components:
           description: |
             The same signal recomputed over large changes only, where verification and pushback
             collapse the most. Omitted where change size is not measurable.
+
+    ModelFitSignal:
+      description: |
+        Whether the model that ran a session was the one its work called for. `value` is the share
+        that fit, over `sessions`, and `unit` is `share`.
+
+        **Complete sessions only.** A session counts only once every prompt in it that should
+        carry a scope does, because one dropped label silently lowers the whole session, and a
+        session left out is not the same as a session that missed.
+
+        **A miss in either direction is a miss.** Over-provisioned and under-powered are both
+        reported and neither is the worse one. A signal that counted only over-provisioning would
+        be a savings argument wearing a rate's clothes, and the savings argument is `cost`.
+      allOf:
+        - $ref: "#/components/schemas/JudgementSignal"
+        - type: object
+          properties:
+            sessions:
+              type: integer
+              description: Complete sessions in the window, the denominator behind `value`.
+            split:
+              type: object
+              description: |
+                The same sessions by verdict, summing to `sessions`. Counts rather than shares, so
+                the consumer renders the rounding and can show what the rate is out of. All three
+                are required together: omitting one direction hides half the signal, which is the
+                failure this split exists to prevent.
+              required: [fit, over_provisioned, under_powered]
+              properties:
+                fit: { type: integer }
+                over_provisioned:
+                  type: integer
+                  description: Ran above the class the work called for. The only part `cost` prices.
+                under_powered:
+                  type: integer
+                  description: |
+                    Ran below it, and never carries a dollar figure. The stronger model is the arm
+                    nobody ran, so there is no token count to price it against.

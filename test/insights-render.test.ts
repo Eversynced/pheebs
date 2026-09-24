@@ -35,7 +35,7 @@ const FULL = {
       artifact_breadth: 7,
       compaction: { auto: 12, manual: 3 },
     },
-    quality_signals: {
+    judgement_signals: {
       enabled: true,
       verification_coverage: {
         value: 0.62,
@@ -75,7 +75,7 @@ const STUB = {
   sections: {
     cost: { enabled: false, reason: "not_implemented" },
     repertoire: { enabled: false, reason: "not_implemented" },
-    quality_signals: { enabled: false, reason: "not_implemented" },
+    judgement_signals: { enabled: false, reason: "not_implemented" },
   },
 };
 
@@ -103,7 +103,7 @@ describe("sparkline", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 0.5, unit: "share", trend: [1, null, 3] },
           },
@@ -156,7 +156,7 @@ describe("renderInsights — unavailable sections", () => {
       "",
       "Repertoire: this backend does not produce it",
       "",
-      "Quality signals: this backend does not produce it",
+      "Judgement signals: this backend does not produce it",
       "",
       "Cost: this backend does not produce it",
     ]);
@@ -191,7 +191,7 @@ describe("renderInsights — the open section map", () => {
     ).join("\n");
     expect(out).toContain("Repertoire:");
     expect(out).not.toContain("Cost");
-    expect(out).not.toContain("Quality signals");
+    expect(out).not.toContain("Judgement signals");
   });
 
   it("ignores a section name it does not recognize", () => {
@@ -258,7 +258,7 @@ describe("renderInsights — repertoire", () => {
   });
 });
 
-describe("renderInsights — quality signals", () => {
+describe("renderInsights — judgement signals", () => {
   const out = render(FULL, WIDE).join("\n");
 
   it("puts the caller's value next to the team median, in each signal's own unit", () => {
@@ -285,7 +285,7 @@ describe("renderInsights — quality signals", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             verification_coverage: { value: 0.62, unit: "share", trend: [0.62] },
           },
@@ -304,7 +304,7 @@ describe("renderInsights — quality signals", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             verification_coverage: { value: 0.62, unit: "share", trend: [0.44, 0.53, 0.62] },
             wholesale_accept: { value: 0.06, unit: "share", trend: [0.09] },
@@ -328,7 +328,7 @@ describe("renderInsights — quality signals", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 0.09, unit: "share" },
           },
@@ -345,7 +345,7 @@ describe("renderInsights — quality signals", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 2.5, unit: "furlongs" },
           },
@@ -358,8 +358,8 @@ describe("renderInsights — quality signals", () => {
   });
 
   it("says so when the section is on but carries no signals", () => {
-    const out = render({ days: 30, sections: { quality_signals: { enabled: true } } }, WIDE);
-    expect(out).toContain("Quality signals");
+    const out = render({ days: 30, sections: { judgement_signals: { enabled: true } } }, WIDE);
+    expect(out).toContain("Judgement signals");
     expect(out).toContain("This backend produced no signals.");
   });
 });
@@ -518,14 +518,14 @@ describe("renderInsights — untrusted payloads", () => {
     ["a string section", { days: 30, sections: { cost: "nope" } }],
     [
       "a null signal",
-      { days: 30, sections: { quality_signals: { enabled: true, pushback_rate: null } } },
+      { days: 30, sections: { judgement_signals: { enabled: true, pushback_rate: null } } },
     ],
     [
       "a numeric trend",
       {
         days: 30,
         sections: {
-          quality_signals: { enabled: true, pushback_rate: { value: 1, unit: "share", trend: 5 } },
+          judgement_signals: { enabled: true, pushback_rate: { value: 1, unit: "share", trend: 5 } },
         },
       },
     ],
@@ -534,7 +534,7 @@ describe("renderInsights — untrusted payloads", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 1, unit: "share", trend: "abc" },
           },
@@ -546,7 +546,7 @@ describe("renderInsights — untrusted payloads", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 1, unit: "share", trend: [0.1, null, 0.3] },
           },
@@ -585,7 +585,7 @@ describe("renderInsights — untrusted payloads", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 0.5, unit: "share", trend: new Array(200_000).fill(0.5) },
           },
@@ -626,7 +626,7 @@ describe("renderInsights — the sparkline is never clipped", () => {
   const payload = {
     days: 30,
     sections: {
-      quality_signals: {
+      judgement_signals: {
         enabled: true,
         pushback_rate: { value: 0.9, unit: "share", trend },
       },
@@ -659,7 +659,7 @@ describe("renderInsights — the sparkline is never clipped", () => {
     const payloadNarrow = {
       days: 30,
       sections: {
-        quality_signals: {
+        judgement_signals: {
           enabled: true,
           pushback_rate: { value: 0.42, unit: "share", trend: narrow },
         },
@@ -742,7 +742,7 @@ describe("renderInsights — alignment across a whole block", () => {
     expect(new Set(rows.map((l) => l.indexOf("over "))).size).toBe(1);
   });
 
-  it("shares one label column across the three quality-signal blocks", () => {
+  it("shares one label column across the three judgement-signal blocks", () => {
     const lines = render(FULL, WIDE);
     const rows = lines.filter((l) => l.startsWith("Verification coverage"));
     // The main table, the trend row and the large-changes row all start the value at one column.
@@ -820,7 +820,7 @@ describe("renderInsights — saying what it does not know", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 0.09, unit: "share", trend: [0.1, null, 0.3] },
           },
@@ -861,7 +861,7 @@ describe("renderInsights — saying what it does not know", () => {
 describe("renderInsights — sections are named", () => {
   it("heads each enabled section with its own label", () => {
     const lines = render(FULL, WIDE);
-    for (const label of ["Repertoire", "Quality signals", "Cost"]) {
+    for (const label of ["Repertoire", "Judgement signals", "Cost"]) {
       expect(lines).toContain(label);
     }
   });
@@ -872,7 +872,7 @@ describe("renderInsights — sections are named", () => {
       "",
       "Repertoire: this backend does not produce it",
       "",
-      "Quality signals: this backend does not produce it",
+      "Judgement signals: this backend does not produce it",
       "",
       "Cost: this backend does not produce it",
     ]);

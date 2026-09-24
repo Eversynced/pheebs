@@ -29,7 +29,7 @@ const repertoire = (fields: Record<string, unknown>) => ({
 
 const signal = (fields: Record<string, unknown>) => ({
   days: 30,
-  sections: { quality_signals: { enabled: true, pushback_rate: { unit: "share", ...fields } } },
+  sections: { judgement_signals: { enabled: true, pushback_rate: { unit: "share", ...fields } } },
 });
 
 function firstCompetency(payload: unknown) {

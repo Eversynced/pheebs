@@ -94,7 +94,7 @@ describe("pheebs insights — against the example backend", () => {
     const { stdout, status } = runCli(home, "insights");
     expect(status).toBe(0);
     expect(stdout).toContain("Repertoire: this backend does not produce it");
-    expect(stdout).toContain("Quality signals: this backend does not produce it");
+    expect(stdout).toContain("Judgement signals: this backend does not produce it");
     expect(stdout).toContain("Cost: this backend does not produce it");
   });
 
