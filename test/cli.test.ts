@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -122,6 +122,9 @@ describe("init and doctor scope", () => {
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
     cwd = mkdtempSync(join(tmpdir(), "pheebs-cwd-"));
+    // doctor with no tool flag checks only the tools it detects, and detection looks for a
+    // `claude` binary or ~/.claude. Neither exists on CI, so the marker stands in for an install.
+    mkdirSync(join(home, ".claude"), { recursive: true });
   });
 
   afterEach(() => {
