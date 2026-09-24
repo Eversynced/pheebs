@@ -30,7 +30,8 @@ Commands:
   uninstall             Remove pheebs hooks + OTel
 
 Options:
-  -p, --project         Use project-local settings instead of user-level
+  -p, --project         Register project-local settings (default)
+  -g, --global          Register user-level settings (applies to every repo)
   --cursor              Target Cursor
   --codex               Target Codex
   --no-otel             Skip OpenTelemetry configuration (init)
@@ -58,20 +59,21 @@ if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
   await handleHookEvent(tool, args[1], args.slice(2));
 } else if (args[0] === "init") {
   const interactive =
-    Boolean(process.stdin.isTTY) && !hasFlag("-p", "--project", "--cursor", "--codex", "--no-otel");
+    Boolean(process.stdin.isTTY) &&
+    !hasFlag("-p", "--project", "-g", "--global", "--cursor", "--codex", "--no-otel");
 
   if (interactive) {
     const { runInitInteractive } = await import("./commands/init.js");
     await runInitInteractive();
   } else {
-    const project = hasFlag("-p", "--project");
+    const project = !hasFlag("-g", "--global");
     const otel = !hasFlag("--no-otel");
     const tool = resolveTool();
     const { runInit } = await import("./commands/init.js");
     await runInit({ project, tool, otel });
   }
 } else if (args[0] === "doctor") {
-  const project = hasFlag("-p", "--project");
+  const project = !hasFlag("-g", "--global");
   const hasToolFlag = hasFlag("--cursor", "--codex");
   const tool = hasToolFlag ? resolveTool() : undefined;
   const { runDoctor } = await import("./commands/doctor.js");

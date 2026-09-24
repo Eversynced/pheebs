@@ -8,6 +8,7 @@ import { resolveLogPath } from "../config.js";
 import {
   AI_TOOLS,
   type AiTool,
+  CODEX_TRUST_WARNING,
   getHookDefinitionsForTool,
   isPheebsEntry,
   TOOL_LABELS,
@@ -209,6 +210,11 @@ function diagnoseTools(tools: AiTool[], project: boolean): boolean {
     if (!reportToolResult(result, tool)) {
       allHealthy = false;
     }
+    // Registered is not the same as will fire: a project-local Codex layer is dropped entirely
+    // until the developer trusts the project, so a clean report here would overstate the install.
+    if (project && tool === AI_TOOLS.CODEX && !result.fatal) {
+      log.warn(`  ${CODEX_TRUST_WARNING}`);
+    }
   }
 
   return allHealthy;
@@ -293,7 +299,7 @@ function checkVersion(): void {
 }
 
 export async function runDoctor(options?: { project?: boolean; tool?: AiTool }): Promise<void> {
-  const project = options?.project ?? false;
+  const project = options?.project ?? true;
   const tool = options?.tool;
   const explicit = tool !== undefined;
   const tools: AiTool[] = tool !== undefined ? [tool] : detectInstalledTools();

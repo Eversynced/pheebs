@@ -1,8 +1,8 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const repoRoot = join(import.meta.dirname, "..");
 const cliPath = join(repoRoot, "dist", "cli.js");
@@ -99,5 +99,86 @@ describe("Codex test-outcome synthesis", () => {
     const toolRow = rows.find((r) => r.tool_intent !== undefined);
     expect(toolRow?.event).toBe("tool_use_completed");
     expect(toolRow?.tool_intent).toBe("test_run");
+  });
+});
+
+// The scope default is what `pheebs init` picks with no flags, so it is only meaningful
+// end-to-end: run the built CLI in a throwaway HOME + cwd and see which file it wrote.
+describe("init and doctor scope", () => {
+  let home: string;
+  let cwd: string;
+
+  // spawnSync rather than the execFileSync helper above: these assertions are about warnings,
+  // which land on stderr even when the command succeeds.
+  function runScoped(...args: string[]): RunResult {
+    const result = spawnSync(process.execPath, [cliPath, ...args], {
+      encoding: "utf-8",
+      cwd,
+      env: { ...process.env, HOME: home, USERPROFILE: home },
+    });
+    return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", status: result.status ?? 1 };
+  }
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
+    cwd = mkdtempSync(join(tmpdir(), "pheebs-cwd-"));
+  });
+
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("writes project-local settings by default", () => {
+    const result = runScoped("init", "--no-otel");
+
+    expect(result.stdout).toContain("project-level");
+    expect(existsSync(join(cwd, ".claude", "settings.local.json"))).toBe(true);
+    expect(existsSync(join(home, ".claude", "settings.json"))).toBe(false);
+  });
+
+  it("writes user-level settings with --global", () => {
+    const result = runScoped("init", "--global", "--no-otel");
+
+    expect(result.stdout).toContain("user-level");
+    expect(existsSync(join(home, ".claude", "settings.json"))).toBe(true);
+    expect(existsSync(join(cwd, ".claude", "settings.local.json"))).toBe(false);
+  });
+
+  it("warns that events fire twice when a user-level install is also present", () => {
+    runScoped("init", "--global", "--no-otel");
+    const result = runScoped("init", "--no-otel");
+
+    expect(result.stderr).toContain("fires twice");
+    expect(result.stderr).toContain("pheebs uninstall");
+  });
+
+  it("does not warn about a user-level install when there is none", () => {
+    const result = runScoped("init", "--no-otel");
+
+    expect(result.stderr).not.toContain("fires twice");
+  });
+
+  it("warns that project-local Codex hooks need project trust", () => {
+    const init = runScoped("init", "--codex", "--no-otel");
+    const doctor = runScoped("doctor", "--codex");
+
+    expect(init.stderr).toContain("trust this project");
+    expect(doctor.stdout).toContain("trust this project");
+  });
+
+  it("does not warn about Codex trust on a user-level install", () => {
+    const init = runScoped("init", "--codex", "--global", "--no-otel");
+    const doctor = runScoped("doctor", "--codex", "--global");
+
+    expect(init.stderr).not.toContain("trust this project");
+    expect(doctor.stdout).not.toContain("trust this project");
+  });
+
+  it("checks project-local settings by default", () => {
+    runScoped("init", "--no-otel");
+    const result = runScoped("doctor");
+
+    expect(result.stdout).toContain(join(cwd, ".claude", "settings.local.json"));
   });
 });

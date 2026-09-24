@@ -26,6 +26,7 @@ import {
   AI_TOOLS,
   type AiTool,
   buildHooksConfig,
+  CODEX_TRUST_WARNING,
   getHookDefinitionsForTool,
   isPheebsEntry,
   TOOL_LABELS,
@@ -180,6 +181,31 @@ export function applyInit(tool: AiTool, project: boolean, otelEnabled: boolean):
   }
 }
 
+/** A user-level install keeps firing alongside a project-local one, doubling every event, so
+ *  both init paths have to spot it before writing a second copy. */
+export function hasUserLevelInstall(tool: AiTool): boolean {
+  const { path: userPath } = resolveSettingsPath(tool, false);
+  if (!existsSync(userPath)) return false;
+
+  let config: Record<string, unknown>;
+  try {
+    const raw = readFileSync(userPath, "utf-8");
+    config = (tool === AI_TOOLS.CODEX ? parseToml(raw) : JSON.parse(raw)) as Record<
+      string,
+      unknown
+    >;
+  } catch {
+    return false;
+  }
+
+  const hooks = config.hooks as Record<string, unknown> | undefined;
+  if (!hooks) return false;
+
+  return Object.values(hooks).some((entries) =>
+    (Array.isArray(entries) ? entries : [entries]).some(isPheebsEntry),
+  );
+}
+
 export async function runInit(options?: {
   project?: boolean;
   tool?: AiTool;
@@ -191,13 +217,26 @@ export async function runInit(options?: {
   // Materialize config.json so settings are visible and hand-editable after a non-interactive init.
   ensureConfig();
 
-  const result = applyInit(tool, options?.project ?? false, otelEnabled);
+  const project = options?.project ?? true;
+
+  if (project && hasUserLevelInstall(tool)) {
+    const { path: userPath } = resolveSettingsPath(tool, false);
+    console.warn(
+      `pheebs: hooks are also registered user-level in ${userPath}, so every event fires twice. Run \`pheebs uninstall\` (it clears both scopes) and then init again.`,
+    );
+  }
+
+  const result = applyInit(tool, project, otelEnabled);
 
   console.log(
     `pheebs: wrote ${result.definitionCount} hook entries across ${result.hookTypeCount} hook types to ${result.settingsPath} (${result.level})`,
   );
   if (result.otel !== undefined) {
     console.log(`pheebs: ${result.otel} OTel config in ${result.settingsPath}`);
+  }
+
+  if (project && tool === AI_TOOLS.CODEX) {
+    console.warn(`pheebs: ${CODEX_TRUST_WARNING}`);
   }
 
   const { runArtifactScan } = await import("../scanner.js");
@@ -230,10 +269,10 @@ export async function runInitInteractive(): Promise<void> {
   const scope = await select<boolean>({
     message: "Where should hooks be registered?",
     options: [
-      { value: false, label: "User-level", hint: "applies everywhere" },
       { value: true, label: "Project-local", hint: "this repo only" },
+      { value: false, label: "User-level", hint: "applies everywhere" },
     ],
-    initialValue: false,
+    initialValue: true,
   });
   if (isCancel(scope)) return cancel("Aborted — nothing was changed.");
 
@@ -285,6 +324,26 @@ export async function runInitInteractive(): Promise<void> {
     otelEnabled = answer;
   }
 
+  if (scope) {
+    const alsoUserLevel = tools.filter(hasUserLevelInstall);
+    if (alsoUserLevel.length > 0) {
+      const labels = alsoUserLevel.map((t) => TOOL_LABELS[t]).join(", ");
+      const remove = await confirm({
+        message: `pheebs is also installed user-level (${labels}), so every event fires twice. Remove it?`,
+        initialValue: true,
+      });
+      if (isCancel(remove)) return cancel("Aborted — nothing was changed.");
+      if (remove) {
+        const { removeFromJsonConfig, removeFromTomlConfig } = await import("./uninstall.js");
+        for (const tool of alsoUserLevel) {
+          const { path: userPath } = resolveSettingsPath(tool, false);
+          if (tool === AI_TOOLS.CODEX) removeFromTomlConfig(userPath);
+          else removeFromJsonConfig(userPath, tool);
+        }
+      }
+    }
+  }
+
   for (const tool of tools) {
     const result = applyInit(tool, scope, otelEnabled);
     let otelNote = "";
@@ -306,6 +365,10 @@ export async function runInitInteractive(): Promise<void> {
     log.warn(
       "Project-local OTel config embeds your token — ensure that settings file is gitignored.",
     );
+  }
+
+  if (scope && tools.includes(AI_TOOLS.CODEX)) {
+    log.warn(CODEX_TRUST_WARNING);
   }
 
   outro("Done ✓");
