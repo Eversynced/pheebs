@@ -166,7 +166,7 @@ if you are implementing this yourself:
 | Section | What it takes | Realistic for a self-hoster |
 |---|---|---|
 | `repertoire` | Rollups of events you already store | Yes, today, with nothing else |
-| `judgement_signals` | A prompt classifier, except for `verification_coverage` | Partly. One signal needs no classifier at all |
+| `judgement_signals` | A prompt classifier, except for `verification_coverage` | Partly. One signal computes without one, though it undercounts |
 | `cost` | Per-session token telemetry, a price table, a scope label per prompt | The most work, and `not_implemented` is a fine answer |
 
 So a backend built on nothing but the ingest stream can answer `repertoire` in full and one signal
@@ -174,9 +174,9 @@ of `judgement_signals`, and say `not_implemented` for the rest without being any
 
 **They are gated differently, which is why availability is per section.** `repertoire` needs only a
 valid token: it shows a developer their own telemetry back. `judgement_signals` needs classifier
-labels for four of its five. `cost` needs the tenant's `prompt_collection` consent, because every
-figure in it descends from reading prompts. One flag over the whole report would hide views the
-caller is entitled to.
+labels for four of its five, and undercounts the fifth without them. `cost` needs the tenant's
+`prompt_collection` consent, because every figure in it descends from reading prompts.
+One flag over the whole report would hide views the caller is entitled to.
 
 `reason` is deliberately specific rather than a bare `false`. `no_consent` is not a secret from the
 caller, since `/validate-token` already hands the same client its tenant's `prompt_collection`, and
@@ -233,8 +233,8 @@ arbitrary threshold in a contract makes it permanent.
 Layer 2: verification coverage, pushback rate, refinement-to-repair, wholesale-accept, and
 model-fit. Rates and ratios that move in both directions, with no levels and no ranking.
 
-Each carries `value` and `unit`, and optionally `team_median`, a `trend` of weekly values oldest
-first, and `large_changes`, the same signal over large changes only.
+Each carries `value` and `unit`, and optionally `team_median` and a `trend` of weekly values
+oldest first.
 
 **`unit` is required, and it is not decoration.** The five signals do not agree on one: four are
 shares and `refinement_to_repair` is a ratio, so a renderer that assumes percentages prints a
@@ -243,6 +243,14 @@ whole number, and a unit a consumer does not recognize prints as the raw value r
 guess. **`trend` is not decoration**: a rate
 printed alone reads as a verdict, and these are meant to be read as direction. A four-week
 deployment reports four points rather than a padded series, because padding invents history.
+
+**`wholesale_accept` carries its session counts beside the rate.** `value` is the share of
+AI-edited lines that shipped unchallenged, weighted by `lines_changed`, because a count of
+sessions treats a rename and a rewrite as the same thing. `sessions` is every AI-edited session
+in the window, with no change-size threshold to clear, and `unchallenged` is the subset that
+shipped with no pushback, no repair and no verification. Both are required together, the same
+reasoning as `model_fit`'s `split`: a numerator without its denominator is a number nobody can
+place.
 
 **`model_fit` is the fifth, and it carries a `split` as well as a rate.** `value` is the share of
 sessions that ran on the class their work called for, over `sessions`; `split` breaks the same
@@ -254,8 +262,11 @@ does — since one dropped label silently lowers the whole session, and a sessio
 the same as a session that missed. **A miss in either direction is a miss.** Over-provisioning is
 what `cost` prices; under-powering never carries a dollar figure.
 
-Only `verification_coverage` is classifier-independent. The other four need prompt labels, so a
-backend without them omits those fields rather than reporting a zero.
+Only `verification_coverage` computes without a classifier: its verification family is detected
+from what actually ran, so tool events alone are enough. A `requests_verification` prompt counts
+toward it too, so a backend without a classifier undercounts this signal rather than producing the
+same number by another route. The other four need prompt labels, so a backend without them omits
+those fields rather than reporting a zero.
 
 ## Building one
 

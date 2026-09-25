@@ -42,7 +42,6 @@ const FULL = {
         unit: "share",
         team_median: 0.48,
         trend: [0.44, 0.47, 0.5, 0.55, 0.58, 0.6, 0.62],
-        large_changes: 0.41,
       },
       refinement_to_repair: {
         value: 2.1,
@@ -268,11 +267,6 @@ describe("renderInsights — judgement signals", () => {
 
   it("draws the weekly trend between its first and last value", () => {
     expect(out).toMatch(/Verification coverage\s+44%\s+[▁▂▃▄▅▆▇]{7}\s+62%/);
-  });
-
-  it("prints the large-changes variant under the signal, with the overall beside it", () => {
-    expect(out).toContain("Large changes only");
-    expect(out).toMatch(/Verification coverage\s+41%\s+\(62% overall\)/);
   });
 
   it("omits a signal the backend does not compute rather than showing a zero", () => {
@@ -525,7 +519,10 @@ describe("renderInsights — untrusted payloads", () => {
       {
         days: 30,
         sections: {
-          judgement_signals: { enabled: true, pushback_rate: { value: 1, unit: "share", trend: 5 } },
+          judgement_signals: {
+            enabled: true,
+            pushback_rate: { value: 1, unit: "share", trend: 5 },
+          },
         },
       },
     ],
@@ -742,11 +739,11 @@ describe("renderInsights — alignment across a whole block", () => {
     expect(new Set(rows.map((l) => l.indexOf("over "))).size).toBe(1);
   });
 
-  it("shares one label column across the three judgement-signal blocks", () => {
+  it("shares one label column across the judgement-signal blocks", () => {
     const lines = render(FULL, WIDE);
     const rows = lines.filter((l) => l.startsWith("Verification coverage"));
-    // The main table, the trend row and the large-changes row all start the value at one column.
-    expect(rows.length).toBeGreaterThanOrEqual(3);
+    // The main table and the trend row start the value at one column.
+    expect(rows.length).toBeGreaterThanOrEqual(2);
     const label = "Verification coverage";
     expect(new Set(rows.map((l) => displayWidth(l.slice(0, label.length)))).size).toBe(1);
   });

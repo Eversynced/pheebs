@@ -590,8 +590,9 @@ components:
       description: |
         What every section shares. A section carries its own availability, because they are
         gated differently: `repertoire` needs only a valid token, `judgement_signals` needs
-        classifier labels for four of its five, and `cost` needs the tenant's prompt-collection
-        consent. One flag over the whole report would hide views the caller is entitled to.
+        classifier labels for four of its five and undercounts the fifth without them, and `cost`
+        needs the tenant's prompt-collection consent. One flag over the whole report would hide
+        views the caller is entitled to.
       required: [enabled]
       additionalProperties: true
       properties:
@@ -779,8 +780,11 @@ components:
         and no ranking.
 
         Four of the five need classifier labels, so a backend without them omits those fields
-        rather than reporting a zero. `verification_coverage` is classifier-independent and is the
-        one that works today.
+        rather than reporting a zero. `verification_coverage` is the one that works today: its
+        verification family is detected from what actually ran, so it is computable from tool
+        events alone. A `requests_verification` prompt counts toward it too, so a backend without
+        a classifier undercounts this signal rather than producing the same number by another
+        route.
 
         **Needs a prompt classifier**, for everything except `verification_coverage`. A backend
         without one still answers this section honestly with that single signal, which is a real
@@ -792,7 +796,7 @@ components:
             verification_coverage: { $ref: "#/components/schemas/JudgementSignal" }
             pushback_rate: { $ref: "#/components/schemas/JudgementSignal" }
             refinement_to_repair: { $ref: "#/components/schemas/JudgementSignal" }
-            wholesale_accept: { $ref: "#/components/schemas/JudgementSignal" }
+            wholesale_accept: { $ref: "#/components/schemas/WholesaleAcceptSignal" }
             model_fit: { $ref: "#/components/schemas/ModelFitSignal" }
 
     JudgementSignal:
@@ -807,7 +811,7 @@ components:
           type: string
           enum: [share, ratio, count]
           description: |
-            How to read `value`, `team_median`, `trend` and `large_changes`, which all carry it.
+            How to read `value`, `team_median` and `trend`, which all carry it.
             Required, because the five signals do not agree: four are shares and
             `refinement_to_repair` is a ratio, so a renderer without this prints `2.1` as `210%`.
 
@@ -828,11 +832,38 @@ components:
             Weekly values, oldest first, over whatever history exists. A four-week deployment shows
             four points rather than a padded series, because padding invents a trend.
           items: { type: number }
-        large_changes:
-          type: number
-          description: |
-            The same signal recomputed over large changes only, where verification and pushback
-            collapse the most. Omitted where change size is not measurable.
+
+    WholesaleAcceptSignal:
+      description: |
+        AI output that shipped unchallenged: the session produced AI edits and carries no
+        pushback, no repair and no verification. `value` is the share of AI-edited lines that
+        landed in such a session, weighted by `lines_changed`, and `unit` is `share`.
+
+        **Lines rather than sessions, because the two are not the same accept.** A count of
+        sessions treats a rename and a rewrite as the same thing: a one-line rename taken without
+        a check and a five-hundred-line refactor taken without a check are one session each.
+        `sessions` and `unchallenged` carry the session grain beside the rate, so a consumer can
+        show what the share is out of and render the plain session share as a secondary.
+
+        Both are required together, the same reasoning as `model_fit`'s `split`: a numerator
+        without its denominator is a number nobody can place.
+      allOf:
+        - $ref: "#/components/schemas/JudgementSignal"
+        - type: object
+          required: [sessions, unchallenged]
+          properties:
+            sessions:
+              type: integer
+              description: |
+                AI-edited sessions in the window, the denominator. Every one of them counts:
+                there is no change-size threshold to clear, because a threshold in a contract is
+                permanent and none has been calibrated.
+            unchallenged:
+              type: integer
+              description: |
+                Of those, the sessions that shipped with no pushback, no repair and no
+                verification. At most `sessions`. The session share is this over `sessions`,
+                rendered by the consumer rather than arriving rounded.
 
     ModelFitSignal:
       description: |

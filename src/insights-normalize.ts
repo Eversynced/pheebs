@@ -32,7 +32,6 @@ export interface Signal {
   /** Empty when absent and when unusable; `trendUnusable` tells the two apart. */
   trend: number[];
   trendUnusable: boolean;
-  largeChanges?: number;
 }
 
 export interface Row {
@@ -235,7 +234,6 @@ function signalsOf(section: Record<string, unknown>): Signal[] {
         teamMedian: num(raw.team_median),
         trend,
         trendUnusable: unusable,
-        largeChanges: num(raw.large_changes),
       },
     ];
   });
