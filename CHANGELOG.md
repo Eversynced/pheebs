@@ -6,6 +6,19 @@ Pheebs was developed privately before this repository was opened. That history i
 so this changelog starts at the first public release rather than linking commits that cannot
 be resolved.
 
+## [1.1.0](https://github.com/Eversynced/pheebs/compare/v1.0.0...v1.1.0) (2026-09-25)
+
+
+### Features
+
+* **contract:** rename quality_signals to judgement_signals, add model_fit ([da3a488](https://github.com/Eversynced/pheebs/commit/da3a4887895cb0a913400e1d41927d930811f22c))
+* **contract:** rename quality_signals to judgement_signals, add model_fit ([13e1a05](https://github.com/Eversynced/pheebs/commit/13e1a05247550bea6d50233e93c4c83c7b8077d5))
+
+
+### Bug Fixes
+
+* **contract:** align judgement signals with the Layer 2 docs ([843f0d2](https://github.com/Eversynced/pheebs/commit/843f0d27433f836a0f23ee8ed4a41ec3996b1272))
+
 ## 1.0.0 (2026-09-23)
 
 First public release.
