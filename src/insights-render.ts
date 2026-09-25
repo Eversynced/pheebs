@@ -352,23 +352,6 @@ function renderSignals(signals: Signal[], opts: RenderOptions): string[] {
     lines.push("", ...wrap(`Trend not reported for: ${unusable.join(", ")}`, opts.width));
   }
 
-  const large = signals.filter((s) => s.largeChanges !== undefined);
-  if (large.length > 0) {
-    lines.push("", ...wrap("Large changes only", opts.width));
-    lines.push(
-      ...renderTable(
-        large.map((s) => [
-          s.label,
-          cell(s.largeChanges, s.unit),
-          `(${cell(s.value, s.unit)} overall)`,
-        ]),
-        ["left", "right", "left"],
-        opts,
-        { labelWidth },
-      ),
-    );
-  }
-
   return lines;
 }
 

@@ -89,7 +89,7 @@ Two integration points exist for consumers that need more than stored rows:
   `prompt_intent: "unclassified"`, sends no prompt text on failure, and never
   blocks the hook.
 - **`/insights`**, an optional backend route for a consumer that computes
-  cost, repertoire, or quality sections over the stored events.
+  repertoire or judgement-signal sections over the stored events.
 
 Both are described in [`backend-contract.md`](./backend-contract.md).
 
