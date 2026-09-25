@@ -12,3 +12,9 @@ export const CODEX_DEFINITIONS: readonly HookDefinition[] = [
   { tool: "codex", hookKey: "PostCompact", eventName: EVENTS.CompactionCompleted },
   { tool: "codex", hookKey: "Stop", eventName: EVENTS.TurnEnded },
 ];
+
+/** Codex drops a project-local config layer unless the project is trusted, and skips any handler
+ *  without a matching trusted_hash. Both are the developer's own security call, granted in Codex's
+ *  own TUI, so pheebs writes a project-scoped install that stays inert until they make it. */
+export const CODEX_TRUST_WARNING =
+  "Codex only runs project-local hooks once you trust this project in its TUI, so these hooks stay inert until you do.";

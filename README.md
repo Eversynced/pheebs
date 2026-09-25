@@ -182,7 +182,7 @@ Interactively registers Claude Code hooks (and OpenTelemetry) in `~/.claude/sett
 - **the backend endpoint** — blank by default. Leave it blank and Pheebs stays local-only: events are written to `~/.pheebs/logs/` and nothing leaves your machine. Set it to send events to a backend;
 - **your Pheebs API token** — provisions your developer identity and authenticates telemetry (get one from an admin; you can skip and set it later with `pheebs config set token <token>`).
 
-One `init` applies to all repos, but it configures **Claude Code only** — add `--cursor` / `--codex` for the other tools. Telemetry (both event ingest and OpenTelemetry) only leaves your machine once **both** an endpoint and a token are set.
+One `init` applies to the current repo, but it configures **Claude Code only** — add `--cursor` / `--codex` for the other tools. Use `--global` to register the hooks user-level instead, so they apply to every repo on the machine, personal ones included. Telemetry (both event ingest and OpenTelemetry) only leaves your machine once **both** an endpoint and a token are set.
 
 ### 3. Verify (optional)
 
@@ -190,7 +190,7 @@ One `init` applies to all repos, but it configures **Claude Code only** — add 
 pheebs doctor            # checks Claude Code config
 pheebs doctor --cursor   # checks Cursor config
 pheebs doctor --codex    # checks Codex config
-pheebs doctor --project  # checks project-level config instead of user-level
+pheebs doctor --global   # checks user-level config instead of project-local
 ```
 
 Reports whether all expected hook entries are registered correctly.
@@ -215,15 +215,19 @@ It reads the optional `GET /insights` route, so what you see depends on what you
 computes. A section it cannot produce says so in one line and gives the reason, rather than
 reporting a zero that reads like a measurement.
 
-### Per-repo overrides
+### Scope
 
-If you need project-specific hook config instead of user-level:
+`init` is project-local by default. It writes to `.claude/settings.local.json` in the current directory (gitignored by default), so instrumentation is opt-in per repo and your personal projects stay out of the data.
+
+To instrument every repo on the machine instead:
 
 ```bash
-pheebs init --project
+pheebs init --global
 ```
 
-This writes to `.claude/settings.local.json` in the current directory (gitignored by default).
+That writes `~/.claude/settings.json`. Pick one: Claude Code merges both files, so keeping a user-level and a project-local install side by side fires every hook twice. `init` warns when it finds both. `pheebs uninstall` clears every scope for every tool, so the way back to a single install is `pheebs uninstall` followed by the `init` you want.
+
+**Codex is the exception.** It reads `<cwd>/.codex/config.toml`, but drops the whole project layer until you trust the project in its TUI, and skips any handler without a matching `trusted_hash`. Both are your own security decision about a directory, so pheebs writes neither. A project-local Codex install is inert until you grant that trust, and `init` and `doctor` both say so.
 
 ### Multi-tool setup
 
@@ -346,8 +350,8 @@ Local logs are daily files, one per codebase:
 ## 🧰 CLI reference
 
 ```
-pheebs init [--project] [--cursor|--codex] [--no-otel]
-pheebs doctor [--project] [--cursor|--codex]
+pheebs init [--global] [--cursor|--codex] [--no-otel]
+pheebs doctor [--global] [--cursor|--codex]
 pheebs config <list | get <key> | set <key> <value> | unset <key>>
 pheebs insights [--days <n>] [--json]
 pheebs hook <event_name> [--trigger-type <type>]
@@ -357,8 +361,8 @@ pheebs hook-codex <event_name>
 
 | Command | Description |
 |---|---|
-| `init` | Register hooks (and OTel config), configure the endpoint, and set your token |
-| `init --project` | Write to project-level config instead of user-level |
+| `init` | Register hooks (and OTel config) for the current repo, configure the endpoint, and set your token |
+| `init --global` | Write to user-level config instead of project-local |
 | `init --cursor` | Configure Cursor hooks |
 | `insights` | Render your own report from the backend's `/insights` |
 | `insights --days <n>` | Narrow the window, 1 to 365 (default: whatever the backend uses) |
