@@ -1,6 +1,6 @@
 {
   "name": "pheebs",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Local-first telemetry for AI coding agents. See how Claude Code, Cursor, and Codex are actually used, without capturing code or prompts.",
   "type": "module",
   "bin": {
