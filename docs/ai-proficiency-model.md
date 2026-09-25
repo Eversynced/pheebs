@@ -356,6 +356,9 @@ fit               ████░░░░░░░   23 · 35%
 over-provisioned  ███████░░░░   41 · 62%
 under-powered     ░░░░░░░░░░░    2 ·  3%
 
+Savings opportunity: $125 of $392 list-price spend · 32%
+(API list-price equivalent, estimated upper bound)
+
 Pam verifies more than the team and her iteration skews healthily
 to refinement, with both trends improving. Her open question is on
 the input side: two thirds of her sessions ran above the class the

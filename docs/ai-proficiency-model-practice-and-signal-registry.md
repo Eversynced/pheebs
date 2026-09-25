@@ -309,13 +309,14 @@ classifier response, and the `judgement_signals` section of `/insights`. Their s
 | Wholesale-accept rate | `tool_intent = edit` events, `prompt_intent` and `requests_verification` on the session's prompts, and `lines_changed` on each edit as the weight | Contract-only for the rate. A backend computes detection and the lines-weighted metric, gated behind the classifier gate. Claude Code only. |
 | Model-fit rate | `task_scope` on classified task and repair prompts (contract-specified beside `prompt_intent`); a scope-to-class map maintained by the backend; complete sessions only | Contract-only. This repo captures the facts; a backend computes the verdicts. |
 
-Model-fit is judged only over **complete** sessions, where every task, repair, and unclassified
-prompt carries a known scope, so an incomplete session leaves the denominator rather than
-lowering the recommendation. The scope-to-class map is a backend judgement and never ships in
-the client. The team-level cost rendering of the fit gap, priced from the `cost` section of
-`/insights`, is a rendering of this signal, not a signal of its own; prices never enter the
-model. The full definition is under [How model fit is judged](#how-model-fit-is-judged)
-below.
+Model-fit is judged only over **complete** sessions, where every task and repair prompt carries
+a known scope and no prompt went unclassified because classification was gated or failed, so an
+incomplete session leaves the denominator rather than lowering the recommendation. The
+scope-to-class map is a backend judgement and never ships in the client. The cost rendering of
+the fit gap, in the engineer and team views and priced from `model_fit` in the
+`judgement_signals` section of `/insights`, is a rendering of this signal, not a signal of its
+own; prices never enter the model. The full definition is under
+[How model fit is judged](#how-model-fit-is-judged) below.
 
 The one capture-side piece is prompt classification: the client sends the prompt to the backend
 `/classify-prompt` proxy when the tenant has consented, and stores the returned label. The prompt
@@ -400,9 +401,11 @@ scope.
 
 **A decision per session.** The recommended class is the maximum scope over the session's task
 and repair prompts — the session must handle its hardest prompt. A session gets a decision only
-when it is **complete**: every task, repair, and unclassified prompt carries a known scope.
-Incomplete sessions leave the denominator, the same way *Insufficient data* leaves the Layer 1
-coverage denominator: a measurement gap is never reported as a behaviour.
+when it is **complete**: every task and repair prompt carries a known scope, and no prompt
+went unclassified because classification was gated or failed. A prompt the classifier read and
+placed in no class carries `n/a` like any other non-task intent; a gated or failed one carries
+no scope at all, and could have hidden the session's hardest task. Incomplete sessions leave
+the denominator, the same way *Insufficient data* leaves the Layer 1 coverage denominator: a measurement gap is never reported as a behaviour.
 
 **A class map.** Scope maps to model class through a table the backend maintains — a
 published, versioned judgement, kept out of the client. One example map:
