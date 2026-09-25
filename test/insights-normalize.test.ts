@@ -42,8 +42,15 @@ function firstSignal(payload: unknown) {
   return body?.kind === "signals" ? body.data[0] : undefined;
 }
 
+// Pricing hangs off `model_fit` rather than standing as its own section, so a payload that used
+// to carry a `cost` section carries it here. `enabled` became `available`: the section it sits in
+// can be on while pricing is off.
+const priced = (block: unknown) => ({
+  judgement_signals: { enabled: true, model_fit: { priced: block } },
+});
+
 function costOf(payload: unknown) {
-  const body = normalize(payload).sections[0]?.body;
+  const body = normalize(payload).sections.find((s) => s.body.kind === "cost")?.body;
   return body?.kind === "cost" ? body.data : undefined;
 }
 
@@ -56,13 +63,13 @@ describe("normalize — is total", () => {
     ["a null sections map", { sections: null }],
     ["sections as an array", { sections: [1, 2] }],
     ["a null section", { sections: { repertoire: null } }],
-    ["a string section", { sections: { cost: "nope" } }],
+    ["a string section", { sections: { judgement_signals: "nope" } }],
     ["a null signal", signal({ value: null })],
     ["competencies as a string", repertoire({ competencies: "abc" })],
     ["null inside competencies", repertoire({ competencies: [null] })],
     ["a sparse competencies array", repertoire({ competencies: withHole() })],
-    ["savings as a string", { sections: { cost: { enabled: true, savings: "x" } } }],
-    ["null inside savings", { sections: { cost: { enabled: true, savings: [null] } } }],
+    ["savings as a string", { sections: priced({ available: true, savings: "x" }) }],
+    ["null inside savings", { sections: priced({ available: true, savings: [null] }) }],
     ["an inherited state", repertoire({ competencies: [{ name: "X", state: "constructor" }] })],
     ["an inherited reason", { sections: { repertoire: { enabled: false, reason: "__proto__" } } }],
   ];
@@ -232,7 +239,7 @@ describe("normalize — numbers the schema bounds", () => {
 describe("normalize — the cost basis", () => {
   const withBasis = (basis: unknown) => ({
     days: 30,
-    sections: { cost: { enabled: true, basis, savings: [{ model: "m", usd: 1, sessions: 1 }] } },
+    sections: priced({ available: true, basis, savings: [{ model: "m", usd: 1, sessions: 1 }] }),
   });
 
   it("keeps a real basis", () => {
@@ -265,16 +272,60 @@ describe("normalize — what the map contained", () => {
   });
 
   it("treats a section that never says it is on as off", () => {
-    const body = normalize({ sections: { cost: { reason: "no_consent" } } }).sections[0].body;
+    const body = normalize({ sections: { repertoire: { reason: "no_consent" } } }).sections[0].body;
     expect(body.kind).toBe("unavailable");
     if (body.kind === "unavailable") expect(body.reason).toBe("no_consent");
   });
 
   it("resolves only the reasons the contract defines", () => {
     for (const reason of ["__proto__", "constructor", "", "moon_phase", 42]) {
-      const body = normalize({ sections: { cost: { enabled: false, reason } } }).sections[0].body;
+      const body = normalize({ sections: { repertoire: { enabled: false, reason } } }).sections[0]
+        .body;
       if (body.kind === "unavailable") expect(body.reason).toBeUndefined();
     }
+  });
+});
+
+describe("normalize — pricing hangs off model_fit", () => {
+  it("reads it from inside judgement_signals rather than a section of its own", () => {
+    const payload = { sections: priced({ available: true, effort_suggestions: 6 }) };
+    expect(normalize(payload).sections.map((s) => s.label)).toEqual(["Judgement signals", "Cost"]);
+    expect(costOf(payload)?.effort).toBe(6);
+  });
+
+  it("shows no block at all when the backend prices nothing and says nothing", () => {
+    const report = normalize({
+      sections: { judgement_signals: { enabled: true, model_fit: { value: 0.35, unit: "share" } } },
+    });
+    expect(report.sections.map((s) => s.label)).toEqual(["Judgement signals"]);
+  });
+
+  it("carries its own availability, so the section can be on while pricing is off", () => {
+    const body = normalize({ sections: priced({ available: false, reason: "not_implemented" }) })
+      .sections[1].body;
+    expect(body.kind).toBe("unavailable");
+    if (body.kind === "unavailable") expect(body.reason).toBe("not_implemented");
+  });
+
+  it("stays behind the section gate, whatever model_fit carries", () => {
+    const report = normalize({
+      sections: {
+        judgement_signals: {
+          enabled: false,
+          reason: "no_consent",
+          model_fit: { priced: { available: true, effort_suggestions: 6 } },
+        },
+      },
+    });
+    expect(report.sections.map((s) => s.label)).toEqual(["Judgement signals"]);
+  });
+
+  // The key is gone from the contract, so a backend still serving it is one this client does not
+  // render — which is the open-map rule doing its job rather than a failure.
+  it("counts a backend still sending the old cost section as one it does not render", () => {
+    const report = normalize({ sections: { cost: { enabled: true, effort_suggestions: 6 } } });
+    expect(report.sections).toHaveLength(0);
+    expect(report.unrecognized).toBe(1);
   });
 });
 

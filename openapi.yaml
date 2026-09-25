@@ -191,12 +191,13 @@ paths:
         whatever arrives and says why for whatever does not.
 
         The response is a map of named sections rather than one report, because they are gated
-        differently and because the set will grow. The three defined today follow the AI
+        differently and because the set will grow. The two defined today follow the AI
         Proficiency Model: `repertoire` is Layer 1, which practices the engineer uses;
         `judgement_signals` is Layer 2, what happens to AI output before it ships and whether the
-        model behind it was the one the work called for; `cost` is that last signal priced, not a
-        dimension of its own. A section added later is additive, and a consumer that ignores
-        sections it does not recognize keeps working across every future version.
+        model behind it was the one the work called for. Pricing is not a third: it hangs off
+        `model_fit` as `priced`, because it renders that signal rather than standing beside it. A
+        section added later is additive, and a consumer that ignores sections it does not
+        recognize keeps working across every future version.
 
         **The caller's own data, never anyone else's.** Identity comes from the token, as on
         `/validate-token`. No peer comparison and no leaderboard: the company's lens is the
@@ -575,12 +576,11 @@ components:
             present with `enabled: false`, which is "this backend produces it, but not for you
             right now" and says why in `reason`.
 
-            `cost`, `repertoire` and `judgement_signals` are defined below, and they follow the
-            AI Proficiency Model's own division: Layer 1 is the harness repertoire, Layer 2 is the
-            judgement signals, and `cost` prices one of those signals rather than standing beside
-            them. A backend may answer `{}` and stay conformant.
+            `repertoire` and `judgement_signals` are defined below, and they follow the AI
+            Proficiency Model's own division: Layer 1 is the harness repertoire and Layer 2 is
+            the judgement signals. Pricing is not a section of its own: it hangs off `model_fit`
+            as `priced`. A backend may answer `{}` and stay conformant.
           properties:
-            cost: { $ref: "#/components/schemas/CostInsights" }
             judgement_signals: { $ref: "#/components/schemas/JudgementSignalsInsights" }
             repertoire: { $ref: "#/components/schemas/RepertoireInsights" }
           additionalProperties: { $ref: "#/components/schemas/InsightsSection" }
@@ -589,10 +589,10 @@ components:
       type: object
       description: |
         What every section shares. A section carries its own availability, because they are
-        gated differently: `repertoire` needs only a valid token, `judgement_signals` needs
-        classifier labels for four of its five and undercounts the fifth without them, and `cost`
-        needs the tenant's prompt-collection consent. One flag over the whole report would hide
-        views the caller is entitled to.
+        gated differently: `repertoire` needs only a valid token, while `judgement_signals`
+        needs classifier labels for four of its five, which in turn need the tenant's
+        prompt-collection consent. Only `verification_coverage` survives without either, and it
+        undercounts. One flag over the whole report would hide views the caller is entitled to.
       required: [enabled]
       additionalProperties: true
       properties:
@@ -614,101 +614,118 @@ components:
       const: API list-price equivalent, estimated upper bound
       description: |
         Carried in the payload rather than left to the reader, and it must be rendered next to
-        every figure in the cost section. Both halves are load-bearing. *List-price equivalent*:
+        every figure in `priced`. Both halves are load-bearing. *List-price equivalent*:
         on a seat-based plan the real saving is zero. *Estimated upper bound*: the cheaper model
         was never run, so its token count is unknowable, and a weaker model that needs more turns
         can cost more than the estimate says it saves.
 
-    CostInsights:
+    ModelFitPriced:
+      type: object
       description: |
-        `model_fit` priced: the same sessions in dollars, at API list price. A rendering of one
-        judgement signal rather than a dimension beside it, so a backend that cannot price still
-        reports the fit rate in `judgement_signals`, and only the over-provisioned share of it
-        reaches a figure here. Gated on the tenant's prompt-collection consent, because every
-        figure here descends from reading prompts.
+        `model_fit` in dollars, at API list price, over the same sessions the signal counts. A
+        rendering of that signal rather than a dimension beside it, which is why it hangs here
+        instead of standing as its own section: a backend that cannot price anything still
+        reports the fit rate above it, and only the over-provisioned share of it reaches a
+        figure.
 
         **Needs the most of an implementer**: per-session token counts from the agent's own
-        telemetry, a price table, and a scope label per prompt. It is the section most likely to
-        stay `not_implemented` on a self-hosted backend, and that is a conformant answer.
-      allOf:
-        - $ref: "#/components/schemas/InsightsSection"
-        - type: object
+        telemetry and a price table, on top of the scope labels `model_fit` already needs. It is
+        the part most likely to stay unavailable on a self-hosted backend, and that is a
+        conformant answer.
+      required: [available]
+      additionalProperties: true
+      properties:
+        available:
+          type: boolean
+          description: |
+            Its own flag rather than the section-level `enabled`, because the section it sits in
+            can be on while this is off: the fit rate is the measurement and this is one way of
+            drawing it. There is no consent gate here, because there is nothing left to gate.
+            `model_fit` already needs a scope label per prompt, so a tenant without
+            `prompt_collection` has no fit rate for this to price.
+        reason:
+          type: string
+          enum: [not_implemented, insufficient_data]
+          description: |
+            Why pricing is off, present only when `available` is false. `not_implemented` is the
+            honest answer from a backend that computes the rate and prices nothing.
+            `insufficient_data` covers a developer whose sessions carry no token telemetry at
+            all, which today means any harness other than Claude Code. Neither may be rendered
+            as a zero: "we cannot see this" is a different fact from "you saved nothing".
+        basis: { $ref: "#/components/schemas/CostBasis" }
+        sessions_by_recommended_class:
+          type: array
+          description: |
+            Complete sessions only. A session gets a verdict only when every prompt in it
+            that should carry a scope does; otherwise one dropped label silently lowers the
+            whole session.
+          items:
+            type: object
+            required: [class, sessions]
+            properties:
+              class:
+                type: string
+                description: |
+                  The cheapest class that handles the largest scope seen in the session.
+                  Class names are the backend's own, since the tier map is a consumer table.
+                examples: [small, medium, large, frontier]
+              sessions: { type: integer }
+        savings:
+          type: array
+          description: |
+            One row per model of a lower class than the one actually run, per `basis` above.
+            `usd` is not guaranteed positive: cache-read pricing does not scale with the
+            tier, so on a cache-heavy session a cheaper model can cost more. Whether such a
+            row is shown as a negative saving or suppressed is not fixed by this contract.
+          items:
+            type: object
+            required: [model, usd, sessions]
+            properties:
+              model: { type: string, examples: ["claude-sonnet-5"] }
+              usd: { type: number }
+              sessions:
+                type: integer
+                description: |
+                  How many sessions the figure is summed over. Zero sessions means a zero
+                  figure: a total summed over nothing cannot be negative.
+        effort_suggestions:
+          type: integer
+          description: |
+            Sessions that ran at a high effort level while their work did not call for it. A
+            count and no dollar figure, because the same model at lower effort is a real
+            lever but not a priced one.
+        scope_distribution:
+          type: array
+          description: |
+            What kind of work the developer brings, which is an insight in itself: a
+            developer whose prompts are mostly `open_ended` may be under-specifying rather
+            than over-modelling.
+          items:
+            type: object
+            required: [scope, prompts]
+            properties:
+              scope: { $ref: "#/components/schemas/TaskScope" }
+              prompts: { type: integer }
+        cache:
+          type: object
+          description: Cache behavior, which moves cost more than model choice on long sessions.
           properties:
-            basis: { $ref: "#/components/schemas/CostBasis" }
-            sessions_by_recommended_class:
-              type: array
-              description: |
-                Complete sessions only. A session gets a verdict only when every prompt in it
-                that should carry a scope does; otherwise one dropped label silently lowers the
-                whole session.
-              items:
-                type: object
-                required: [class, sessions]
-                properties:
-                  class:
-                    type: string
-                    description: |
-                      The cheapest class that handles the largest scope seen in the session.
-                      Class names are the backend's own, since the tier map is a consumer table.
-                    examples: [small, medium, large, frontier]
-                  sessions: { type: integer }
-            savings:
-              type: array
-              description: |
-                One row per model of a lower class than the one actually run, per `basis` above.
-                `usd` is not guaranteed positive: cache-read pricing does not scale with the
-                tier, so on a cache-heavy session a cheaper model can cost more. Whether such a
-                row is shown as a negative saving or suppressed is not fixed by this contract.
-              items:
-                type: object
-                required: [model, usd, sessions]
-                properties:
-                  model: { type: string, examples: ["claude-sonnet-5"] }
-                  usd: { type: number }
-                  sessions:
-                    type: integer
-                    description: |
-                      How many sessions the figure is summed over. Zero sessions means a zero
-                      figure: a total summed over nothing cannot be negative.
-            effort_suggestions:
-              type: integer
-              description: |
-                Sessions that ran at a high effort level while their work did not call for it. A
-                count and no dollar figure, because the same model at lower effort is a real
-                lever but not a priced one.
-            scope_distribution:
-              type: array
-              description: |
-                What kind of work the developer brings, which is an insight in itself: a
-                developer whose prompts are mostly `open_ended` may be under-specifying rather
-                than over-modelling.
-              items:
-                type: object
-                required: [scope, prompts]
-                properties:
-                  scope: { $ref: "#/components/schemas/TaskScope" }
-                  prompts: { type: integer }
-            cache:
-              type: object
-              description: Cache behavior, which moves cost more than model choice on long sessions.
-              properties:
-                hit_share: { type: number, minimum: 0, maximum: 1 }
-                unreused_write_share:
-                  type: number
-                  minimum: 0
-                  maximum: 1
-                  description: Cache writes that were never read back, which is pure cost.
-                share_of_cost: { type: number, minimum: 0, maximum: 1 }
-          # An enabled cost section must carry its basis. The label is the part that keeps a
-          # list-price comparison from reading as money saved, so it is required, not advised.
-          if:
-            properties:
-              enabled: { const: true }
-          then:
-            required: [basis]
-            properties:
-              basis: { $ref: "#/components/schemas/CostBasis" }
-
+            hit_share: { type: number, minimum: 0, maximum: 1 }
+            unreused_write_share:
+              type: number
+              minimum: 0
+              maximum: 1
+              description: Cache writes that were never read back, which is pure cost.
+            share_of_cost: { type: number, minimum: 0, maximum: 1 }
+      # Available pricing must carry its basis. The label is the part that keeps a list-price
+      # comparison from reading as money saved, so it is required, not advised.
+      if:
+        properties:
+          available: { const: true }
+      then:
+        required: [basis]
+        properties:
+          basis: { $ref: "#/components/schemas/CostBasis" }
     RepertoireInsights:
       description: |
         Layer 1 of the AI Proficiency Model: which practices this engineer actually uses. Gated on
@@ -786,9 +803,10 @@ components:
         a classifier undercounts this signal rather than producing the same number by another
         route.
 
-        **Needs a prompt classifier**, for everything except `verification_coverage`. A backend
-        without one still answers this section honestly with that single signal, which is a real
-        report rather than a degraded one.
+        **Needs a prompt classifier**, for everything except `verification_coverage`, and so the
+        tenant's prompt-collection consent with it. A backend without either still answers this
+        section honestly with that single signal, which is a real report rather than a degraded
+        one.
       allOf:
         - $ref: "#/components/schemas/InsightsSection"
         - type: object
@@ -876,7 +894,7 @@ components:
 
         **A miss in either direction is a miss.** Over-provisioned and under-powered are both
         reported and neither is the worse one. A signal that counted only over-provisioning would
-        be a savings argument wearing a rate's clothes, and the savings argument is `cost`.
+        be a savings argument wearing a rate's clothes, and the savings argument is `priced`.
       allOf:
         - $ref: "#/components/schemas/JudgementSignal"
         - type: object
@@ -896,9 +914,12 @@ components:
                 fit: { type: integer }
                 over_provisioned:
                   type: integer
-                  description: Ran above the class the work called for. The only part `cost` prices.
+                  description: |
+                    Ran above the class the work called for, and the only part `priced` puts a
+                    figure on.
                 under_powered:
                   type: integer
                   description: |
                     Ran below it, and never carries a dollar figure. The stronger model is the arm
                     nobody ran, so there is no token count to price it against.
+            priced: { $ref: "#/components/schemas/ModelFitPriced" }

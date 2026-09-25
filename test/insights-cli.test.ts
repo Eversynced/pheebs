@@ -95,7 +95,6 @@ describe("pheebs insights — against the example backend", () => {
     expect(status).toBe(0);
     expect(stdout).toContain("Repertoire: this backend does not produce it");
     expect(stdout).toContain("Judgement signals: this backend does not produce it");
-    expect(stdout).toContain("Cost: this backend does not produce it");
   });
 
   it("reports nothing as a zero when nothing was computed", () => {
@@ -114,7 +113,7 @@ describe("pheebs insights — against the example backend", () => {
     });
     const body = await res.text();
     expect(stdout.trimEnd()).toBe(body.trimEnd());
-    expect(JSON.parse(stdout).sections.cost.reason).toBe("not_implemented");
+    expect(JSON.parse(stdout).sections.judgement_signals.reason).toBe("not_implemented");
   });
 
   it("passes --days through and reports the window the backend applied", () => {

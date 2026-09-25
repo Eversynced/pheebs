@@ -86,13 +86,16 @@ const SIGNALS: [string, string][] = [
   ["wholesale_accept", "Wholesale-accept rate"],
 ];
 
-const SECTIONS = ["repertoire", "judgement_signals", "cost"];
+const SECTIONS = ["repertoire", "judgement_signals"];
 
 const LABELS: Record<string, string> = {
   repertoire: "Repertoire",
   judgement_signals: "Judgement signals",
-  cost: "Cost",
 };
+
+// Pricing arrives inside `judgement_signals`, on the signal it renders, but it keeps its own
+// block in the report: a dollar figure printed among the rates reads as one of them.
+const PRICED_LABEL = "Cost";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -284,11 +287,26 @@ function bodyOf(name: string, section: Record<string, unknown>): { body: Body; d
     const { data, dropped } = repertoireOf(section);
     return { body: { kind: "repertoire", data }, dropped };
   }
-  if (name === "judgement_signals") {
-    return { body: { kind: "signals", data: signalsOf(section) }, dropped: 0 };
+  return { body: { kind: "signals", data: signalsOf(section) }, dropped: 0 };
+}
+
+/**
+ * `model_fit.priced` as its own block. It carries `available` rather than the section-level
+ * `enabled`, because the section it sits in can be on while pricing is off, and an absent
+ * `priced` is a backend that does not price at all rather than one withholding a figure.
+ */
+function pricedSection(raw: unknown): Section | undefined {
+  if (!isRecord(raw) || raw.enabled !== true) return undefined;
+  const fit = isRecord(raw.model_fit) ? raw.model_fit : undefined;
+  const priced = fit === undefined ? undefined : fit.priced;
+  if (!isRecord(priced)) return undefined;
+
+  if (priced.available !== true) {
+    const body: Body = { kind: "unavailable", reason: reasonOf(priced.reason) };
+    return { label: PRICED_LABEL, body, dropped: 0 };
   }
-  const { data, dropped } = costOf(section);
-  return { body: { kind: "cost", data }, dropped };
+  const { data, dropped } = costOf(priced);
+  return { label: PRICED_LABEL, body: { kind: "cost", data }, dropped };
 }
 
 /** Total over any input: whatever arrives, a `Report` comes back. */
@@ -303,6 +321,9 @@ export function normalize(payload: unknown): Report {
     const { body, dropped } = bodyOf(name, section);
     return [{ label: LABELS[name], body, dropped }];
   });
+
+  const priced = pricedSection(map.judgement_signals);
+  if (priced !== undefined) sections.push(priced);
 
   const recognized = SECTIONS.filter((name) => isRecord(map[name])).length;
 

