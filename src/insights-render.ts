@@ -63,6 +63,12 @@ function cell(value: number | undefined, unit: string): string {
   return value === undefined ? "-" : formatValue(value, unit);
 }
 
+// A count no real window reaches is a backend fault, not a figure. Past the ceiling `String()`
+// goes exponential, the same failure formatUsd guards below.
+function formatCount(n: number): string {
+  return n >= 1e12 ? "-" : String(n);
+}
+
 function formatUsd(usd: number): string {
   // toFixed goes exponential past 1e21, which is not a dollar figure any reader can use.
   if (Math.abs(usd) >= 1e15) return "-";
@@ -353,19 +359,23 @@ function renderSignals(signals: Signal[], fit: Fit | undefined, opts: RenderOpti
   }
 
   if (fit !== undefined) {
-    const heading =
-      fit.sessions === undefined
-        ? "Model fit, split"
-        : `Model fit, split: ${fit.sessions} complete session${fit.sessions === 1 ? "" : "s"}`;
+    // The denominator is only claimed when the three counts actually sum to it. A heading that
+    // asserts "66 complete sessions" over counts totalling 2,700 is a number a reader would
+    // believe, and renderRepertoire already refuses an impossible coverage ratio for this reason.
+    const total = fit.fit + fit.overProvisioned + fit.underPowered;
+    const claims = fit.sessions !== undefined && fit.sessions === total;
+    const heading = claims
+      ? `Model fit, split: ${fit.sessions} complete session${fit.sessions === 1 ? "" : "s"}`
+      : "Model fit, split";
     lines.push("", ...wrap(heading, opts.width));
-    // Both directions on one line and neither emphasised. Drawing over-provisioned alone, or
-    // first and larger, would turn a rate into the savings pitch this signal is not.
+    // One table, in contract order, with neither direction emphasised. Drawing over-provisioned
+    // alone, or first and larger, would turn a rate into the savings pitch this signal is not.
     lines.push(
       ...renderTable(
         [
-          ["Fit", String(fit.fit)],
-          ["Over-provisioned", String(fit.overProvisioned)],
-          ["Under-powered", String(fit.underPowered)],
+          ["Fit", formatCount(fit.fit)],
+          ["Over-provisioned", formatCount(fit.overProvisioned)],
+          ["Under-powered", formatCount(fit.underPowered)],
         ],
         ["left", "right"],
         opts,

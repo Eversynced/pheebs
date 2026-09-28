@@ -399,13 +399,21 @@ describe("normalize — the model-fit split", () => {
     expect(fitOf(withSplit({ split: { over_provisioned: 19, under_powered: 6 } }))).toBeUndefined();
   });
 
+  it("drops a split whose directions are not whole counts", () => {
+    // The all-three-or-none rule rests on these being rejected, not merely on the keys existing.
+    for (const bad of [{ fit: "41" }, { fit: -1 }, { fit: 4.5 }, { fit: null }, { fit: true }]) {
+      const split = { over_provisioned: 19, under_powered: 6, ...bad };
+      expect(fitOf(withSplit({ split }))).toBeUndefined();
+    }
+  });
+
   it("keeps the split when the denominator is absent", () => {
     const fit = fitOf(withSplit({ split: { fit: 1, over_provisioned: 0, under_powered: 0 } }));
     expect(fit?.sessions).toBeUndefined();
     expect(fit?.fit).toBe(1);
   });
 
-  it("renders the fit rate as a signal beside the other four", () => {
+  it("lists the fit rate among the signals", () => {
     const report = normalize({
       days: 30,
       sections: {

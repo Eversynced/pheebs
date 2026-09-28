@@ -906,4 +906,21 @@ describe("renderInsights — the model-fit split", () => {
   it("says nothing about the split when the backend sends none", () => {
     expect(draw({ value: 0.62, unit: "share" })).not.toContain("Model fit, split");
   });
+
+  it("drops the denominator when the counts do not sum to it", async () => {
+    // Asserting "66 complete sessions" over counts totalling 2,700 would be a number the reader
+    // believes. The split still prints; only the claim about its total goes.
+    const out = draw({
+      sessions: 66,
+      split: { fit: 900, over_provisioned: 900, under_powered: 900 },
+    });
+    expect(out).toContain("Model fit, split");
+    expect(out).not.toContain("66 complete sessions");
+    expect(out).toMatch(/Fit\s+900/);
+  });
+
+  it("refuses a count no real window reaches rather than printing exponential notation", async () => {
+    const out = draw({ sessions: 3, split: { fit: 1e20, over_provisioned: 2, under_powered: 1 } });
+    expect(out).not.toContain("e+");
+  });
 });
