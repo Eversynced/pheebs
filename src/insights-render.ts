@@ -8,7 +8,7 @@
 
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
-import type { Cost, Repertoire, Report, Section, Signal } from "./insights-normalize.js";
+import type { Cost, Fit, Repertoire, Report, Section, Signal } from "./insights-normalize.js";
 
 export interface RenderOptions {
   width: number;
@@ -288,7 +288,7 @@ function renderRepertoire(data: Repertoire, opts: RenderOptions): string[] {
   return lines;
 }
 
-function renderSignals(signals: Signal[], opts: RenderOptions): string[] {
+function renderSignals(signals: Signal[], fit: Fit | undefined, opts: RenderOptions): string[] {
   if (signals.length === 0) return wrap("This backend produced no signals.", opts.width);
 
   // One label width across all three blocks, as the model doc draws them, so the eye can run down
@@ -350,6 +350,27 @@ function renderSignals(signals: Signal[], opts: RenderOptions): string[] {
   }
   if (unusable.length > 0) {
     lines.push("", ...wrap(`Trend not reported for: ${unusable.join(", ")}`, opts.width));
+  }
+
+  if (fit !== undefined) {
+    const heading =
+      fit.sessions === undefined
+        ? "Model fit, split"
+        : `Model fit, split: ${fit.sessions} complete session${fit.sessions === 1 ? "" : "s"}`;
+    lines.push("", ...wrap(heading, opts.width));
+    // Both directions on one line and neither emphasised. Drawing over-provisioned alone, or
+    // first and larger, would turn a rate into the savings pitch this signal is not.
+    lines.push(
+      ...renderTable(
+        [
+          ["Fit", String(fit.fit)],
+          ["Over-provisioned", String(fit.overProvisioned)],
+          ["Under-powered", String(fit.underPowered)],
+        ],
+        ["left", "right"],
+        opts,
+      ),
+    );
   }
 
   return lines;
@@ -439,7 +460,7 @@ function renderSection(section: Section, opts: RenderOptions): string[] {
     body.kind === "repertoire"
       ? renderRepertoire(body.data, opts)
       : body.kind === "signals"
-        ? renderSignals(body.data, opts)
+        ? renderSignals(body.data, body.fit, opts)
         : renderCost(body.data, opts);
 
   const out = [...wrap(section.label, opts.width), "", ...lines];

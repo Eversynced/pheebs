@@ -879,3 +879,31 @@ describe("renderInsights — sections are named", () => {
     ]);
   });
 });
+
+describe("renderInsights — the model-fit split", () => {
+  const draw = (model_fit: Record<string, unknown>) =>
+    render({ days: 30, sections: { judgement_signals: { enabled: true, model_fit } } }, WIDE).join(
+      "\n",
+    );
+
+  it("names the denominator the rate is out of", () => {
+    const out = draw({
+      value: 0.62,
+      unit: "share",
+      sessions: 66,
+      split: { fit: 41, over_provisioned: 19, under_powered: 6 },
+    });
+    expect(out).toContain("Model fit, split: 66 complete sessions");
+  });
+
+  it("draws both directions of miss, neither one emphasised", () => {
+    const out = draw({ sessions: 66, split: { fit: 41, over_provisioned: 19, under_powered: 6 } });
+    expect(out).toMatch(/Fit\s+41/);
+    expect(out).toMatch(/Over-provisioned\s+19/);
+    expect(out).toMatch(/Under-powered\s+6/);
+  });
+
+  it("says nothing about the split when the backend sends none", () => {
+    expect(draw({ value: 0.62, unit: "share" })).not.toContain("Model fit, split");
+  });
+});

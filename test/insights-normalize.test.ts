@@ -370,3 +370,53 @@ describe("escapeControlChars", () => {
     expect(parses(out)).toBe(parses(body));
   });
 });
+
+describe("normalize — the model-fit split", () => {
+  const withSplit = (model_fit: Record<string, unknown>) =>
+    normalize({ days: 30, sections: { judgement_signals: { enabled: true, model_fit } } });
+
+  const fitOf = (payload: ReturnType<typeof normalize>) => {
+    const body = payload.sections[0]?.body;
+    return body?.kind === "signals" ? body.fit : undefined;
+  };
+
+  it("carries all three directions and the denominator", () => {
+    const fit = fitOf(
+      withSplit({
+        value: 0.62,
+        unit: "share",
+        sessions: 66,
+        split: { fit: 41, over_provisioned: 19, under_powered: 6 },
+      }),
+    );
+    expect(fit).toEqual({ sessions: 66, fit: 41, overProvisioned: 19, underPowered: 6 });
+  });
+
+  it("drops a split missing a direction rather than printing half of one", () => {
+    // Half a split rendered as a whole one would show over-provisioning as the only way to miss,
+    // which is the reading the both-directions rule exists to prevent.
+    expect(fitOf(withSplit({ split: { fit: 41, over_provisioned: 19 } }))).toBeUndefined();
+    expect(fitOf(withSplit({ split: { over_provisioned: 19, under_powered: 6 } }))).toBeUndefined();
+  });
+
+  it("keeps the split when the denominator is absent", () => {
+    const fit = fitOf(withSplit({ split: { fit: 1, over_provisioned: 0, under_powered: 0 } }));
+    expect(fit?.sessions).toBeUndefined();
+    expect(fit?.fit).toBe(1);
+  });
+
+  it("renders the fit rate as a signal beside the other four", () => {
+    const report = normalize({
+      days: 30,
+      sections: {
+        judgement_signals: {
+          enabled: true,
+          model_fit: { value: 0.62, unit: "share", team_median: 0.55 },
+        },
+      },
+    });
+    const body = report.sections[0]?.body;
+    const labels = body?.kind === "signals" ? body.data.map((s) => s.label) : [];
+    expect(labels).toContain("Model-fit rate");
+  });
+});
