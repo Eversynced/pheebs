@@ -215,7 +215,9 @@ reporting a zero that reads like a measurement.
 
 ### Scope
 
-`init` is project-local by default. It writes to `.claude/settings.local.json` in the current directory (gitignored by default), so instrumentation is opt-in per repo and your personal projects stay out of the data.
+`init` is project-local by default. It writes to `.claude/settings.local.json` in the current directory, so instrumentation is opt-in per repo and your personal projects stay out of the data.
+
+When OpenTelemetry is on, that file carries your token, so `init` adds it to the repo's `.git/info/exclude` (local and uncommitted, unlike `.gitignore`) and tells you, having checked with git that the entry took. Outside a repo it says nothing, since there is nothing to commit the token into. It warns instead when git would still commit the file: most often because the file is already tracked, which no ignore rule undoes. The same applies to `.codex/config.toml` on a project-scoped Codex install.
 
 To instrument every repo on the machine instead:
 
@@ -223,7 +225,11 @@ To instrument every repo on the machine instead:
 pheebs init --global
 ```
 
-That writes `~/.claude/settings.json`. Pick one: Claude Code merges both files, so keeping a user-level and a project-local install side by side fires every hook twice. `init` warns when it finds both. `pheebs uninstall` clears every scope for every tool, so the way back to a single install is `pheebs uninstall` followed by the `init` you want.
+That writes `~/.claude/settings.json`. Pick one: Claude Code merges both files, so keeping a user-level and a project-local install side by side fires every hook twice. `init` warns when it finds both, and `doctor` checks both scopes and fails on a double install.
+
+Because the default scope puts config in a file per repo, `init` records every path it writes in `~/.pheebs/installs.json`, so `pheebs uninstall` and `pheebs config unset base-url` reach every repo rather than only the current one. The file is local, holds nothing but paths pheebs itself wrote, and is never sent anywhere.
+
+So the way back to a single install is `pheebs uninstall` followed by the `init` you want.
 
 **Codex is the exception.** It reads `<cwd>/.codex/config.toml`, but drops the whole project layer until you trust the project in its TUI, and skips any handler without a matching `trusted_hash`. Both are your own security decision about a directory, so pheebs writes neither. A project-local Codex install is inert until you grant that trust, and `init` and `doctor` both say so.
 
@@ -349,7 +355,7 @@ Local logs are daily files, one per codebase:
 
 ```
 pheebs init [--global] [--cursor|--codex] [--no-otel]
-pheebs doctor [--global] [--cursor|--codex]
+pheebs doctor [--global|--project] [--cursor|--codex]
 pheebs config <list | get <key> | set <key> <value> | unset <key>>
 pheebs insights [--days <n>] [--json]
 pheebs hook <event_name> [--trigger-type <type>]
@@ -383,8 +389,12 @@ pheebs hook-codex <event_name>
 - A git repository (for automatic codebase and developer detection)
 - One of: Claude Code, Cursor, or Codex with hooks support
 
-Uninstalling globally runs `pheebs uninstall` for you, through the package's `preuninstall`
-script, so the hook entries Pheebs added are removed from your agent's settings.
+Run `pheebs uninstall` before removing the package. It clears the hook entries and the
+exporter config from every scope and every repo `init` wrote to, using the paths recorded in
+`~/.pheebs/installs.json`.
+
+Do this first: npm 7 and later do not run uninstall scripts, so `npm uninstall -g pheebs`
+removes the binary and leaves every instrumented repo calling a command that is gone.
 
 ## 🤝 Contributing
 

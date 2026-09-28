@@ -15,6 +15,17 @@ export function readJsonFile<T>(path: string): T | undefined {
   }
 }
 
+/**
+ * Narrow an existing file to owner-only. For the agent config files pheebs writes the Bearer
+ * token into: those belong to the agent, not to pheebs, so they are written in the agent's
+ * own format and only their permissions are ours to tighten. Best-effort, and never widens.
+ */
+export function restrictToOwner(path: string): void {
+  try {
+    chmodSync(path, 0o600);
+  } catch {}
+}
+
 /** Write JSON with owner-only (0600) perms, creating the parent dir. */
 export function writeJsonFile(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });

@@ -30,16 +30,32 @@ const PHEEBS_OTEL_KEYS = [
   "OTEL_RESOURCE_ATTRIBUTES",
 ];
 
+/** Whether pheebs OTel config is already present. The resync refreshes or strips what it
+ *  finds; it must never add config to an install that chose `--no-otel`. */
+export function hasClaudeOtel(settings: Record<string, unknown>): boolean {
+  const env = settings.env as Record<string, string> | undefined;
+  return env !== undefined && PHEEBS_OTEL_KEYS.some((key) => key in env);
+}
+
+/** Codex keeps it all under one table, so its presence is the whole answer. */
+export function hasCodexOtel(config: Record<string, unknown>): boolean {
+  return config.otel !== undefined;
+}
+
 /**
  * Mutates a Claude Code settings object's `env` block. When enabled AND both a backend and a
  * token are set, merges the pheebs OTel vars (pointing the exporter at the /otel proxy with a Bearer token);
  * otherwise removes exactly the keys pheebs manages, dropping `env` if it ends up empty.
+ *
+ * Returns whether the config (and with it the token) was written, because `enabled` alone does
+ * not say: a caller that assumes it reports "wrote OTel config" over a file that has none, and
+ * cannot tell whether the token now sits in the repo.
  */
 export function syncClaudeOtelEnv(
   settings: Record<string, unknown>,
   enabled: boolean,
   developerHandle?: string,
-): void {
+): boolean {
   const env = (settings.env as Record<string, string> | undefined) ?? {};
   const stored = readStoredToken();
 
@@ -55,7 +71,7 @@ export function syncClaudeOtelEnv(
       env.OTEL_RESOURCE_ATTRIBUTES = `service.instance.id=${serviceId}`;
     }
     settings.env = env;
-    return;
+    return true;
   }
 
   for (const key of PHEEBS_OTEL_KEYS) {
@@ -67,19 +83,21 @@ export function syncClaudeOtelEnv(
   } else {
     settings.env = env;
   }
+
+  return false;
 }
 
 /**
  * Mutates a Codex config object's `[otel]` table. When enabled AND both a backend and a token
  * are set, writes the pheebs-owned otel config (exporting to the /otel proxy with a Bearer token); otherwise
- * removes it.
+ * removes it. Returns whether it was written, for the reason on `syncClaudeOtelEnv`.
  *
  * Codex supports three OTel exporters: `exporter` (logs), `trace_exporter` (traces), and
  * `metrics_exporter` (metrics, default: statsig). It also gates `metrics_exporter` behind
  * `[analytics] enabled`, which defaults to false under the app-server, so without that flag the
  * configured OTLP metrics endpoint is silently dropped — enable it so metrics actually flow.
  */
-export function syncCodexOtel(config: Record<string, unknown>, enabled: boolean): void {
+export function syncCodexOtel(config: Record<string, unknown>, enabled: boolean): boolean {
   const stored = readStoredToken();
 
   if (!enabled || !hasBackend() || !stored?.token) {
@@ -91,7 +109,7 @@ export function syncCodexOtel(config: Record<string, unknown>, enabled: boolean)
         delete config.analytics;
       }
     }
-    return;
+    return false;
   }
 
   const base = otelBaseUrl();
@@ -111,4 +129,6 @@ export function syncCodexOtel(config: Record<string, unknown>, enabled: boolean)
   const analytics = (config.analytics as Record<string, unknown> | undefined) ?? {};
   analytics.enabled = true;
   config.analytics = analytics;
+
+  return true;
 }

@@ -45,3 +45,10 @@ export function resolveSettingsPath(
 
   return claudePath(project, level);
 }
+
+/** Cursor and Codex keep their config in the same place at both scopes, so with cwd at $HOME
+ *  the two resolve to one file. Callers that contrast the scopes need to know, or they warn
+ *  about a second install that does not exist and offer to remove the file they just wrote. */
+export function scopesCollide(tool: AiTool): boolean {
+  return resolveSettingsPath(tool, true).path === resolveSettingsPath(tool, false).path;
+}
