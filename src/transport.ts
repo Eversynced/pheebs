@@ -7,6 +7,7 @@ export interface ClassifyResult {
   label: string;
   requests_verification?: boolean;
   classifier_version?: string;
+  task_scope?: string;
 }
 
 // The single seam for backend calls — event ingest and prompt classification both ride it.

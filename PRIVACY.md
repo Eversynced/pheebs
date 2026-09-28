@@ -170,8 +170,9 @@ The two failure shapes differ, and the difference is checkable in your own log:
 - **On, but missing an endpoint, a token, or consent** — the event records
   `prompt_intent: "unclassified"`, and still no prompt text is sent.
 
-What is stored is the label — `prompt_intent`, plus optional `requests_verification` and
-`classifier_version`. **The prompt text itself is never written to your log and never stored by
+What is stored is the label — `prompt_intent`, plus optional `requests_verification`,
+`classifier_version` and `task_scope` (how large the backend judged the task, never which model
+should do it). **The prompt text itself is never written to your log and never stored by
 Pheebs.**
 
 Turn it off completely:

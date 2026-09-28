@@ -85,7 +85,12 @@ describe("classifyPrompt — consented", () => {
       new Response(
         JSON.stringify({
           allowed: true,
-          result: { label: "repair", requests_verification: true, classifier_version: "or@cb2" },
+          result: {
+            label: "repair",
+            requests_verification: true,
+            classifier_version: "or@cb3",
+            task_scope: "cross_cutting",
+          },
         }),
       ),
     );
@@ -93,7 +98,8 @@ describe("classifyPrompt — consented", () => {
     expect(result).toEqual({
       prompt_intent: "repair",
       requests_verification: true,
-      classifier_version: "or@cb2",
+      classifier_version: "or@cb3",
+      task_scope: "cross_cutting",
     });
 
     const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -120,5 +126,30 @@ describe("classifyPrompt — consented", () => {
   it("returns unclassified on a network error", async () => {
     stubFetch(new Error("network down"));
     expect(await classifyPrompt("do the thing")).toEqual({ prompt_intent: "unclassified" });
+  });
+
+  it("omits task_scope entirely when the backend does not size tasks", async () => {
+    stubFetch(
+      new Response(
+        JSON.stringify({ allowed: true, result: { label: "task", classifier_version: "or@cb3" } }),
+      ),
+    );
+    const result = await classifyPrompt("build the thing");
+    expect(result).not.toHaveProperty("task_scope");
+  });
+
+  it("copies a task_scope it does not recognise rather than dropping or judging it", async () => {
+    // Same rule the label already follows: the client stores what the backend said. Validating
+    // the set here would make the client a second opinion on a table it does not own.
+    stubFetch(
+      new Response(
+        JSON.stringify({
+          allowed: true,
+          result: { label: "task", classifier_version: "or@cb9", task_scope: "epic" },
+        }),
+      ),
+    );
+    const result = await classifyPrompt("build the thing");
+    expect(result?.task_scope).toBe("epic");
   });
 });

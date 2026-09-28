@@ -7,6 +7,10 @@ export interface ClassifyAttributes {
   prompt_intent: string;
   requests_verification?: boolean;
   classifier_version?: string;
+  // How big the work is, as the backend sized it. Copied, never derived: sizing a task locally
+  // would be the keyword-rules approach that a classifier exists to replace, and the map from a
+  // size to a model class is a consumer's table, not the client's.
+  task_scope?: string;
 }
 
 /**
@@ -38,5 +42,6 @@ export async function classifyPrompt(prompt: string): Promise<ClassifyAttributes
     ...(result.classifier_version !== undefined
       ? { classifier_version: result.classifier_version }
       : {}),
+    ...(result.task_scope !== undefined ? { task_scope: result.task_scope } : {}),
   };
 }

@@ -166,14 +166,20 @@ describe("HttpTransport.classify", () => {
     withToken("pheebs_secret");
     stubFetchBody({
       allowed: true,
-      result: { label: "task", requests_verification: false, classifier_version: "or@cb2" },
+      result: {
+        label: "task",
+        requests_verification: false,
+        classifier_version: "or@cb3",
+        task_scope: "bounded",
+      },
     });
     const result = await new HttpTransport().classify("build the thing");
 
     expect(result).toEqual({
       label: "task",
       requests_verification: false,
-      classifier_version: "or@cb2",
+      classifier_version: "or@cb3",
+      task_scope: "bounded",
     });
     const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(String(url)).toBe("https://api.test/classify-prompt");

@@ -95,7 +95,12 @@ export class HttpTransport implements RemoteTransport {
 
       const data = (await res.json()) as {
         allowed?: boolean;
-        result?: { label?: string; requests_verification?: boolean; classifier_version?: string };
+        result?: {
+          label?: string;
+          requests_verification?: boolean;
+          classifier_version?: string;
+          task_scope?: string;
+        };
       };
       if (!data.allowed || typeof data.result?.label !== "string") return undefined;
 
@@ -103,6 +108,7 @@ export class HttpTransport implements RemoteTransport {
         label: data.result.label,
         requests_verification: data.result.requests_verification,
         classifier_version: data.result.classifier_version,
+        task_scope: data.result.task_scope,
       };
     } catch {
       return undefined;

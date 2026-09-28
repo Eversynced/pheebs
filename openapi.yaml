@@ -539,10 +539,10 @@ components:
               description: |
                 Optional. A backend that does not size tasks omits it, and stays conformant.
 
-                Specified ahead of the client: `transports/http.ts` copies only `label`,
-                `requests_verification` and `classifier_version` today, so a `task_scope` sent now
-                is dropped. It will ride onto the prompt event beside `prompt_intent` when the
-                client ships model insight, and the client will never derive it locally.
+                The client copies it onto the prompt event beside `prompt_intent`, and never
+                derives it locally: sizing a task from the prompt on-machine is the keyword-rule
+                approach a classifier exists to replace, and the map from a size to a model class
+                belongs to the consumer.
 
     TaskScope:
       type: string
