@@ -217,4 +217,15 @@ describe("DebugTransport.classify", () => {
     expect(await new DebugTransport().classify("hi")).toBeUndefined();
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it("drops a task_scope that is not a string, as it does for a bad label", async () => {
+    withToken("pheebs_secret");
+    stubFetchBody({
+      allowed: true,
+      result: { label: "task", classifier_version: "or@cb3", task_scope: 7 },
+    });
+    // Copied unguarded, a number would reach the JSONL row and the ingest body typed as a string.
+    const result = await new HttpTransport().classify("build the thing");
+    expect(result).not.toHaveProperty("task_scope");
+  });
 });

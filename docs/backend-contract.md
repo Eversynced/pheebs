@@ -99,11 +99,11 @@ Optional, and additive: `mechanical`, `bounded`, `cross_cutting`, `open_ended`, 
 the work a prompt asks for, and only task-shaped and repair-shaped prompts are sized. A backend
 that does not size tasks omits the field and stays conformant.
 
-**No released client reads it yet.** `classify()` copies `label`, `requests_verification` and
-`classifier_version` and drops the rest, so a `task_scope` returned today goes nowhere. It is
-specified now because adding it later would be a contract change for everyone who had already
-built against this one. When the client does forward it, it will sit on
-the prompt event beside `prompt_intent`, and the client will never derive it locally.
+**The client forwards it onto the prompt event**, beside `prompt_intent`, and never derives it
+locally: sizing a task from the prompt on-machine is the keyword-rule approach a classifier exists
+to replace. A value off the enum is copied through rather than dropped or corrected, the same rule
+`prompt_intent` follows — the client is not a second opinion on a table it does not own. Absent
+whenever the classifier degraded, so absence is not `n/a`.
 
 It describes work, not models. Naming a tier here (`use_haiku`) would bake a mapping that changes
 with every model release into the label on the prompt, where it cannot be revised. Which model is

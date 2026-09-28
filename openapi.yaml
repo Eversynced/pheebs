@@ -459,9 +459,8 @@ components:
         task_scope:
           $ref: "#/components/schemas/TaskScope"
           description: |
-            Reserved, and not emitted by any released client. It will sit beside `prompt_intent`
-            once the client forwards it from the classifier. Absent whenever the classifier
-            degraded, so absence is not `n/a`.
+            Sits beside `prompt_intent`, copied from the classifier and never derived on-machine.
+            Absent whenever the classifier degraded, so absence is not `n/a`.
         artifact_type:
           type: string
           description: Emitted on `artifact_found` by the repo scan.
