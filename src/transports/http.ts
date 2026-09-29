@@ -95,7 +95,12 @@ export class HttpTransport implements RemoteTransport {
 
       const data = (await res.json()) as {
         allowed?: boolean;
-        result?: { label?: string; requests_verification?: boolean; classifier_version?: string };
+        result?: {
+          label?: string;
+          requests_verification?: boolean;
+          classifier_version?: string;
+          task_scope?: string;
+        };
       };
       if (!data.allowed || typeof data.result?.label !== "string") return undefined;
 
@@ -103,6 +108,11 @@ export class HttpTransport implements RemoteTransport {
         label: data.result.label,
         requests_verification: data.result.requests_verification,
         classifier_version: data.result.classifier_version,
+        // Guarded like `label` above: a backend sending a number or null would otherwise put
+        // that value, typed as a string, into the JSONL row and the ingest body.
+        ...(typeof data.result.task_scope === "string"
+          ? { task_scope: data.result.task_scope }
+          : {}),
       };
     } catch {
       return undefined;

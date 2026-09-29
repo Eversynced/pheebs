@@ -295,9 +295,9 @@ Repo denominator: every event carries a codebase identifier, the scan runs on ea
 
 Layer 2 is contract-only. This repo captures the facts; a backend computes the signals.
 
-The contract carries the fields the five judgement signals need: `prompt_intent`,
-`classifier_version` and `requests_verification` on a classified prompt, `task_scope` on the
-classifier response, and the `judgement_signals` section of `/insights`. Their shapes are in
+The contract carries the fields the five judgement signals need:
+`prompt_intent`, `classifier_version`, `requests_verification` and `task_scope` on a classified
+prompt, and the `judgement_signals` section of `/insights`. Their shapes are in
 [`openapi.yaml`](../openapi.yaml), with the failure semantics in
 [`backend-contract.md`](./backend-contract.md). Implementing them is the backend's job.
 
@@ -307,7 +307,7 @@ classifier response, and the `judgement_signals` section of `/insights`. Their s
 | Pushback rate | `prompt_intent` on classified prompts | Contract-only. This repo captures the facts; a backend computes the rate. |
 | Refinement-to-repair ratio | `prompt_intent` on classified follow-up prompts | Contract-only. This repo captures the facts; a backend computes the ratio. |
 | Wholesale-accept rate | `tool_intent = edit` events, `prompt_intent` and `requests_verification` on the session's prompts, and `lines_changed` on each edit as the weight | Contract-only for the rate. A backend computes detection and the lines-weighted metric, gated behind the classifier gate. Claude Code only. |
-| Model-fit rate | `task_scope` on classified task and repair prompts (contract-specified beside `prompt_intent`); a scope-to-class map maintained by the backend; complete sessions only | Contract-only. This repo captures the facts; a backend computes the verdicts. |
+| Model-fit rate | `task_scope` on classified task and repair prompts (emitted beside `prompt_intent`); a scope-to-class map maintained by the backend; complete sessions only | Captured. This repo emits the fact; a backend computes the verdict. |
 
 Model-fit is judged only over **complete** sessions, where every task and repair prompt carries
 a known scope and no prompt went unclassified because classification was gated or failed, so an
