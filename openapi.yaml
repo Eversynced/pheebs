@@ -457,10 +457,16 @@ components:
           description: |
             The classifier's label, or `unclassified` on every gated or degraded path.
         task_scope:
-          $ref: "#/components/schemas/TaskScope"
+          type: string
           description: |
             Sits beside `prompt_intent`, copied from the classifier and never derived on-machine.
             Absent whenever the classifier degraded, so absence is not `n/a`.
+
+            A plain string rather than `TaskScope`, and deliberately so. The client stores what the
+            backend said and never validates it, the same rule `prompt_intent` follows, so a
+            backend sizing on a vocabulary of its own produces an event this schema still
+            describes. `TaskScope` stays closed on `ClassifyResponse`, which is where it belongs:
+            it is the spec a backend is held to, not a claim about every row we will ever emit.
         artifact_type:
           type: string
           description: Emitted on `artifact_found` by the repo scan.
