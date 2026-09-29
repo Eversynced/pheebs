@@ -1,8 +1,9 @@
 # Backend contract
 
 Pheebs is backend-agnostic: the client holds a base URL and a per-developer token, nothing else.
-Anything that answers the four required routes is a Pheebs backend. A fifth, `/insights`, is
-optional and is read by `pheebs insights`.
+Anything that answers the four required routes is a Pheebs backend. Two more are optional and
+read by `pheebs insights`: `/insights`, the engineer's own report, and `/insights/team`, the same
+model across a team for a manager.
 
 [`openapi.yaml`](../openapi.yaml) at the repo root is the normative schema, and
 [`examples/backend-node/`](../examples/backend-node/) is a working implementation in ~150 lines
@@ -20,6 +21,7 @@ Read it before implementing, because three of these are easy to get backwards.
 | `POST /classify-prompt` | `Bearer <token>` | Yes, ~2.5s budget |
 | `POST /otel/v1/{traces,metrics,logs}` | `Bearer <token>` | No |
 | `GET /insights` | `Bearer <token>` | Optional, read by `pheebs insights` |
+| `GET /insights/team` | `Bearer <token>`, manager | Optional, read by `pheebs insights --team` |
 
 Every route answers `405` on a wrong method rather than `404`. Most frameworks conflate the two
 unless told otherwise, which leaves a caller unable to tell an unknown path from a wrong verb.
@@ -48,7 +50,13 @@ client-side retry, because there isn't any.
 ## `/validate-token`
 
 Unauthenticated — the token being validated travels in the body. Returns `allowed` plus, when
-allowed, `id`, `developer`, `tenant`, `opt_out`, `prompt_collection`, and on rejection a `reason`.
+allowed, `id`, `developer`, `tenant`, `role`, `opt_out`, `prompt_collection`, and on rejection a
+`reason`.
+
+`role` is `engineer` or `manager`, and it is **display only on every route**. The client caches it
+to decide whether to offer `pheebs insights --team`; `/insights/team` resolves the role from the
+token's own record on every call regardless. Absent means `engineer`, so a backend with no notion
+of roles hands out no team views.
 
 `opt_out` is **advisory in the current client**: it only changes a message printed by
 `pheebs config set token`. It does not suppress ingest, and it does not gate classification —
@@ -282,11 +290,108 @@ only Claude Code emits that telemetry. For a Cursor or Codex developer there is 
 and `available: false` with `insufficient_data` beats a report of zeros, which reads as "you saved
 nothing" rather than "we cannot see this".
 
+## `/insights/team` (optional, manager-only)
+
+`GET /insights/team?days=30` with a manager's token. Same shape as `/insights` with one addition,
+the cohort it answered for:
+
+```json
+{
+  "days": 30,
+  "team": { "kind": "tenant", "engineers": 9, "name": "Dunder Mifflin" },
+  "sections": {
+    "repertoire": {
+      "enabled": true,
+      "adoption_funnel": {
+        "enabled": true,
+        "practices": [{ "name": "Models", "unobserved": 2, "adopted": 2, "recurring": 5 }]
+      },
+      "practice_heatmap": {
+        "enabled": true,
+        "competencies": ["Models", "Artifacts"],
+        "engineers": [
+          { "developer": "michael", "competencies": [
+            { "name": "Models", "state": "recurring" },
+            { "name": "Artifacts", "state": "recurring" }
+          ] }
+        ],
+        "engineers_named": 8,
+        "engineers_withheld": 1
+      },
+      "team_stats": { "enabled": false, "reason": "not_implemented" }
+    },
+    "judgement_signals": {
+      "enabled": true,
+      "signals_by_engineer": {
+        "enabled": true,
+        "signals": [{ "key": "model_fit", "unit": "share" }],
+        "engineers": [{ "developer": "michael", "signals": [{ "key": "model_fit", "value": 0.78 }] }],
+        "median": [{ "key": "model_fit", "value": 0.55 }],
+        "engineers_named": 8,
+        "engineers_withheld": 1
+      },
+      "dollar_savings": { "enabled": false, "reason": "not_implemented" }
+    }
+  }
+}
+```
+
+**Why a separate route rather than a mode on `/insights`.** `/insights` promises the caller's own
+data and nothing else, in this document and in the schema. Two of the seven team views name
+individuals. Adding a mode would have made that promise conditional on a query parameter, and a
+promise with an exception in it is not one a reader can rely on. The naming lives behind its own
+path, its own role check and its own status code instead, so each route says one true thing.
+
+**Manager-only, enforced on the backend, every call.** The role lives on the token's record, and
+the route resolves it the same way it resolves identity. Nothing the developer controls on their
+machine grants it: not the cached `role` from `/validate-token`, not a config key, not a flag. The
+client hiding `--team` from an engineer is a courtesy, and you should assume a client that does not.
+
+A backend that serves this route but has no way to mark a token a manager answers `403` to every
+caller, which is right rather than a gap — no token on it is a manager's. One that does not serve
+team views at all answers `404`, and the client reports an unavailable route. Both beat `401`,
+which sends a manager off to fix a token that is fine.
+
+**Who appears by name.** A developer with `opt_out` set is never a row in `practice_heatmap` or
+`signals_by_engineer`. They still count everywhere that names nobody — the funnel, the team stats,
+and the medians — because dropping them from an aggregate misstates the team without protecting
+anyone. Those two views carry `engineers_named` and `engineers_withheld` so a manager can tell a
+nine-row table over a team of nine from the same table over a team of twelve. `engineers_withheld`
+is a count and never a list; naming who was withheld defeats withholding them.
+
+Note what that means for the median on `signals_by_engineer`: it is computed over the whole cohort,
+not over the rows shown. It answers "is this normal here", and a median over a filtered team
+answers a different question while looking identical.
+
+**Availability is per view, not just per section.** The seven views do not cost the same to build.
+`practice_heatmap` needs the event stream; `signals_by_engineer` needs classifier labels;
+`dollar_savings` needs a price table and per-session token counts on top of those. Each view
+carries its own `enabled` and `reason`, so a backend reports the six it can rather than dropping
+the section. The same three reasons apply, and `insufficient_data` still must never render as a
+zero.
+
+**Parts, not percentages**, as everywhere else here. `adoption_funnel` sends three engineer counts
+per practice, not a recurring share. `team_stats` sends counts against stated denominators —
+`team.engineers` for the reuse stats, its own `repos` for the repo stats. `wholesale_watch` sends
+unchallenged over total for this window and the one before, rather than two shares and a delta: a
+share that moved from 31% to 38% over a shrinking team is not the movement those numbers suggest.
+
+`dollar_savings` is the exec rendering of `model_fit`, not a dimension beside it, and it carries
+the same `basis` under the same rule: render it next to every figure. Its `coverage` splits the
+window four ways — complete, incomplete, no telemetry, unpriced — and they do not collapse into
+each other. A session with no usage telemetry is not a session whose model is missing from your
+price table; the first is a gap in what reached you, the second is one you can close this afternoon.
+
+**A cohort smaller than the tenant is not defined today, and does not need to be.** Every response
+names what it answered for, so a backend can grow a selector later, a client reading tenant-wide
+reports keeps reading correctly, and one that wants a sub-team asks for it already knowing the
+shape of the answer.
+
 ## Building one
 
 Start from [`examples/backend-node/server.js`](../examples/backend-node/server.js) — it implements
-all four required routes, answers `/insights` with `enabled: false`, appends to JSONL, and runs
-with `node server.js`. Point a client at it:
+all four required routes, answers `/insights` with `enabled: false`, leaves `/insights/team`
+unimplemented so it falls through to a `404`, appends to JSONL, and runs with `node server.js`. Point a client at it:
 
 ```bash
 pheebs config set base-url http://localhost:8787

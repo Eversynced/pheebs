@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.1.0"
+  version: "1.2.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -241,6 +241,84 @@ paths:
 
             The `Allow` header is required by RFC 9110 and is the machine-readable half: a client
             that branches on it needs no table of which route takes which verb.
+
+  /insights/team:
+    get:
+      summary: The team report, for a manager
+      description: |
+        The same model read across a team instead of one engineer, and what
+        `pheebs insights --team` renders. Optional in exactly the way `/insights` is: a backend
+        that does not answer it is still a Pheebs backend, and the client says the route is
+        unavailable rather than failing.
+
+        **A separate path because it makes the opposite promise.** `/insights` is scoped to the
+        caller and says so in its own description; two of the views here name individuals. Rather
+        than weaken that sentence with an exception, the naming lives behind its own path, its own
+        role check and its own status code, so a reader of either route knows what it hands out
+        without having to read the other.
+
+        **Manager-only, and that is enforced here.** The role comes off the token's own backend
+        record, the same lookup that resolves identity on `/validate-token`. That route reports
+        the role, but reports it for display: nothing a developer can edit on their own machine
+        grants this route, and a token whose record says `engineer` gets `403` whatever the client
+        sends. A client that hides the `--team` flag is a courtesy to the reader, not the gate.
+
+        **Who appears by name.** A developer with `opt_out` set is never a row in
+        `practice_heatmap` or `signals_by_engineer`. They still count in the views that name
+        nobody, the funnel and the team stats and the medians, because dropping them there would
+        misstate the team rather than protect anyone. The two views that do name people carry
+        `engineers_named` and `engineers_withheld`, so a nine-row table over a team of nine is
+        distinguishable from the same table over a team of twelve.
+
+        **Parts, not percentages**, as everywhere else in this contract: a view reports its
+        numerator and its denominator and lets the consumer decide the rounding.
+
+        Availability, not zeros, exactly as on `/insights`, but per view as well as per section:
+        `dollar_savings` needs a price table that `signals_by_engineer` does not, and one flag
+        over the section would hide the six views a manager is entitled to.
+
+        A cohort smaller than the tenant is not defined today. It does not need to be: the
+        response names the cohort it answered for, so a backend can grow a selector later and a
+        client that ignores it keeps reading the tenant.
+      operationId: getTeamInsights
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: |
+            Window, counted back from now, and clamped and reported exactly as on `/insights`.
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 365
+      responses:
+        "200":
+          description: |
+            The team views this backend can produce. Views it cannot are either absent or present
+            with `enabled: false` and a `reason`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamInsightsResponse" }
+        "401":
+          description: Token rejected.
+        "403":
+          description: |
+            The token is valid and its record does not carry the `manager` role. Distinct from
+            `401` on purpose: the two need different words in front of a reader. A rejected token
+            is fixed by setting a working one, and telling a manager to do that sends them round a
+            loop that cannot end. The client says team views are a manager's and to ask an admin.
+
+            A backend that serves this route but has no way to mark a token a manager answers
+            `403` to every caller, which is correct rather than a gap: no token on it is a
+            manager's. One that does not serve the route at all answers `404` instead.
+        "404":
+          description: |
+            This backend does not implement team views. Optional means a real absence is
+            expressible, and the client reports it as an unavailable route rather than an error
+            with the developer's name on it.
+        "405":
+          description: "Any method but `GET`, carrying `Allow: GET`, as on every route here."
 
 components:
   securitySchemes:
@@ -492,6 +570,16 @@ components:
           type: string
         tenant:
           type: [string, "null"]
+        role:
+          type: string
+          enum: [engineer, manager]
+          description: |
+            Which report this token can draw. Display only on this route, and on every route: the
+            client caches it to decide whether to offer `pheebs insights --team`, and that is a
+            courtesy, not a gate. `/insights/team` resolves the role from the token's own record
+            on every call and answers `403` when it is not `manager`, so a client that lies about
+            this field, or a developer who edits it in `~/.pheebs/`, gains nothing. Absent means
+            `engineer`, so a backend that has no notion of roles rejects team views by default.
         opt_out:
           type: boolean
           description: |
@@ -761,21 +849,7 @@ components:
             competencies:
               type: array
               description: The profile, one row per competency. This is what the engineer reads.
-              items:
-                type: object
-                required: [name, state]
-                properties:
-                  name:
-                    type: string
-                    examples: [Models, Artifacts, MCP, Evals, Context management, Orchestration]
-                  state:
-                    type: string
-                    enum: [unobserved, adopted, recurring, insufficient_data, "n/a"]
-                    description: |
-                      `n/a` means the harness cannot do it, and it leaves the coverage denominator.
-                      `insufficient_data` means it cannot be judged yet. Collapsing the two
-                      overstates coverage for one engineer and understates it for another.
-                  recurring_share: { type: number, minimum: 0, maximum: 1 }
+              items: { $ref: "#/components/schemas/CompetencyState" }
             artifact_breadth:
               type: integer
               description: |
@@ -923,3 +997,487 @@ components:
                     Ran below it, and never carries a dollar figure. The stronger model is the arm
                     nobody ran, so there is no token count to price it against.
             priced: { $ref: "#/components/schemas/ModelFitPriced" }
+
+    CompetencyState:
+      type: object
+      description: |
+        One competency as it stands for one engineer. Shared by the engineer's own profile and by
+        a row of the team `practice_heatmap`, which is the same reading of the same thing and must
+        not drift into two vocabularies.
+      required: [name, state]
+      properties:
+        name:
+          type: string
+          examples: [Models, Artifacts, MCP, Evals, Context management, Orchestration]
+        state:
+          type: string
+          enum: [unobserved, adopted, recurring, insufficient_data, "n/a"]
+          description: |
+            `n/a` means the harness cannot do it, and it leaves the coverage denominator.
+            `insufficient_data` means it cannot be judged yet. Collapsing the two overstates
+            coverage for one engineer and understates it for another.
+        recurring_share: { type: number, minimum: 0, maximum: 1 }
+
+    TeamInsightsResponse:
+      type: object
+      description: |
+        The team report. Shaped like `InsightsResponse` on purpose, so a consumer that already
+        walks sections and per-section availability walks this too, with one addition: the cohort
+        it answered for.
+      required: [days, team, sections]
+      properties:
+        days:
+          type: integer
+          description: The window actually used, which may be smaller than the one requested.
+        team: { $ref: "#/components/schemas/TeamCohort" }
+        sections:
+          type: object
+          description: |
+            The same open map as `/insights`, and the same two rules: ignore a section you do not
+            recognize, and treat absent as "this backend does not produce it" rather than
+            "disabled". The two defined follow the model's own layers, and each holds the views of
+            that layer rather than one engineer's numbers.
+          properties:
+            repertoire: { $ref: "#/components/schemas/TeamRepertoireInsights" }
+            judgement_signals: { $ref: "#/components/schemas/TeamJudgementSignalsInsights" }
+          additionalProperties: { $ref: "#/components/schemas/InsightsSection" }
+
+    TeamCohort:
+      type: object
+      description: |
+        Who the report covers. Present so that a smaller cohort can be introduced later without
+        breaking a client: every response already says what it answered for, so a client reading a
+        tenant today keeps reading correctly when a backend grows sub-teams, and one that wants a
+        sub-team asks for it knowing the shape of the answer.
+      required: [kind, engineers]
+      properties:
+        kind:
+          type: string
+          description: |
+            How the cohort was drawn. `tenant` is the whole tenant and the only kind defined
+            today. A consumer that meets a kind it does not know renders the report and prints the
+            kind rather than refusing: the numbers are still true of whoever `engineers` counts.
+          examples: [tenant]
+        engineers:
+          type: integer
+          description: |
+            Developers in the cohort, including any withheld from the views that name people. The
+            denominator for every share a consumer computes from this report.
+        name:
+          type: string
+          description: A display name for the cohort, if the backend has one. Never required.
+
+    TeamRepertoireInsights:
+      description: |
+        Layer 1 across the team: which practices the team actually uses. Gated on nothing but a
+        manager's token, because it is a rollup of telemetry the team already sends.
+
+        **Implementable from the event stream alone**, exactly as the engineer's `repertoire` is.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          properties:
+            adoption_funnel: { $ref: "#/components/schemas/AdoptionFunnel" }
+            practice_heatmap: { $ref: "#/components/schemas/PracticeHeatmap" }
+            team_stats: { $ref: "#/components/schemas/TeamStats" }
+
+    AdoptionFunnel:
+      description: |
+        How deep adoption runs, past a usage count: per practice, how many of the team have never
+        been seen doing it, have done it, and do it repeatedly. The read is the recurring edge.
+
+        Names nobody, so it counts every developer in the cohort, opted out or not.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          properties:
+            practices:
+              type: array
+              description: |
+                One row per practice. The three counts are engineers and sum to the cohort's
+                `engineers`, so a consumer can draw the bar without being handed a share.
+              items:
+                type: object
+                required: [name, unobserved, adopted, recurring]
+                properties:
+                  name:
+                    type: string
+                    examples: [Models, Artifacts, MCP, Evals, Context management, Orchestration]
+                  unobserved: { type: integer }
+                  adopted: { type: integer }
+                  recurring: { type: integer }
+
+    PracticeHeatmap:
+      description: |
+        Engineers as rows, competencies as columns. The diagnosis is in the patterns rather than
+        the cells: a cold column is structural and the fix is scaffolding, a cold row is a coaching
+        conversation.
+
+        **This view names people**, which is why the whole route is manager-only. A developer with
+        `opt_out` set is not a row here. `engineers_named` and `engineers_withheld` say how many of
+        each, so a short table is never mistaken for a small team.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          properties:
+            competencies:
+              type: array
+              description: |
+                The column order, once, rather than left to the order keys happen to arrive in.
+                A row may omit a competency; a consumer renders the gap rather than shifting the
+                remaining cells left.
+              items: { type: string }
+            engineers:
+              type: array
+              description: One row per named engineer, in the order the backend wants them read.
+              items:
+                type: object
+                required: [developer, competencies]
+                properties:
+                  developer:
+                    type: string
+                    description: |
+                      The same identity `/validate-token` reports, so a manager reads the name
+                      their engineer would recognize rather than an opaque id.
+                  competencies:
+                    type: array
+                    items: { $ref: "#/components/schemas/CompetencyState" }
+            engineers_named: { type: integer }
+            engineers_withheld:
+              type: integer
+              description: |
+                Developers in the cohort held back from this table because they opted out. A count
+                and never a list: naming who was withheld defeats withholding them.
+
+    TeamStats:
+      description: |
+        The receipts for enablement work: which artifacts earned voluntary reuse, which repos have
+        active scaffolding. Aggregates only, with no per-engineer attribution anywhere in it, so
+        every developer in the cohort counts toward every stat.
+
+        Each row carries a count against a stated denominator rather than a share, following the
+        rest of this contract: `engineers` on the reuse stats is out of the cohort's `engineers`,
+        and `repos` on the repo stats is out of `repos` below.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          properties:
+            repos:
+              type: integer
+              description: |
+                Codebases seen in the window, the denominator for every repo count here. Reported
+                rather than derived, because a backend may see repos that produced no stat row at
+                all and a consumer cannot count those.
+            skill_reuse:
+              type: array
+              description: Skills and slash commands, by how many engineers invoked each.
+              items: { $ref: "#/components/schemas/ReuseBreadthRow" }
+            subagent_reuse:
+              type: array
+              description: Sub-agents, by how many engineers spawned each.
+              items: { $ref: "#/components/schemas/ReuseBreadthRow" }
+            connectors:
+              type: array
+              description: |
+                Connectors used in the window. `reads` and `writes` are split because a connector
+                a team only reads from is a different investment from one it writes through.
+              items:
+                allOf:
+                  - $ref: "#/components/schemas/ReuseBreadthRow"
+                  - type: object
+                    properties:
+                      reads: { type: boolean }
+                      writes: { type: boolean }
+            artifact_types:
+              type: array
+              description: AI-config artifact types, by how many repos contain each.
+              items:
+                type: object
+                required: [name, repos]
+                properties:
+                  name:
+                    type: string
+                    examples: [Skills, Slash commands, MCP config, Context files, Eval harness, Sub-agents]
+                  repos: { type: integer }
+            mcp_repos_in_use:
+              type: integer
+              description: Repos with MCP configured and traffic from two or more engineers.
+            eval_harness_in_use:
+              type: integer
+              description: Repos with an eval harness present and exercised in the window.
+
+    ReuseBreadthRow:
+      type: object
+      description: |
+        One reusable thing and how far it spread. `engineers` is a count out of the cohort, not a
+        share, and it is breadth rather than volume on purpose: one engineer invoking a skill two
+        hundred times is not adoption.
+      required: [name, engineers]
+      properties:
+        name: { type: string }
+        engineers: { type: integer }
+
+    TeamJudgementSignalsInsights:
+      description: |
+        Layer 2 across the team. Same gating as the engineer's section, for the same reason: four
+        of the five signals need classifier labels, and so the tenant's prompt-collection consent
+        with them.
+
+        Views inside are gated again, because they do not cost the same to build. A backend with
+        labels but no price table answers three of these four and says `not_implemented` on
+        `dollar_savings`.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          properties:
+            signals_by_engineer: { $ref: "#/components/schemas/SignalsByEngineer" }
+            median_movement: { $ref: "#/components/schemas/MedianMovement" }
+            wholesale_watch: { $ref: "#/components/schemas/WholesaleWatch" }
+            dollar_savings: { $ref: "#/components/schemas/DollarSavings" }
+
+    SignalsByEngineer:
+      description: |
+        Engineers as rows, the five judgement signals as columns, the team median as the last row.
+        The same read as `practice_heatmap` one layer up: a weak cell is a coaching conversation, a
+        weak column is structural, the strongest cell in a column is who demos.
+
+        **This view names people**, and withholds opted-out developers exactly as the heatmap does.
+        The median is computed over the whole cohort rather than the named rows, because it answers
+        "is this normal here" and a median over a filtered team would answer a different question
+        without saying so.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          properties:
+            signals:
+              type: array
+              description: |
+                The column order and how to read each column, once. `unit` is here rather than on
+                every cell because it is a property of the signal, and a renderer without it prints
+                a `ratio` of 2.1 as 210%.
+              items:
+                type: object
+                required: [key, unit]
+                properties:
+                  key:
+                    type: string
+                    examples: [verification_coverage, pushback_rate, refinement_to_repair, wholesale_accept, model_fit]
+                  unit:
+                    type: string
+                    enum: [share, ratio, count]
+            engineers:
+              type: array
+              items:
+                type: object
+                required: [developer, signals]
+                properties:
+                  developer: { type: string }
+                  signals:
+                    type: array
+                    description: |
+                      Cells, keyed rather than positional, so a missing signal for one engineer
+                      leaves a gap instead of shifting their row out of alignment with the header.
+                    items:
+                      type: object
+                      required: [key, value]
+                      properties:
+                        key: { type: string }
+                        value: { type: number }
+            median:
+              type: array
+              description: The last row, in the same keyed shape as an engineer's.
+              items:
+                type: object
+                required: [key, value]
+                properties:
+                  key: { type: string }
+                  value: { type: number }
+            engineers_named: { type: integer }
+            engineers_withheld: { type: integer }
+
+    MedianMovement:
+      description: |
+        The team trend, computed on the median rather than the mean, so one outlier week from one
+        engineer does not read as team movement. Structural fixes ship in Layer 1 terms and this is
+        where they show up, which is what the annotations are for.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          properties:
+            signals:
+              type: array
+              items:
+                type: object
+                required: [key, unit, trend]
+                properties:
+                  key: { type: string }
+                  unit:
+                    type: string
+                    enum: [share, ratio, count]
+                  trend:
+                    type: array
+                    description: |
+                      Weekly medians, oldest first, over whatever history exists. Send what you
+                      have: padding a short series to a fixed length invents a trend, and the
+                      client draws no chart at all below two points.
+                    items: { type: number }
+                  annotations:
+                    type: array
+                    description: |
+                      What changed, and when, so a reader attributes a move to a cause rather than
+                      guessing at one. Free text written by the backend operator and never
+                      anything derived from a prompt or a diff, and the client treats it as
+                      untrusted: it is stripped of control sequences and bounded in length, the
+                      same as every other string on this route.
+                    items:
+                      type: object
+                      required: [index, text]
+                      properties:
+                        index:
+                          type: integer
+                          description: |
+                            Which point in `trend` it marks, zero-based. Out of range is dropped by
+                            the client rather than clamped, because a note pinned to the wrong week
+                            is worse than a missing one.
+                        text: { type: string }
+
+    WholesaleWatch:
+      description: |
+        Wholesale-accept at the team level: AI output that shipped unchallenged, its direction, and
+        the repos it concentrates in.
+
+        **Lines rather than sessions for the headline**, as on the engineer's signal, and both are
+        reported because they answer different questions: a session count says how often it
+        happens, a line count says how much of the codebase it reached.
+
+        The item list stays personal. A manager reaches an individual instance through the engineer
+        it belongs to, not through this view, which is why nothing here names a session or a file.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          properties:
+            lines:
+              description: AI-edited lines that landed unchallenged, against all AI-edited lines.
+              allOf: [{ $ref: "#/components/schemas/WindowPair" }]
+            sessions:
+              description: Sessions that shipped something unchallenged, against all sessions.
+              allOf: [{ $ref: "#/components/schemas/WindowPair" }]
+            verification_requested_never_ran:
+              type: integer
+              description: |
+                Sessions this window where a check was asked for and no verification ran. Counted
+                apart from the unchallenged total rather than folded into it: the intent was there
+                and the loop did not close, which is a different conversation from never asking.
+            by_repo:
+              type: array
+              description: |
+                This window only. Where it concentrates, which is the difference between a team
+                habit and one codebase with no test harness.
+              items:
+                type: object
+                required: [codebase, unchallenged, total]
+                properties:
+                  codebase: { type: string }
+                  unchallenged: { type: integer }
+                  total: { type: integer }
+
+    WindowPair:
+      type: object
+      description: |
+        The same measure over this window and the one before it, each as a numerator over its own
+        denominator. Two windows rather than a delta, because a share that moved from 31% to 38%
+        over a shrinking team is not the same movement as the same two numbers over a growing one.
+      properties:
+        this_window:
+          allOf: [{ $ref: "#/components/schemas/UnchallengedCount" }]
+        last_window:
+          allOf: [{ $ref: "#/components/schemas/UnchallengedCount" }]
+
+    UnchallengedCount:
+      type: object
+      required: [unchallenged, total]
+      properties:
+        unchallenged: { type: integer }
+        total: { type: integer }
+
+    DollarSavings:
+      description: |
+        A price on the team's model-fit gap. The exec rendering of `model_fit`, not a dimension
+        beside it, and the same arithmetic and the same caveat as `model_fit.priced` one layer
+        down: `basis` must be rendered next to every figure here.
+
+        **Coverage above the dollars, always.** A savings figure with no coverage line beside it
+        reads as the whole team when it may be half of it, and the four buckets do not collapse:
+        a session with no telemetry is not a session whose model has no price.
+
+        The most expensive view here to implement, and the likeliest to stay `not_implemented` on
+        a self-hosted backend, which is a conformant answer.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        - type: object
+          required: [basis]
+          properties:
+            basis: { $ref: "#/components/schemas/CostBasis" }
+            opportunity:
+              type: number
+              description: |
+                What the over-provisioned share would not have cost at the cheapest class that
+                handled its work, per `basis`. Under-powered sessions never contribute: the
+                stronger model is the arm nobody ran.
+            spend:
+              type: number
+              description: |
+                List-price spend over the same complete sessions `opportunity` is drawn from, so
+                the two are a ratio a reader can trust. Spend over a wider set would understate the
+                share and flatter the team.
+            coverage:
+              type: object
+              description: |
+                Every session in the window, in four buckets that sum to it. Only `complete`
+                sessions carry a verdict or a figure; the other three say why the rest could not,
+                and conflating them is what turns an honest gap into a silent one.
+              required: [complete, incomplete, no_telemetry, unpriced]
+              properties:
+                complete:
+                  type: integer
+                  description: Every prompt that should carry a scope does, and the model is priced.
+                incomplete:
+                  type: integer
+                  description: At least one prompt is missing a scope, so the session gets no verdict.
+                no_telemetry:
+                  type: integer
+                  description: No usage telemetry, so there is nothing to price even with a verdict.
+                unpriced:
+                  type: integer
+                  description: The model ran and is not in the price table, which is an operator gap.
+            distribution:
+              type: object
+              description: |
+                The two bars the gap is read from, over `coverage.complete` sessions: what the team
+                ran, against what its work was sized for. The distance between them is the
+                opportunity, and the dollars above are that distance priced.
+              properties:
+                actual:
+                  type: array
+                  description: Sessions by the class of the model that actually ran.
+                  items: { $ref: "#/components/schemas/ClassCount" }
+                as_sized:
+                  type: array
+                  description: |
+                    The same sessions by the cheapest class that handles the largest scope seen in
+                    each, which is the same verdict `model_fit` reaches.
+                  items: { $ref: "#/components/schemas/ClassCount" }
+
+    ClassCount:
+      type: object
+      description: |
+        Sessions in one model class. Class names are the backend's own, as everywhere else in this
+        contract, since the tier map is a consumer table rather than a fact about an event. A
+        consumer renders them in the order given and does not sort them: only the backend knows
+        which end of its own scale is the expensive one.
+      required: [class, sessions]
+      properties:
+        class:
+          type: string
+          examples: [small, medium, large, frontier]
+        sessions: { type: integer }
