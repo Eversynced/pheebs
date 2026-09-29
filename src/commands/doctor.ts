@@ -8,6 +8,7 @@ import { resolveLogPath } from "../config.js";
 import {
   AI_TOOLS,
   type AiTool,
+  CODEX_TRUST_WARNING,
   getHookDefinitionsForTool,
   isPheebsEntry,
   TOOL_LABELS,
@@ -16,8 +17,10 @@ import { readStoredToken } from "../token.js";
 import { TRANSPORT_ERROR_PATH } from "../transports/http.js";
 import { PHEEBS_VERSION } from "../version.js";
 import { detectInstalledTools } from "./detect.js";
-import { resolveSettingsPath } from "./path.js";
+import { resolveSettingsPath, scopesCollide } from "./path.js";
 import { getLatestVersion, isNewer } from "./update.js";
+
+type DoctorScope = "both" | "project" | "user";
 
 type DoctorResult = {
   settingsPath: string;
@@ -199,14 +202,70 @@ function reportToolResult(result: DoctorResult, tool: AiTool): boolean {
   return true;
 }
 
-function diagnoseTools(tools: AiTool[], project: boolean): boolean {
+function checkScope(tool: AiTool, project: boolean): DoctorResult {
+  const { path: settingsPath } = resolveSettingsPath(tool, project);
+  return tool === AI_TOOLS.CODEX ? doctorCodex(settingsPath) : doctorJsonConfig(settingsPath, tool);
+}
+
+/** The scopes a check covers. "both" is the default because either one is a real install:
+ *  reporting a user-level one as missing sends the developer to `pheebs init`, which in a
+ *  terminal opens the wizard whose remove prompt defaults to yes, quietly turning a
+ *  machine-wide install into a one-repo one. */
+function scopesToCheck(tool: AiTool, scope: DoctorScope): boolean[] {
+  if (scope === "project") return [true];
+  if (scope === "user") return [false];
+  return scopesCollide(tool) ? [false] : [true, false];
+}
+
+function diagnoseTools(tools: AiTool[], scope: DoctorScope): boolean {
   let allHealthy = true;
 
   for (const tool of tools) {
-    const { path: settingsPath } = resolveSettingsPath(tool, project);
-    const result =
-      tool === AI_TOOLS.CODEX ? doctorCodex(settingsPath) : doctorJsonConfig(settingsPath, tool);
-    if (!reportToolResult(result, tool)) {
+    const checked = scopesToCheck(tool, scope).map((project) => ({
+      project,
+      result: checkScope(tool, project),
+    }));
+    // Registered, not merely present: Claude Code writes `.claude/settings.local.json` itself
+    // for permissions, and counting that as an install reports a double install against a
+    // developer who has one — then tells them to run `pheebs uninstall`, which clears it.
+    const found = checked.filter((c) => !c.result.fatal && c.result.registeredTypes > 0);
+
+    if (found.length === 0) {
+      // Report against the scope an install would land in, so the hint matches the fix, but
+      // name every path looked at rather than implying only one was.
+      const [primary, ...rest] = checked;
+      const alsoChecked = rest.map((c) => c.result.settingsPath);
+      reportToolResult(
+        alsoChecked.length > 0
+          ? {
+              ...primary.result,
+              fatal: `${primary.result.fatal} (also checked ${alsoChecked.join(", ")})`,
+            }
+          : primary.result,
+        tool,
+      );
+      allHealthy = false;
+      continue;
+    }
+
+    for (const { project, result } of found) {
+      if (!reportToolResult(result, tool)) {
+        allHealthy = false;
+      }
+      // Registered is not the same as will fire: a project-local Codex layer is dropped entirely
+      // until the developer trusts the project, so a clean report here would overstate the install.
+      if (project && tool === AI_TOOLS.CODEX && !scopesCollide(tool)) {
+        log.warn(`  ${CODEX_TRUST_WARNING}`);
+      }
+    }
+
+    // Claude Code merges the two settings files rather than overriding, so a double install
+    // doubles every event. That is a corrupted measurement, not a cosmetic problem, so it
+    // fails the check.
+    if (found.length > 1) {
+      log.error(
+        `${TOOL_LABELS[tool]}: installed at both scopes, so every event fires twice. Run \`pheebs uninstall\` (it clears every scope) and then the init you want.`,
+      );
       allHealthy = false;
     }
   }
@@ -292,8 +351,8 @@ function checkVersion(): void {
   }
 }
 
-export async function runDoctor(options?: { project?: boolean; tool?: AiTool }): Promise<void> {
-  const project = options?.project ?? false;
+export async function runDoctor(options?: { scope?: DoctorScope; tool?: AiTool }): Promise<void> {
+  const scope = options?.scope ?? "both";
   const tool = options?.tool;
   const explicit = tool !== undefined;
   const tools: AiTool[] = tool !== undefined ? [tool] : detectInstalledTools();
@@ -311,7 +370,7 @@ export async function runDoctor(options?: { project?: boolean; tool?: AiTool }):
 
   intro(heading);
 
-  const allHealthy = diagnoseTools(tools, project);
+  const allHealthy = diagnoseTools(tools, scope);
 
   checkGhAuth();
   const backendOk = checkBackend();

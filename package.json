@@ -10,7 +10,6 @@
     "build": "npm run clean && tsc",
     "prepare": "npm run build && (simple-git-hooks || true)",
     "postinstall": "node scripts/postinstall.cjs",
-    "preuninstall": "node scripts/preuninstall.cjs",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "check": "biome check .",

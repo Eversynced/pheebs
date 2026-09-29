@@ -40,6 +40,13 @@ change.
    classification, and it is gated on the tenant's stored `prompt_collection`
    consent, sends the prompt to the configured backend only, and stores the
    returned label rather than the text.
+
+   Paths the client wrote to itself are not session content and are covered
+   separately: `~/.pheebs/installs.json` records the agent config files `init`
+   created, because nothing else can find them once the default scope spreads the
+   token across repos. It stays on disk at 0600, never enters an event, and never
+   crosses the network. Nothing else may join it: a path that came from a payload
+   is still read-and-discard.
 2. **Hooks never break or slow the user's session.** Remote failures degrade
    silently, never throw into the hook. All hook entries are registered with
    `"async": true`. The local JSONL log is the durable copy; the network send is
@@ -86,11 +93,11 @@ npm run test:coverage              # Vitest with v8 coverage
 pheebs hook <event>                # Claude Code hook, reads JSON from stdin
 pheebs hook-cursor <event>         # Cursor hook
 pheebs hook-codex <event>          # Codex hook
-pheebs init                        # Register Claude Code hooks + OTel
-pheebs init --project              # Project-local config (see the Codex trust caveat)
+pheebs init                        # Register Claude Code hooks + OTel, project-local
+pheebs init --global               # User-level config instead
 pheebs init --cursor|--codex       # Register for Cursor / Codex
 pheebs init --no-otel              # Skip OpenTelemetry configuration
-pheebs doctor [--cursor|--codex]   # Verify hooks are registered
+pheebs doctor [--global|--project] [--cursor|--codex]  # Verify hooks (both scopes by default)
 pheebs scan [--cursor|--codex]     # Scan repo for AI-config artifacts
 pheebs insights [--days N|--json]  # The caller's own report from the backend /insights
 pheebs config list|set|unset       # base-url | auto-update | classify | token
@@ -114,10 +121,13 @@ so run `npm run build` before the CLI tests mean anything.
 | `src/hooks/role.ts` | `classifyRole` over the `AGENT_ROLES` table. |
 | `src/scanner.ts` | Project-scoped scan for AI-config artifacts. Records presence and counts, never paths or contents, never user-level config, never git history. |
 | `src/commands/init.ts` | Per-tool hook registration, merging and deduplicating into the tool's settings file. |
-| `src/commands/doctor.ts` | Presence check via `isPheebsEntry`. |
-| `src/commands/path.ts` | `resolveSettingsPath(tool, project)`, the one place config-file locations are resolved. |
+| `src/commands/uninstall.ts` | Clears hooks and exporter config from both derived scopes plus every recorded install. Best-effort per file, and forgets only the paths it actually cleared. |
+| `src/commands/doctor.ts` | Presence check via `isPheebsEntry`. Checks both scopes unless one is named, because either is a real install and a double install fails the check. |
+| `src/commands/path.ts` | `resolveSettingsPath(tool, project)`, the one place config-file locations are resolved, plus `scopesCollide` for the cwd-at-`$HOME` case where Cursor and Codex resolve both scopes to one file. |
 | `src/otel.ts`, `src/otel-resync.ts` | OTLP config pointed at the backend `/otel` proxy. Writes only when endpoint and token are both set, removes config when either is cleared, and resyncs already-written agent config. |
 | `src/backend-config.ts` | `~/.pheebs/config.json`. `hasBackend()` is the gate every network path checks. |
+| `src/installs.ts` | `~/.pheebs/installs.json`, the paths `init` wrote. Project-local is the default scope, so the exporter config lives in a file per repo and nothing else knows where those are. Local only, never part of an event. |
+| `src/git-exclude.ts` | Keeps a token-bearing project config out of git via `.git/info/exclude`, never `.gitignore`: ignoring a file is the developer's own decision about a tracked repo. Reports `excluded` / `ignored` / `tracked` / `no-repo` / `unprotected`, each confirmed with git rather than inferred, because the caller turns the answer into a promise that the token is not committed. |
 | `src/transport.ts`, `src/transports/http.ts` | The one seam for backend calls. Fire-and-forget ingest, bounded blocking classify. |
 | `src/token.ts` | Token at `~/.pheebs/.token` (0600), validation, cached identity and `prompt_collection`. |
 | `src/classify.ts` | Prompt classification, consent-gated, degrades to `prompt_intent: "unclassified"` sending no text. |
@@ -128,6 +138,24 @@ so run `npm run build` before the CLI tests mean anything.
 | `src/config.ts` | Codebase id resolution: env override, git remote `org/repo`, then `local/<folder-name>`. Directory name only, never a full path. |
 | `src/developer-id.ts` | GitHub handle via `gh api`, falling back to a hashed git email. |
 
+## Scope
+
+`init` defaults to project-local and `--global` selects user-level; `doctor` checks
+both unless one is named, because either is a real install. The default is
+project-local because a user-level install fires in every repo on the machine, the
+developer's personal code included, and each of those sessions sends its
+`org/repo` slug as `codebaseId`. Per-repo opt-in is the only gate the client
+has short of the per-developer `opt_out` on the token. Claude Code merges the two
+settings files rather than overriding, so both installs present means every hook
+fires twice; `init` detects that and offers to remove the user-level copy, and `doctor` fails
+on it.
+
+Because the default scope writes a file per repo, `init` records every path it writes in
+`~/.pheebs/installs.json` (`src/installs.ts`). Without that record, `uninstall` and the OTel resync reach only the current
+directory, and every other repo keeps its hooks and keeps exporting with the token. A
+project-scoped install that carries the token is also added to the repo's `.git/info/exclude`,
+since nothing in a fresh repo ignores `.codex/config.toml`.
+
 ## Project-local config and Codex trust
 
 All three tools read a project-local config, but on Codex that layer is trust
@@ -135,7 +163,8 @@ gated twice over: it is dropped unless the project is trusted, and each handler
 needs a matching `trusted_hash`. Pheebs writes neither, and should not, because
 both are the developer's own security decision about a directory. So `doctor`
 reporting a project-scoped Codex install healthy means the file is in place, not
-that the hook will fire. Cursor merges the project file with the user-level one
+that the hook will fire, which is why `init` and `doctor` both say so on a
+project-scoped Codex install. Cursor merges the project file with the user-level one
 rather than replacing it.
 
 ## Before trusting a payload assumption
