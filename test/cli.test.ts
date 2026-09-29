@@ -242,8 +242,11 @@ describe("init and doctor scope", () => {
 
     const result = runScoped("doctor");
 
+    // On the report rather than the exit code: doctor also exits 1 when `pheebs` is missing
+    // from PATH, which it always is where the package is never installed globally.
     expect(result.stdout).not.toContain("every event fires twice");
-    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(join(home, ".claude", "settings.json"));
+    expect(result.stdout).not.toContain(join(cwd, ".claude", "settings.local.json"));
   });
 
   it("names both paths when nothing is registered in either scope", () => {
