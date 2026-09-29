@@ -22,7 +22,7 @@ Commands:
   hook-cursor <event>   Handle a Cursor hook
   hook-codex <event>    Handle a Codex hook
   init                  Register hooks + OTel (interactive in a terminal)
-  doctor                Verify hooks are registered
+  doctor                Verify hooks are registered (both scopes unless one is named)
   config <cmd>          Get/set settings — endpoint, token, auto-update, classify
   insights              Report on your own work, from the backend
   scan                  Scan repo for AI-config artifacts
@@ -30,7 +30,8 @@ Commands:
   uninstall             Remove pheebs hooks + OTel
 
 Options:
-  -p, --project         Use project-local settings instead of user-level
+  -p, --project         Project-local scope: init writes it (default), doctor checks only it
+  -g, --global          User-level scope: applies to every repo
   --cursor              Target Cursor
   --codex               Target Codex
   --no-otel             Skip OpenTelemetry configuration (init)
@@ -58,24 +59,31 @@ if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
   await handleHookEvent(tool, args[1], args.slice(2));
 } else if (args[0] === "init") {
   const interactive =
-    Boolean(process.stdin.isTTY) && !hasFlag("-p", "--project", "--cursor", "--codex", "--no-otel");
+    Boolean(process.stdin.isTTY) &&
+    !hasFlag("-p", "--project", "-g", "--global", "--cursor", "--codex", "--no-otel");
 
   if (interactive) {
     const { runInitInteractive } = await import("./commands/init.js");
     await runInitInteractive();
   } else {
-    const project = hasFlag("-p", "--project");
+    const project = !hasFlag("-g", "--global");
     const otel = !hasFlag("--no-otel");
     const tool = resolveTool();
     const { runInit } = await import("./commands/init.js");
     await runInit({ project, tool, otel });
   }
 } else if (args[0] === "doctor") {
-  const project = hasFlag("-p", "--project");
+  // Unflagged, doctor looks at both scopes: either one is a real install, and only the check
+  // itself can tell which the developer has.
+  const scope = hasFlag("-g", "--global")
+    ? "user"
+    : hasFlag("-p", "--project")
+      ? "project"
+      : "both";
   const hasToolFlag = hasFlag("--cursor", "--codex");
   const tool = hasToolFlag ? resolveTool() : undefined;
   const { runDoctor } = await import("./commands/doctor.js");
-  await runDoctor({ project, tool });
+  await runDoctor({ scope, tool });
 } else if (args[0] === "config") {
   const { runConfig } = await import("./commands/config.js");
   await runConfig(args.slice(1));

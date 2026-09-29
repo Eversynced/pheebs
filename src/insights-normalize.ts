@@ -34,6 +34,14 @@ export interface Signal {
   trendUnusable: boolean;
 }
 
+/** The fit rate's own denominator and both directions of miss. */
+export interface Fit {
+  sessions?: number;
+  fit: number;
+  overProvisioned: number;
+  underPowered: number;
+}
+
 export interface Row {
   label: string;
   amount?: number;
@@ -52,7 +60,7 @@ export interface Cost {
 export type Body =
   | { kind: "unavailable"; reason?: Reason }
   | { kind: "repertoire"; data: Repertoire }
-  | { kind: "signals"; data: Signal[] }
+  | { kind: "signals"; data: Signal[]; fit?: Fit }
   | { kind: "cost"; data: Cost };
 
 export interface Section {
@@ -84,6 +92,7 @@ const SIGNALS: [string, string][] = [
   ["pushback_rate", "Pushback rate"],
   ["refinement_to_repair", "Refinement-to-repair ratio"],
   ["wholesale_accept", "Wholesale-accept rate"],
+  ["model_fit", "Model-fit rate"],
 ];
 
 const SECTIONS = ["repertoire", "judgement_signals"];
@@ -242,6 +251,25 @@ function signalsOf(section: Record<string, unknown>): Signal[] {
   });
 }
 
+/**
+ * The split behind the fit rate. All three directions or none: the contract requires them
+ * together, and half a split printed as a whole one would show over-provisioning as the only way
+ * to miss — which is the reading this signal exists to prevent.
+ */
+function fitOf(section: Record<string, unknown>): Fit | undefined {
+  const raw = section.model_fit;
+  if (!isRecord(raw)) return undefined;
+  const split = raw.split;
+  if (!isRecord(split)) return undefined;
+
+  const fit = count(split.fit);
+  const over = count(split.over_provisioned);
+  const under = count(split.under_powered);
+  if (fit === undefined || over === undefined || under === undefined) return undefined;
+
+  return { sessions: count(raw.sessions), fit, overProvisioned: over, underPowered: under };
+}
+
 function costOf(section: Record<string, unknown>): { data: Cost; dropped: number } {
   const classes = rows(section.sessions_by_recommended_class);
   const savings = rows(section.savings);
@@ -287,7 +315,7 @@ function bodyOf(name: string, section: Record<string, unknown>): { body: Body; d
     const { data, dropped } = repertoireOf(section);
     return { body: { kind: "repertoire", data }, dropped };
   }
-  return { body: { kind: "signals", data: signalsOf(section) }, dropped: 0 };
+  return { body: { kind: "signals", data: signalsOf(section), fit: fitOf(section) }, dropped: 0 };
 }
 
 /**

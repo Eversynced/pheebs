@@ -147,3 +147,31 @@ describe("syncCodexOtel", () => {
     expect(config.analytics).toEqual({ other: "keep" });
   });
 });
+
+describe("return value", () => {
+  it("returns true only when the config was actually written", () => {
+    h.stored = { token: "pheebs_secret" };
+
+    expect(syncClaudeOtelEnv({}, true)).toBe(true);
+    expect(syncCodexOtel({}, true)).toBe(true);
+  });
+
+  it("returns false when the developer asked for OTel but a gate is unmet", () => {
+    h.stored = { token: "pheebs_secret" };
+    h.backend = false;
+    expect(syncClaudeOtelEnv({}, true)).toBe(false);
+    expect(syncCodexOtel({}, true)).toBe(false);
+
+    h.backend = true;
+    h.stored = undefined;
+    expect(syncClaudeOtelEnv({}, true)).toBe(false);
+    expect(syncCodexOtel({}, true)).toBe(false);
+  });
+
+  it("returns false when OTel is disabled outright", () => {
+    h.stored = { token: "pheebs_secret" };
+
+    expect(syncClaudeOtelEnv({}, false)).toBe(false);
+    expect(syncCodexOtel({}, false)).toBe(false);
+  });
+});

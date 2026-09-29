@@ -8,7 +8,7 @@
 
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
-import type { Cost, Repertoire, Report, Section, Signal } from "./insights-normalize.js";
+import type { Cost, Fit, Repertoire, Report, Section, Signal } from "./insights-normalize.js";
 
 export interface RenderOptions {
   width: number;
@@ -61,6 +61,12 @@ export function formatValue(value: number, unit: string): string {
 
 function cell(value: number | undefined, unit: string): string {
   return value === undefined ? "-" : formatValue(value, unit);
+}
+
+// A count no real window reaches is a backend fault, not a figure. Past the ceiling `String()`
+// goes exponential, the same failure formatUsd guards below.
+function formatCount(n: number): string {
+  return n >= 1e12 ? "-" : String(n);
 }
 
 function formatUsd(usd: number): string {
@@ -288,7 +294,7 @@ function renderRepertoire(data: Repertoire, opts: RenderOptions): string[] {
   return lines;
 }
 
-function renderSignals(signals: Signal[], opts: RenderOptions): string[] {
+function renderSignals(signals: Signal[], fit: Fit | undefined, opts: RenderOptions): string[] {
   if (signals.length === 0) return wrap("This backend produced no signals.", opts.width);
 
   // One label width across all three blocks, as the model doc draws them, so the eye can run down
@@ -350,6 +356,31 @@ function renderSignals(signals: Signal[], opts: RenderOptions): string[] {
   }
   if (unusable.length > 0) {
     lines.push("", ...wrap(`Trend not reported for: ${unusable.join(", ")}`, opts.width));
+  }
+
+  if (fit !== undefined) {
+    // The denominator is only claimed when the three counts actually sum to it. A heading that
+    // asserts "66 complete sessions" over counts totalling 2,700 is a number a reader would
+    // believe, and renderRepertoire already refuses an impossible coverage ratio for this reason.
+    const total = fit.fit + fit.overProvisioned + fit.underPowered;
+    const claims = fit.sessions !== undefined && fit.sessions === total;
+    const heading = claims
+      ? `Model fit, split: ${fit.sessions} complete session${fit.sessions === 1 ? "" : "s"}`
+      : "Model fit, split";
+    lines.push("", ...wrap(heading, opts.width));
+    // One table, in contract order, with neither direction emphasised. Drawing over-provisioned
+    // alone, or first and larger, would turn a rate into the savings pitch this signal is not.
+    lines.push(
+      ...renderTable(
+        [
+          ["Fit", formatCount(fit.fit)],
+          ["Over-provisioned", formatCount(fit.overProvisioned)],
+          ["Under-powered", formatCount(fit.underPowered)],
+        ],
+        ["left", "right"],
+        opts,
+      ),
+    );
   }
 
   return lines;
@@ -439,7 +470,7 @@ function renderSection(section: Section, opts: RenderOptions): string[] {
     body.kind === "repertoire"
       ? renderRepertoire(body.data, opts)
       : body.kind === "signals"
-        ? renderSignals(body.data, opts)
+        ? renderSignals(body.data, body.fit, opts)
         : renderCost(body.data, opts);
 
   const out = [...wrap(section.label, opts.width), "", ...lines];
