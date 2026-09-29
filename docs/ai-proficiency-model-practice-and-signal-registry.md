@@ -1,6 +1,6 @@
 # AI Proficiency Model Practice and Signal Registry
 
-**Last updated:** Sep 23, 2026
+**Last updated:** Sep 24, 2026
 
 The source of truth for how well each practice and signal of the AI Proficiency Model is measured in the *current* version of Pheebs: the detector, per-harness availability, detector confidence, and implementation status. This is a living document: update it on **every release**.
 
@@ -228,7 +228,7 @@ Spawn events never feed Artifacts. A custom sub-agent definition is an artifact 
 | EV4 | Fix loop: failing `test_run`, then edit, then passing `test_run`, one session | Event sequence over `test_run` outcomes | 🟡 | 🟡 | 🟡 | Pattern | Live |
 | EV5 | Test-gated ship: `test_run` shortly before `vcs_action` in {commit, push, pr_create}, same session | Event sequence over `test_run` + `vcs_action` | 🟡 | 🟡 | 🟡 | Pattern | Live |
 
-EV1 stays 🟡 by nature: shell commands are an open world, so the keyword table undercounts newer and bespoke runners. It undercounts, it never fabricates, and Layer 2's verification coverage runs on the same intent table. The boundary in one sentence: **Layer 1 counts whether a practice occurs, Layer 2 rates the quality of what ships.** Same events, different math.
+EV1 stays 🟡 by nature: shell commands are an open world, so the keyword table undercounts newer and bespoke runners. It undercounts, it never fabricates, and Layer 2's verification coverage runs on the same intent table. The boundary in one sentence: **Layer 1 counts whether a practice occurs, Layer 2 rates the judgement behind what ships, on both the output and the input side.** Same events, different math.
 
 ### Context management (CX)
 
@@ -295,12 +295,131 @@ Repo denominator: every event carries a codebase identifier, the scan runs on ea
 
 Layer 2 is contract-only. This repo captures the facts; a backend computes the signals.
 
-The contract carries the fields a Layer 2 implementation needs: `prompt_intent`,
+The contract carries the fields the five judgement signals need: `prompt_intent`,
 `classifier_version` and `requests_verification` on a classified prompt, `task_scope` on the
-classifier response, and the cost section of `/insights`. Their shapes are in
+classifier response, and the `judgement_signals` section of `/insights`. Their shapes are in
 [`openapi.yaml`](../openapi.yaml), with the failure semantics in
 [`backend-contract.md`](./backend-contract.md). Implementing them is the backend's job.
+
+| Signal | Needs | Status |
+| :-- | :-- | :-- |
+| Verification coverage | `tool_intent` in {test_run, build, typecheck, lint} after an edit (the EV1 intent table), or `requests_verification` on a classified prompt | Contract-only. This repo captures the facts; a backend computes the rate. |
+| Pushback rate | `prompt_intent` on classified prompts | Contract-only. This repo captures the facts; a backend computes the rate. |
+| Refinement-to-repair ratio | `prompt_intent` on classified follow-up prompts | Contract-only. This repo captures the facts; a backend computes the ratio. |
+| Wholesale-accept rate | `tool_intent = edit` events, `prompt_intent` and `requests_verification` on the session's prompts, and `lines_changed` on each edit as the weight | Contract-only for the rate. A backend computes detection and the lines-weighted metric, gated behind the classifier gate. Claude Code only. |
+| Model-fit rate | `task_scope` on classified task and repair prompts (contract-specified beside `prompt_intent`); a scope-to-class map maintained by the backend; complete sessions only | Contract-only. This repo captures the facts; a backend computes the verdicts. |
+
+Model-fit is judged only over **complete** sessions, where every task and repair prompt carries
+a known scope and no prompt went unclassified because classification was gated or failed, so an
+incomplete session leaves the denominator rather than lowering the recommendation. The
+scope-to-class map is a backend judgement and never ships in the client. The cost rendering of
+the fit gap, in the engineer and team views and priced from `model_fit` in the
+`judgement_signals` section of `/insights`, is a rendering of this signal, not a signal of its
+own; prices never enter the model. The full definition is under
+[How model fit is judged](#how-model-fit-is-judged) below.
 
 The one capture-side piece is prompt classification: the client sends the prompt to the backend
 `/classify-prompt` proxy when the tenant has consented, and stores the returned label. The prompt
 text is never persisted by the client.
+
+### How prompt intent is judged
+
+**One label per prompt.** A prompt classifier labels each submitted prompt with exactly one
+`prompt_intent` from a set of six.
+
+| Intent | What the prompt does |
+| :-- | :-- |
+| `task` | Asks for new work. |
+| `context` | Supplies information or constraints. |
+| `direction` | Steers the approach. |
+| `pushback` | Challenges output, asks for rationale, points out an error. |
+| `repair` | Reports that something is broken. |
+| `approval` | Accepts and moves on. |
+
+A prompt that carries more than one move takes its dominant intent. A greeting, a pasted log,
+a slash-command invocation already identified, or a bare question that fits no class is
+`unclassified`.
+
+The classifier also emits an orthogonal boolean, `requests_verification`, true when the prompt
+asks for work to be checked against a reference. The reference is deliberately broad: tests,
+build, lint, types, but also requirements, a PRD, a spec, acceptance criteria. Reviewing a
+document against its initial requirements is the same habit applied to a non-executable artifact.
+It is a flag because verification requests co-occur with the six moves rather than compete with them. "No, that's
+wrong, run the tests again" is `repair` with the flag true; "looks good, run CI before we merge"
+is `approval` with the flag true.
+
+**The four output signals, composed from the labels.**
+
+- *Verification coverage* needs no label. Its verification family is four tool intents, all
+  detected from what actually ran: `test_run`, `build`, `typecheck`, and `lint`, rolled up at
+  the metric layer and kept separate. The core read is edit-then-verify: of sessions containing
+  AI edits, the share where an edit is followed by a verification action before the session ends.
+  It counts whether the agent ran the check or the engineer asked for it.
+- *Pushback rate* is the share of sessions with at least one `pushback` prompt, with the
+  pushback share of all prompts as a secondary. It is reported at the session grain rather than
+  as a percentage target because the healthy rate depends on the work, and engineers should
+  never be performing skepticism to move a number.
+- *Refinement-to-repair ratio* splits iteration in two. Refinement is `direction` and
+  `pushback` prompts after a working state. Repair is `repair` prompts fixing a failure. A
+  working state is a passing verification event, and pass or fail is the event type, not a
+  judgement. Refinement depth is fluency. Repair depth is friction, and usually points at weak
+  upfront context.
+- *Wholesale-accept rate* is the joint absence of everything above: sessions where the AI
+  produced edits and the session shows zero `pushback`, zero `repair`, zero verification, and
+  ends in `approval` or silence. Every AI-edited session enters the denominator, and the
+  headline is the share of AI-edited lines that landed in flagged sessions, weighted by
+  `lines_changed`, with the plain session share as a secondary.
+
+When prompt classification is disabled prompt intents are set as `unclassified`.
+
+The classifier is revised: its prompt, its model, its execution backend, the class set, or the
+flag definition. So `classifier_version` goes along with every label.
+
+No signal derived from the labels surfaces before the classifier clears a validation gate.
+The bar is macro F1 of at least 0.802 over the six classes. The flag is scored separately,
+at 0.80 precision and recall, and a flag failure holds only the flag's consumers while the
+six labels ship. A version bump re-runs the gate.
+
+Nothing about the classifier changes what the engineer's agent does. The label is read after
+the fact, off the same prompt event, and the prompt goes through whether or not the
+classifier answered.
+
+### How model fit is judged
+
+**A scope label per prompt.** The same classifier that labels prompt intent also sizes task and
+repair prompts with a `task_scope`. Scopes describe the work, never a model or a tier:
+
+| Scope | What it describes |
+| :-- | :-- |
+| `mechanical` | A single-file change with an unambiguous spec. |
+| `bounded` | A fix or feature inside known code, with a clear verification path. |
+| `cross_cutting` | A multi-file change, a design decision, or unknown-root-cause debugging. |
+| `open_ended` | No clear finish line, or an expensive wrong answer. |
+
+Prompts of other intents carry `n/a`. A prompt too thin to place gets the higher plausible
+scope.
+
+**A decision per session.** The recommended class is the maximum scope over the session's task
+and repair prompts — the session must handle its hardest prompt. A session gets a decision only
+when it is **complete**: every task and repair prompt carries a known scope, and no prompt
+went unclassified because classification was gated or failed. A prompt the classifier read and
+placed in no class carries `n/a` like any other non-task intent; a gated or failed one carries
+no scope at all, and could have hidden the session's hardest task. Incomplete sessions leave
+the denominator, the same way *Insufficient data* leaves the Layer 1 coverage denominator: a measurement gap is never reported as a behaviour.
+
+**A class map.** Scope maps to model class through a table the backend maintains — a
+published, versioned judgement, kept out of the client. One example map:
+
+| Scope | Class | Model |
+| :-- | :-- | :-- |
+| `mechanical` | small | Haiku 4.5 |
+| `bounded` | medium | Sonnet 5 |
+| `cross_cutting` | large | Opus 5 |
+| `open_ended` | frontier | Fable 5.1 |
+
+**The decision, both ways.** A complete session is then one of three things: **fit** (the class
+it ran matched the recommendation), **over-provisioned** (it ran above), or **under-powered**
+(it ran below). Model-fit rate is the **fit** share.
+
+**An audit, not a router.** Nothing about this signal changes which model runs. Pheebs does
+not intercept prompts, does not route them, and does not switch models on anyone's behalf.

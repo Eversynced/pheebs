@@ -13,8 +13,10 @@
 used, without capturing code or prompts.**
 
 Adoption numbers say who has access. They say nothing about what happens inside a session: which
-models get used, whether tests run before a commit, how often work goes through a review pass.
-Pheebs captures that.
+models get used and whether the model used was the best fit for the work, how much a team could be
+saving by running smaller models where they would do, whether tests run before a commit, how often
+work goes through a review pass, whether AI output gets questioned or accepted wholesale, which
+skills, sub-agents, and MCP servers are actually in play. Pheebs captures that.
 
 It installs as hooks in your agent, writes a JSONL line per event to your machine, and sends
 nothing anywhere until you point it at a backend you control. No source code, no prompts, no file

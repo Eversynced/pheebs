@@ -201,9 +201,8 @@ function insights(req, res, url) {
   return json(res, 200, {
     days,
     sections: {
-      cost: { enabled: false, reason: "not_implemented" },
       repertoire: { enabled: false, reason: "not_implemented" },
-      quality_signals: { enabled: false, reason: "not_implemented" },
+      judgement_signals: { enabled: false, reason: "not_implemented" },
     },
   });
 }
