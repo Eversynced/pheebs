@@ -6,6 +6,28 @@ Pheebs was developed privately before this repository was opened. That history i
 so this changelog starts at the first public release rather than linking commits that cannot
 be resolved.
 
+## [1.1.0](https://github.com/Eversynced/pheebs/compare/v1.0.0...v1.1.0) (2026-10-02)
+
+
+### Features
+
+* **classify:** carry task_scope onto the prompt event ([07264db](https://github.com/Eversynced/pheebs/commit/07264dbf4793caf7ca6a48aded5efd190d6c42cf))
+* **classify:** carry task_scope onto the prompt event ([a60bd15](https://github.com/Eversynced/pheebs/commit/a60bd15d010a35908e821a4223c92bf134b36b0d))
+* **contract:** rename quality_signals to judgement_signals, add model_fit ([da3a488](https://github.com/Eversynced/pheebs/commit/da3a4887895cb0a913400e1d41927d930811f22c))
+* **contract:** rename quality_signals to judgement_signals, add model_fit ([13e1a05](https://github.com/Eversynced/pheebs/commit/13e1a05247550bea6d50233e93c4c83c7b8077d5))
+* **init:** default to project-local scope, add --global ([ad47e51](https://github.com/Eversynced/pheebs/commit/ad47e51e5847dec2278d39e7ada5fe92bff85853))
+* **init:** default to project-local scope, add --global ([3e97952](https://github.com/Eversynced/pheebs/commit/3e97952069e645c5b0d8533208c406ee1f2aa77b))
+* **insights:** render model-fit as the fifth signal, with its split ([11c932b](https://github.com/Eversynced/pheebs/commit/11c932b13298feff0218808927051c5f2b10073d))
+* **insights:** render model-fit as the fifth signal, with its split ([6b8934a](https://github.com/Eversynced/pheebs/commit/6b8934aee87a4378baee53374e0930efdca065cd))
+
+
+### Bug Fixes
+
+* **contract:** align judgement signals with the Layer 2 docs ([843f0d2](https://github.com/Eversynced/pheebs/commit/843f0d27433f836a0f23ee8ed4a41ec3996b1272))
+* **contract:** describe the emitted task_scope as a plain string ([c3aac99](https://github.com/Eversynced/pheebs/commit/c3aac99526833753acec425bd5111449325ea0aa))
+* **insights:** only claim the denominator when the split sums to it ([46c114d](https://github.com/Eversynced/pheebs/commit/46c114d24bbfe1bab608dd528b168d05007ed907))
+* **scope:** reach every install, and keep the token out of git ([969363a](https://github.com/Eversynced/pheebs/commit/969363a8a14db06f528d8c09df0c480da12bf33f))
+
 ## 1.0.0 (2026-09-23)
 
 First public release.
