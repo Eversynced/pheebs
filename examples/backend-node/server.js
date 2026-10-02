@@ -1,7 +1,8 @@
 // A complete Pheebs backend in one file, with no dependencies. It implements the four required
 // routes in ../../openapi.yaml so you can point a real client at something and watch events land,
 // plus the optional /insights, whose sections all answer `enabled: false` because computing them
-// needs data this server does not keep.
+// needs data this server does not keep. The other optional route, /insights/team, is left
+// unimplemented, which the contract expresses as a 404.
 //
 //   node examples/backend-node/server.js
 //   pheebs config set base-url http://localhost:8787
@@ -228,10 +229,15 @@ const server = createServer((req, res) => {
 async function handle(req, res) {
   const url = new URL(req.url, "http://localhost"); // pathname without the query string
 
-  // /insights is the one GET in the contract; everything else is POST.
-  if (url.pathname === "/insights") {
+  // The insights routes are the only GETs in the contract; everything else is POST.
+  if (url.pathname === "/insights" || url.pathname === "/insights/team") {
     req.resume(); // drain, or the socket is torn down instead of answered cleanly
     if (req.method !== "GET") return json(res, 405, { error: "GET only" }, { allow: "GET" });
+    // 404 rather than 403: this server does not serve team views at all, and 403 would claim it
+    // does and that this caller is not entitled to them.
+    if (url.pathname === "/insights/team") {
+      return json(res, 404, { error: "team views not implemented" });
+    }
     return insights(req, res, url);
   }
 
