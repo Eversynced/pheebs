@@ -147,7 +147,7 @@ function runIn(
 ): RunResult {
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home, ...extraEnv };
   if (path !== undefined) {
-    // Windows spells it `Path`, and a copy that kept that key would shadow the override.
+    // Windows spells it `Path`; drop every spelling so the child sees only the one set here.
     for (const key of Object.keys(env)) {
       if (key.toUpperCase() === "PATH") delete env[key];
     }
@@ -263,7 +263,6 @@ describe("init and doctor scope", () => {
     const result = runScoped("doctor");
 
     expect(result.stdout).toContain("every event fires twice");
-    expect(result.status).toBe(1);
   });
 
   it("does not count a settings file Claude Code wrote itself as an install", () => {
@@ -280,7 +279,7 @@ describe("init and doctor scope", () => {
     const result = runScoped("doctor");
 
     // On the report rather than the exit code: doctor also exits 1 when `pheebs` is missing
-    // from PATH, which it always is where the package is never installed globally.
+    // from PATH, which it always is on the empty PATH these tests run with.
     expect(result.stdout).not.toContain("every event fires twice");
     expect(result.stdout).toContain(join(home, ".claude", "settings.json"));
     expect(result.stdout).not.toContain(join(cwd, ".claude", "settings.local.json"));
@@ -290,7 +289,6 @@ describe("init and doctor scope", () => {
     const result = runScoped("doctor");
 
     expect(result.stdout).toContain("also checked");
-    expect(result.status).toBe(1);
   });
 
   it("names the emptied file after an uninstall rather than printing undefined", () => {
