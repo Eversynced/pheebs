@@ -239,7 +239,9 @@ function diagnoseTools(tools: AiTool[], scope: DoctorScope): boolean {
         alsoChecked.length > 0
           ? {
               ...primary.result,
-              fatal: `${primary.result.fatal} (also checked ${alsoChecked.join(", ")})`,
+              // A file that exists with no pheebs hooks in it, as `uninstall` leaves one, has
+              // no fatal of its own.
+              fatal: `${primary.result.fatal ?? `no pheebs hooks in ${primary.result.settingsPath}`} (also checked ${alsoChecked.join(", ")})`,
             }
           : primary.result,
         tool,

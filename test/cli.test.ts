@@ -279,6 +279,15 @@ describe("init and doctor scope", () => {
     expect(result.status).toBe(1);
   });
 
+  it("names the emptied file after an uninstall rather than printing undefined", () => {
+    runScoped("init", "--no-otel");
+    runScoped("uninstall");
+    const result = runScoped("doctor");
+
+    expect(result.stdout).toContain("also checked");
+    expect(result.stdout).not.toContain("undefined");
+  });
+
   it("keeps the rest of a settings file saved with a UTF-8 byte order mark", () => {
     // PowerShell's `-Encoding UTF8` writes one, and read as malformed the file would start fresh.
     const settingsPath = join(cwd, ".claude", "settings.local.json");
