@@ -31,13 +31,16 @@ function runCli(...args: string[]): RunResult {
   }
 }
 
-// Run a hook, feeding the payload on stdin and writing logs to a throwaway dir.
+// Run a hook, feeding the payload on stdin and writing logs to a throwaway dir. The home is
+// throwaway too: a hook reads ~/.pheebs, and a session start writes there and can launch
+// the developer's own auto-update.
 function runHookRows(
   args: string[],
   payload: unknown,
   input: string | Buffer = JSON.stringify(payload),
 ): Record<string, unknown>[] {
   const dir = mkdtempSync(join(tmpdir(), "pheebs-test-"));
+  const home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
   try {
     execFileSync(process.execPath, [cliPath, ...args], {
       encoding: "utf-8",
@@ -45,6 +48,8 @@ function runHookRows(
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
+        HOME: home,
+        USERPROFILE: home,
         PHEEBS_LOG_PATH: dir,
         PHEEBS_CODEBASE_ID: "test/hooks",
         PHEEBS_DEBUG: "1", // route the remote transport to the no-network debug sink
@@ -57,6 +62,7 @@ function runHookRows(
       .map((line) => JSON.parse(line));
   } finally {
     rmSync(dir, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 }
 
@@ -118,14 +124,15 @@ describe("Codex test-outcome synthesis", () => {
 describe("hook stdin", () => {
   it("logs a payload that arrives with a UTF-8 byte order mark", () => {
     // Windows PowerShell 5.1 prepends one when piping to a native program.
-    const payload = { session_id: "s3" };
+    const payload = { session_id: "s3", tool_name: "Bash", tool_input: { command: "npm test" } };
     const bom = Buffer.from([0xef, 0xbb, 0xbf]);
     const rows = runHookRows(
-      ["hook", "session_started"],
+      ["hook", "tool_use_completed"],
       payload,
       Buffer.concat([bom, Buffer.from(JSON.stringify(payload))]),
     );
-    expect(rows.some((r) => r.event === "session_started")).toBe(true);
+    const toolRow = rows.find((r) => r.event === "tool_use_completed");
+    expect(toolRow?.tool_intent).toBe("test_run");
   });
 });
 
