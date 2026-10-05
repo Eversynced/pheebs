@@ -32,12 +32,16 @@ function runCli(...args: string[]): RunResult {
 }
 
 // Run a hook, feeding the payload on stdin and writing logs to a throwaway dir.
-function runHookRows(args: string[], payload: unknown): Record<string, unknown>[] {
+function runHookRows(
+  args: string[],
+  payload: unknown,
+  input: string | Buffer = JSON.stringify(payload),
+): Record<string, unknown>[] {
   const dir = mkdtempSync(join(tmpdir(), "pheebs-test-"));
   try {
     execFileSync(process.execPath, [cliPath, ...args], {
       encoding: "utf-8",
-      input: JSON.stringify(payload),
+      input,
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
@@ -108,6 +112,20 @@ describe("Codex test-outcome synthesis", () => {
     const toolRow = rows.find((r) => r.tool_intent !== undefined);
     expect(toolRow?.event).toBe("tool_use_completed");
     expect(toolRow?.tool_intent).toBe("test_run");
+  });
+});
+
+describe("hook stdin", () => {
+  it("logs a payload that arrives with a UTF-8 byte order mark", () => {
+    // Windows PowerShell 5.1 prepends one when piping to a native program.
+    const payload = { session_id: "s3" };
+    const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+    const rows = runHookRows(
+      ["hook", "session_started"],
+      payload,
+      Buffer.concat([bom, Buffer.from(JSON.stringify(payload))]),
+    );
+    expect(rows.some((r) => r.event === "session_started")).toBe(true);
   });
 });
 
