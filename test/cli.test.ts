@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir, userInfo } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { systemExe } from "../src/windows.js";
@@ -480,7 +480,7 @@ describe("installs outside the current directory", () => {
       // No mode bits on Windows: owner-only is an ACL with nothing inherited from the folder.
       const acl = execFileSync(systemExe("icacls.exe"), [settingsOf(repoA)], { encoding: "utf-8" });
       expect(acl).not.toContain("(I)");
-      expect(acl).toContain(`${userInfo().username}:(F)`);
+      expect(acl.match(/:\(F\)/g)).toHaveLength(1);
     } else {
       expect(statSync(settingsOf(repoA)).mode & 0o077).toBe(0);
     }
