@@ -8,6 +8,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { detectCodebaseId, parseCodebaseId, resolveLogPath } from "../src/config.js";
+import { onPlatform } from "./platform.js";
 
 // Drive the mocked git calls by their argument list. A value of null makes that
 // git invocation throw (as a missing remote / non-repo would).
@@ -125,6 +126,13 @@ describe("resolveLogPath", () => {
   it("expands a tilde in the env override", () => {
     process.env.PHEEBS_LOG_PATH = "~/custom-logs";
     expect(resolveLogPath()).toBe(`${homedir()}/custom-logs`);
+  });
+
+  it("expands a backslash tilde on Windows only", () => {
+    process.env.PHEEBS_LOG_PATH = "~\\custom-logs";
+    expect(onPlatform("win32", resolveLogPath)).toBe(`${homedir()}\\custom-logs`);
+    // Elsewhere a backslash is part of the name, so `~\custom-logs` is a relative path.
+    expect(onPlatform("linux", resolveLogPath)).toBe("~\\custom-logs");
   });
 
   it("passes through an absolute env override", () => {

@@ -8,10 +8,9 @@ export interface PheebsConfig {
 }
 
 function expandTilde(p: string): string {
-  if (p.startsWith("~/") || p === "~") {
-    return p.replace("~", homedir());
-  }
-  return p;
+  // Windows takes `~\` as well. Elsewhere a backslash is a legal file name character.
+  const tilde = process.platform === "win32" ? /^~(?=$|[\\/])/ : /^~(?=$|\/)/;
+  return tilde.test(p) ? p.replace("~", homedir()) : p;
 }
 
 // Extract org/repo from an SSH or HTTPS git remote URL.
