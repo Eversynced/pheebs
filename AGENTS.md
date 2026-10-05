@@ -44,9 +44,9 @@ change.
    Paths the client wrote to itself are not session content and are covered
    separately: `~/.pheebs/installs.json` records the agent config files `init`
    created, because nothing else can find them once the default scope spreads the
-   token across repos. It stays on disk at 0600, never enters an event, and never
-   crosses the network. Nothing else may join it: a path that came from a payload
-   is still read-and-discard.
+   token across repos. It stays on disk owner-only (0600, an ACL on Windows),
+   never enters an event, and never crosses the network. Nothing else may join
+   it: a path that came from a payload is still read-and-discard.
 2. **Hooks never break or slow the user's session.** Remote failures degrade
    silently, never throw into the hook. All hook entries are registered with
    `"async": true`. The local JSONL log is the durable copy; the network send is
@@ -129,7 +129,7 @@ so run `npm run build` before the CLI tests mean anything.
 | `src/installs.ts` | `~/.pheebs/installs.json`, the paths `init` wrote. Project-local is the default scope, so the exporter config lives in a file per repo and nothing else knows where those are. Local only, never part of an event. |
 | `src/git-exclude.ts` | Keeps a token-bearing project config out of git via `.git/info/exclude`, never `.gitignore`: ignoring a file is the developer's own decision about a tracked repo. Reports `excluded` / `ignored` / `tracked` / `no-repo` / `unprotected`, each confirmed with git rather than inferred, because the caller turns the answer into a promise that the token is not committed. |
 | `src/transport.ts`, `src/transports/http.ts` | The one seam for backend calls. Fire-and-forget ingest, bounded blocking classify. |
-| `src/token.ts` | Token at `~/.pheebs/.token` (0600), validation, cached identity and `prompt_collection`. |
+| `src/token.ts` | Token at `~/.pheebs/.token` (owner-only: 0600, an ACL on Windows), validation, cached identity and `prompt_collection`. |
 | `src/classify.ts` | Prompt classification, consent-gated, degrades to `prompt_intent: "unclassified"` sending no text. |
 | `src/insights.ts` | `fetchInsights(days)`, the one `GET` in the contract. Redirects are manual, because a followed one would draw a report from a host the developer never configured, and the body is capped at 4 MB, because the 10s abort does not bound a fast link. Every failure returns a printable message. |
 | `src/insights-normalize.ts` | The single boundary against an untrusted `/insights` response: shape guards, range checks, own-property lookups, control, ANSI and bidi stripping, bounded rows and string lengths. Also escapes the raw body for `--json`. |
