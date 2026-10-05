@@ -139,8 +139,13 @@ describe("hook stdin", () => {
 
 // spawnSync rather than the execFileSync helper above: the scope assertions below are about
 // warnings, which land on stderr even when the command succeeds.
-function runIn(cwd: string, home: string, args: string[], path?: string): RunResult {
-  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home };
+function runIn(
+  cwd: string,
+  home: string,
+  args: string[],
+  { path, extraEnv }: { path?: string; extraEnv?: NodeJS.ProcessEnv } = {},
+): RunResult {
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home, ...extraEnv };
   if (path !== undefined) {
     // Windows spells it `Path`, and a copy that kept that key would shadow the override.
     for (const key of Object.keys(env)) {
@@ -161,7 +166,8 @@ describe("init and doctor scope", () => {
   // doctor with no tool flag checks only the tools it detects, and detection looks for a binary
   // on PATH or a ~/.<tool> marker. A PATH that resolves nothing keeps the developer's own
   // `cursor` or `codex` out of the check, leaving the marker below as the only signal.
-  const runScoped = (...args: string[]) => runIn(cwd, home, args, join(home, "no-bin"));
+  const noBin = () => join(home, "no-bin");
+  const runScoped = (...args: string[]) => runIn(cwd, home, args, { path: noBin() });
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
@@ -311,6 +317,37 @@ describe("init and doctor scope", () => {
     expect(JSON.parse(readFileSync(settingsPath, "utf-8")).permissions).toEqual({
       allow: ["Bash(ls:*)"],
     });
+  });
+
+  it("uninstalls from a settings file saved with a UTF-8 byte order mark", () => {
+    runScoped("init", "--no-otel");
+    const settingsPath = join(cwd, ".claude", "settings.local.json");
+    writeFileSync(settingsPath, `﻿${readFileSync(settingsPath, "utf-8")}`);
+
+    const result = runScoped("uninstall");
+
+    expect(result.stderr).not.toContain("malformed");
+    expect(readFileSync(settingsPath, "utf-8")).not.toContain("pheebs hook");
+  });
+
+  it("reports the last logged event on a PATH with no tail", () => {
+    const logs = join(home, "logs");
+    mkdirSync(logs);
+    const rows = [
+      { event: "session_started", timestamp: "2026-10-05T09:42:02.938Z" },
+      { event: "turn_ended", timestamp: "2026-10-05T09:50:10.000Z" },
+    ];
+    writeFileSync(
+      join(logs, "a-2026-10-05.jsonl"),
+      rows.map((r) => `${JSON.stringify(r)}\n`).join(""),
+    );
+
+    const result = runIn(cwd, home, ["doctor"], {
+      path: noBin(),
+      extraEnv: { PHEEBS_LOG_PATH: logs },
+    });
+
+    expect(result.stdout).toContain("Last event: turn_ended at 2026-10-05T09:50:10.000Z");
   });
 
   it("restricts to one scope when the scope is named", () => {
