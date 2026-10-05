@@ -6,9 +6,11 @@ import { AI_TOOLS, type AiTool } from "../hooks/definitions.js";
 
 const HOME = homedir();
 
-function commandExists(name: string): boolean {
+/** Whether `name` resolves on PATH. Windows has no `which` outside Git Bash; `where` is its
+ *  counterpart and likewise exits non-zero when nothing matches. */
+export function commandExists(name: string): boolean {
   try {
-    execFileSync("which", [name], { stdio: "pipe" });
+    execFileSync(process.platform === "win32" ? "where" : "which", [name], { stdio: "pipe" });
     return true;
   } catch {
     return false;

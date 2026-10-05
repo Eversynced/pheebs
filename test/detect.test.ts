@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { onPlatform } from "./platform.js";
 
 const whichMock = vi.fn();
 const existsSyncMock = vi.fn();
@@ -52,5 +53,13 @@ describe("detectInstalledTools", () => {
     whichMock.mockImplementation(commandNotFound);
     existsSyncMock.mockReturnValue(true);
     expect(detectInstalledTools()).toEqual([AI_TOOLS.CLAUDE_CODE, AI_TOOLS.CURSOR, AI_TOOLS.CODEX]);
+  });
+
+  it("looks a binary up with `where` on Windows, which has no `which` outside Git Bash", () => {
+    whichMock.mockImplementation(commandNotFound);
+    existsSyncMock.mockReturnValue(false);
+    onPlatform("win32", detectInstalledTools);
+    expect(whichMock).toHaveBeenCalledWith("where", ["claude"], expect.anything());
+    expect(whichMock).not.toHaveBeenCalledWith("which", expect.anything(), expect.anything());
   });
 });

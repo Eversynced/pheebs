@@ -17,7 +17,7 @@ import {
 import { readStoredToken } from "../token.js";
 import { TRANSPORT_ERROR_PATH } from "../transports/http.js";
 import { PHEEBS_VERSION } from "../version.js";
-import { detectInstalledTools } from "./detect.js";
+import { commandExists, detectInstalledTools } from "./detect.js";
 import { resolveSettingsPath, scopesCollide } from "./path.js";
 import { getLatestVersion, isNewer } from "./update.js";
 
@@ -34,23 +34,21 @@ type DoctorResult = {
 
 /** Returns true if pheebs is reachable on PATH; emits guidance and returns false otherwise. */
 function checkPathReachable(): boolean {
-  let inPath = false;
-  try {
-    execSync("which pheebs", { stdio: "pipe" });
-    inPath = true;
-  } catch {}
+  if (commandExists("pheebs")) return true;
 
-  if (inPath) return true;
-
+  const isWindows = process.platform === "win32";
   let binDir = "";
   try {
     const prefix = execSync("npm config get prefix", { stdio: "pipe", encoding: "utf-8" }).trim();
-    if (prefix) binDir = join(prefix, "bin");
+    // npm links global bins into the prefix itself on Windows and into prefix/bin elsewhere.
+    if (prefix) binDir = isWindows ? prefix : join(prefix, "bin");
   } catch {}
 
-  const guidance = binDir
-    ? `Add this to your shell profile (~/.zshrc, ~/.bashrc, etc.):\n  export PATH="${binDir}:$PATH"`
-    : "Run `npm config get prefix` to find your npm prefix,\nthen add <prefix>/bin to your PATH in your shell profile.";
+  const guidance = isWindows
+    ? `Add ${binDir || "your npm prefix (run `npm config get prefix`)"} to your user PATH:\n  Settings > System > About > Advanced system settings > Environment Variables`
+    : binDir
+      ? `Add this to your shell profile (~/.zshrc, ~/.bashrc, etc.):\n  export PATH="${binDir}:$PATH"`
+      : "Run `npm config get prefix` to find your npm prefix,\nthen add <prefix>/bin to your PATH in your shell profile.";
   note(guidance, "pheebs is not in your PATH — hooks will fail silently");
   return false;
 }
