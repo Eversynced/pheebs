@@ -44,7 +44,7 @@ describe("no shipped secrets", () => {
     }
     const orphans = sourceFiles("dist")
       .filter((f) => f.endsWith(".js"))
-      .filter((f) => !existsSync(`${f.replace(/^dist\//, "src/").replace(/\.js$/, "")}.ts`));
+      .filter((f) => !existsSync(`${f.replace(/^dist[\\/]/, "src/").replace(/\.js$/, "")}.ts`));
     expect(orphans).toEqual([]);
   });
 });

@@ -40,14 +40,14 @@ function writePheebsHome(baseUrl?: string, token?: string): string {
 
 type RunResult = { stdout: string; stderr: string; status: number };
 
-// os.homedir() reads $HOME on POSIX, which is what lets the CLI be pointed at a throwaway
-// config and token instead of the developer's own.
+// os.homedir() reads $HOME on POSIX and %USERPROFILE% on Windows, which is what lets the CLI
+// be pointed at a throwaway config and token instead of the developer's own.
 function runCli(cwdHome: string, ...args: string[]): RunResult {
   try {
     const stdout = execFileSync(process.execPath, [cliPath, ...args], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, HOME: cwdHome },
+      env: { ...process.env, HOME: cwdHome, USERPROFILE: cwdHome },
     });
     return { stdout, stderr: "", status: 0 };
   } catch (err) {
