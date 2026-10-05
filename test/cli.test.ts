@@ -533,17 +533,19 @@ describe("installs outside the current directory", () => {
       const sddl = raw.includes(0) ? raw.toString("utf16le") : raw.toString("utf-8");
       const dacl = sddl.match(/D:([A-Z]*)((?:\([^)]*\))+)/);
       const aces = [...(dacl?.[2] ?? "").matchAll(/\(([^)]*)\)/g)].map((m) => m[1].split(";"));
+      // SDDL writes the built-in Administrator account, which hosted CI runs as, as `LA`.
+      const isUser = (who: string) => who === sid || (who === "LA" && !!sid?.endsWith("-500"));
       expect(dacl?.[1], sddl).toContain("P");
       expect(
         aces.filter((ace) => ace[1].includes("ID")),
         sddl,
       ).toEqual([]);
       expect(
-        aces.filter((ace) => ![sid, "SY", "BA"].includes(ace[5])),
+        aces.filter((ace) => !isUser(ace[5]) && ace[5] !== "SY" && ace[5] !== "BA"),
         sddl,
       ).toEqual([]);
       expect(
-        aces.some((ace) => ace[5] === sid && ace[2] === "FA"),
+        aces.some((ace) => isUser(ace[5]) && ace[2] === "FA"),
         sddl,
       ).toBe(true);
     } else {
