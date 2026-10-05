@@ -113,12 +113,16 @@ describe("Codex test-outcome synthesis", () => {
 
 // spawnSync rather than the execFileSync helper above: the scope assertions below are about
 // warnings, which land on stderr even when the command succeeds.
-function runIn(cwd: string, home: string, args: string[]): RunResult {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    encoding: "utf-8",
-    cwd,
-    env: { ...process.env, HOME: home, USERPROFILE: home },
-  });
+function runIn(cwd: string, home: string, args: string[], path?: string): RunResult {
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home };
+  if (path !== undefined) {
+    // Windows spells it `Path`, and a copy that kept that key would shadow the override.
+    for (const key of Object.keys(env)) {
+      if (key.toUpperCase() === "PATH") delete env[key];
+    }
+    env.PATH = path;
+  }
+  const result = spawnSync(process.execPath, [cliPath, ...args], { encoding: "utf-8", cwd, env });
   return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", status: result.status ?? 1 };
 }
 
@@ -128,13 +132,14 @@ describe("init and doctor scope", () => {
   let home: string;
   let cwd: string;
 
-  const runScoped = (...args: string[]) => runIn(cwd, home, args);
+  // doctor with no tool flag checks only the tools it detects, and detection looks for a binary
+  // on PATH or a ~/.<tool> marker. A PATH that resolves nothing keeps the developer's own
+  // `cursor` or `codex` out of the check, leaving the marker below as the only signal.
+  const runScoped = (...args: string[]) => runIn(cwd, home, args, join(home, "no-bin"));
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
     cwd = mkdtempSync(join(tmpdir(), "pheebs-cwd-"));
-    // doctor with no tool flag checks only the tools it detects, and detection looks for a
-    // `claude` binary or ~/.claude. Neither exists on CI, so the marker stands in for an install.
     mkdirSync(join(home, ".claude"), { recursive: true });
   });
 
