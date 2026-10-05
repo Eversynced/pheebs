@@ -32,6 +32,13 @@ function runCli(...args: string[]): RunResult {
   }
 }
 
+// Without a cached handle, hooks and init resolve the developer through `gh api` and git, which
+// can reach GitHub and, on a cold Windows CI runner, took 18s on its first call.
+function seedDeveloperHandle(home: string): void {
+  mkdirSync(join(home, ".pheebs"), { recursive: true });
+  writeFileSync(join(home, ".pheebs", ".developer-handle"), `${Date.now()}\ntest-dev`);
+}
+
 // Run a hook, feeding the payload on stdin and writing logs to a throwaway dir. The home is
 // throwaway too: a hook reads ~/.pheebs, and a session start writes there and can launch
 // the developer's own auto-update.
@@ -42,6 +49,7 @@ function runHookRows(
 ): Record<string, unknown>[] {
   const dir = mkdtempSync(join(tmpdir(), "pheebs-test-"));
   const home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
+  seedDeveloperHandle(home);
   try {
     execFileSync(process.execPath, [cliPath, ...args], {
       encoding: "utf-8",
@@ -145,6 +153,7 @@ function runIn(
   args: string[],
   { path, extraEnv }: { path?: string; extraEnv?: NodeJS.ProcessEnv } = {},
 ): RunResult {
+  seedDeveloperHandle(home);
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home, ...extraEnv };
   if (path !== undefined) {
     // Windows spells it `Path`; drop every spelling so the child sees only the one set here.
