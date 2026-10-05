@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { type Dirent, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { parse as parseToml } from "smol-toml";
+import { stripBom } from "./bom.js";
 import { detectCodebaseId, type PheebsConfig, resolveLogPath } from "./config.js";
 import { getDeveloperHandle } from "./developer-id.js";
 import { type AiTool, EVENTS, isPheebsEntry } from "./hooks/definitions.js";
@@ -268,7 +269,7 @@ const HOOK_CONFIG_PATHS = [
 // same bargain intent classification makes with raw shell commands.
 function readConfigObject(p: string): Record<string, unknown> | null {
   try {
-    const raw = readFileSync(p, "utf-8");
+    const raw = stripBom(readFileSync(p, "utf-8"));
     const parsed: unknown = p.endsWith(".toml") ? parseToml(raw) : JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
     return parsed as Record<string, unknown>;

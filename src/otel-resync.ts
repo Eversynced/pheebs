@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import { stripBom } from "./bom.js";
 import { resolveSettingsPath } from "./commands/path.js";
 import { protectToken } from "./git-exclude.js";
 import { AI_TOOLS, type AiTool } from "./hooks/definitions.js";
@@ -57,7 +58,7 @@ export function resyncOtelConfigs(): void {
 function syncClaudeFile(path: string): boolean {
   if (!existsSync(path)) return false;
   try {
-    const settings = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+    const settings = JSON.parse(stripBom(readFileSync(path, "utf-8"))) as Record<string, unknown>;
     if (!hasClaudeOtel(settings)) return false;
 
     const wrote = syncClaudeOtelEnv(settings, true);
@@ -71,7 +72,7 @@ function syncClaudeFile(path: string): boolean {
 function syncCodexFile(path: string): boolean {
   if (!existsSync(path)) return false;
   try {
-    const config = parseToml(readFileSync(path, "utf-8")) as Record<string, unknown>;
+    const config = parseToml(stripBom(readFileSync(path, "utf-8"))) as Record<string, unknown>;
     if (!hasCodexOtel(config)) return false;
 
     const wrote = syncCodexOtel(config, true);

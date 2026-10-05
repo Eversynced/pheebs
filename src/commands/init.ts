@@ -21,6 +21,7 @@ import {
   readConfig,
   writeConfig,
 } from "../backend-config.js";
+import { stripBom } from "../bom.js";
 import { getDeveloperHandle } from "../developer-id.js";
 import { protectToken } from "../git-exclude.js";
 import {
@@ -57,7 +58,7 @@ function initCursor(settingsPath: string, level: string): InitResult {
 
   if (existsSync(settingsPath)) {
     try {
-      const raw = readFileSync(settingsPath, "utf-8");
+      const raw = stripBom(readFileSync(settingsPath, "utf-8"));
       config = JSON.parse(raw);
     } catch {
       console.warn(`pheebs: existing ${settingsPath} is malformed, starting fresh`);
@@ -97,7 +98,7 @@ function initCodex(settingsPath: string, level: string, otelEnabled: boolean): I
 
   if (existsSync(settingsPath)) {
     try {
-      const raw = readFileSync(settingsPath, "utf-8");
+      const raw = stripBom(readFileSync(settingsPath, "utf-8"));
       config = parseToml(raw) as Record<string, unknown>;
     } catch {
       console.warn(`pheebs: existing ${settingsPath} is malformed, starting fresh`);
@@ -140,7 +141,7 @@ function initClaudeCode(settingsPath: string, level: string, otelEnabled: boolea
 
   if (existsSync(settingsPath)) {
     try {
-      const raw = readFileSync(settingsPath, "utf-8");
+      const raw = stripBom(readFileSync(settingsPath, "utf-8"));
       settings = JSON.parse(raw);
     } catch {
       console.warn(`pheebs: existing ${settingsPath} is malformed, starting fresh`);
@@ -201,7 +202,7 @@ export function hasUserLevelInstall(tool: AiTool): boolean {
 
   let config: Record<string, unknown>;
   try {
-    const raw = readFileSync(userPath, "utf-8");
+    const raw = stripBom(readFileSync(userPath, "utf-8"));
     config = (tool === AI_TOOLS.CODEX ? parseToml(raw) : JSON.parse(raw)) as Record<
       string,
       unknown

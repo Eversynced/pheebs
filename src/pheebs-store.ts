@@ -1,5 +1,6 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { stripBom } from "./bom.js";
 
 // Shared persistence for the small owner-private files under ~/.pheebs (the token and
 // the endpoint config). Both need the same JSON-read and 0600-write behavior, so it lives
@@ -8,7 +9,7 @@ import { dirname } from "node:path";
 /** Read and JSON-parse a file; undefined if it is missing, empty, or malformed. */
 export function readJsonFile<T>(path: string): T | undefined {
   try {
-    const raw = readFileSync(path, "utf-8").trim();
+    const raw = stripBom(readFileSync(path, "utf-8")).trim();
     return raw ? (JSON.parse(raw) as T) : undefined;
   } catch {
     return undefined;

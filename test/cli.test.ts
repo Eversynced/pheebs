@@ -279,6 +279,23 @@ describe("init and doctor scope", () => {
     expect(result.status).toBe(1);
   });
 
+  it("keeps the rest of a settings file saved with a UTF-8 byte order mark", () => {
+    // PowerShell's `-Encoding UTF8` writes one, and read as malformed the file would start fresh.
+    const settingsPath = join(cwd, ".claude", "settings.local.json");
+    mkdirSync(join(cwd, ".claude"), { recursive: true });
+    writeFileSync(
+      settingsPath,
+      `\uFEFF${JSON.stringify({ permissions: { allow: ["Bash(ls:*)"] } })}`,
+    );
+
+    const result = runScoped("init", "--no-otel");
+
+    expect(result.stderr).not.toContain("malformed");
+    expect(JSON.parse(readFileSync(settingsPath, "utf-8")).permissions).toEqual({
+      allow: ["Bash(ls:*)"],
+    });
+  });
+
   it("restricts to one scope when the scope is named", () => {
     runScoped("init", "--global", "--no-otel");
     const result = runScoped("doctor", "--project");

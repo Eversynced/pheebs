@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { intro, log, note, outro } from "@clack/prompts";
 import { parse as parseToml } from "smol-toml";
 import { baseUrl, hasBackend } from "../backend-config.js";
+import { stripBom } from "../bom.js";
 import { resolveLogPath } from "../config.js";
 import {
   AI_TOOLS,
@@ -76,7 +77,7 @@ export function doctorCodex(settingsPath: string): DoctorResult {
 
   let config: Record<string, unknown>;
   try {
-    const raw = readFileSync(settingsPath, "utf-8");
+    const raw = stripBom(readFileSync(settingsPath, "utf-8"));
     config = parseToml(raw) as Record<string, unknown>;
   } catch {
     return { ...base, issues: [], fatal: `${settingsPath} is malformed` };
@@ -124,7 +125,7 @@ export function doctorJsonConfig(settingsPath: string, tool: AiTool): DoctorResu
 
   let config: Record<string, unknown>;
   try {
-    const raw = readFileSync(settingsPath, "utf-8");
+    const raw = stripBom(readFileSync(settingsPath, "utf-8"));
     config = JSON.parse(raw);
   } catch {
     return { ...base, issues: [], fatal: `${settingsPath} is malformed` };
