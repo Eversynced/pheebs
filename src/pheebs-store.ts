@@ -18,11 +18,9 @@ export function readJsonFile<T>(path: string): T | undefined {
   }
 }
 
-/**
- * The current account's SID. A bare user name is not enough: on a domain-joined machine it can
- * resolve to a local account of the same name, and stripping inheritance after granting that
- * account would lock the developer out of their own settings file.
- */
+// A SID rather than a user name: on a domain-joined machine a bare name can resolve to a local
+// account of the same name, and stripping inheritance after granting that one would lock the
+// developer out of their own settings file.
 function currentUserSid(): string | undefined {
   const out = execFileSync(systemExe("whoami.exe"), ["/user", "/fo", "csv", "/nh"], {
     encoding: "utf-8",

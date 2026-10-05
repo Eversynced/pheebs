@@ -164,7 +164,7 @@ function getLastEvent(
 
   const latest = files[files.length - 1];
   try {
-    // Read in-process rather than through `tail`, which Windows does not have.
+    // In-process, because Windows has no `tail` outside Git Bash.
     const tail = readFileSync(join(logDir, latest), "utf-8").trim().split("\n").pop();
     if (!tail) return null;
     const last = JSON.parse(tail) as Record<string, unknown>;
