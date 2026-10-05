@@ -12,6 +12,7 @@ import {
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { systemExe } from "../src/windows.js";
 
 const repoRoot = join(import.meta.dirname, "..");
 const cliPath = join(repoRoot, "dist", "cli.js");
@@ -477,7 +478,7 @@ describe("installs outside the current directory", () => {
 
     if (process.platform === "win32") {
       // No mode bits on Windows: owner-only is an ACL with nothing inherited from the folder.
-      const acl = execFileSync("icacls", [settingsOf(repoA)], { encoding: "utf-8" });
+      const acl = execFileSync(systemExe("icacls.exe"), [settingsOf(repoA)], { encoding: "utf-8" });
       expect(acl).not.toContain("(I)");
       expect(acl).toContain(`${userInfo().username}:(F)`);
     } else {

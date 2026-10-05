@@ -1,6 +1,7 @@
 import { execFileSync, execSync } from "node:child_process";
 import { intro, log, outro, spinner } from "@clack/prompts";
 import { PHEEBS_VERSION } from "../version.js";
+import { systemExe } from "../windows.js";
 
 const PACKAGE = "pheebs";
 
@@ -23,11 +24,15 @@ function run(args: string[], timeout: number): string {
     killSignal: "SIGKILL",
     windowsHide: true,
   } as const;
-  // npm is `npm.cmd` on Windows, which Node launches only through a shell. One joined string
-  // rather than shell: true with an args array, which Node 24 deprecates with a printed warning.
-  return process.platform === "win32"
-    ? execSync(["npm", ...args].join(" "), options)
-    : execFileSync("npm", args, options);
+  if (process.platform !== "win32") return execFileSync("npm", args, options);
+  // npm is `npm.cmd` here, which Node launches only through a shell, and as one joined string
+  // because shell: true with an args array prints a deprecation warning on Node 24. cmd.exe is
+  // named in full and told not to search the current folder, where a repo's own npm.cmd would win.
+  return execSync(["npm", ...args].join(" "), {
+    ...options,
+    shell: systemExe("cmd.exe"),
+    env: { ...process.env, NoDefaultCurrentDirectoryInExePath: "1" },
+  });
 }
 
 /** The registry's `latest`, or null when it is unreachable or answers with anything but a version. */

@@ -3,14 +3,20 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { AI_TOOLS, type AiTool } from "../hooks/definitions.js";
+import { systemExe } from "../windows.js";
 
 const HOME = homedir();
 
-/** Whether `name` resolves on PATH. Windows has no `which` outside Git Bash; `where` is its
- *  counterpart and likewise exits non-zero when nothing matches. */
+/** False on any failure, so a lookup tool that is itself missing reads as not installed. Windows
+ *  has no `which` outside Git Bash; `where` with a `$PATH:` prefix searches PATH alone, so a file
+ *  of the same name in the current folder does not count. */
 export function commandExists(name: string): boolean {
   try {
-    execFileSync(process.platform === "win32" ? "where" : "which", [name], { stdio: "pipe" });
+    if (process.platform === "win32") {
+      execFileSync(systemExe("where.exe"), [`$PATH:${name}`], { stdio: "pipe", windowsHide: true });
+    } else {
+      execFileSync("which", [name], { stdio: "pipe" });
+    }
     return true;
   } catch {
     return false;

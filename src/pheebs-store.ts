@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { stripBom } from "./bom.js";
+import { systemExe } from "./windows.js";
 
 // Shared persistence for the small owner-private files under ~/.pheebs (the token and
 // the endpoint config). Both need the same JSON-read and 0600-write behavior, so it lives
@@ -23,7 +24,7 @@ export function readJsonFile<T>(path: string): T | undefined {
  * account would lock the developer out of their own settings file.
  */
 function currentUserSid(): string | undefined {
-  const out = execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], {
+  const out = execFileSync(systemExe("whoami.exe"), ["/user", "/fo", "csv", "/nh"], {
     encoding: "utf-8",
     windowsHide: true,
   });
@@ -43,7 +44,7 @@ export function restrictToOwner(path: string): void {
       // the current user as the only one with access.
       const sid = currentUserSid();
       if (!sid) return;
-      execFileSync("icacls", [path, "/inheritance:r", "/grant:r", `*${sid}:F`], {
+      execFileSync(systemExe("icacls.exe"), [path, "/inheritance:r", "/grant:r", `*${sid}:F`], {
         stdio: "ignore",
         windowsHide: true,
       });

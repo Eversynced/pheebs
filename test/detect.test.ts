@@ -55,11 +55,17 @@ describe("detectInstalledTools", () => {
     expect(detectInstalledTools()).toEqual([AI_TOOLS.CLAUDE_CODE, AI_TOOLS.CURSOR, AI_TOOLS.CODEX]);
   });
 
-  it("looks a binary up with `where` on Windows, which has no `which` outside Git Bash", () => {
+  it("looks a binary up on PATH alone with System32's `where` on Windows", () => {
+    vi.stubEnv("SystemRoot", "C:\\Windows");
     whichMock.mockImplementation(commandNotFound);
     existsSyncMock.mockReturnValue(false);
     onPlatform("win32", detectInstalledTools);
-    expect(whichMock).toHaveBeenCalledWith("where", ["claude"], expect.anything());
+    expect(whichMock).toHaveBeenCalledWith(
+      "C:\\Windows\\System32\\where.exe",
+      ["$PATH:claude"],
+      expect.anything(),
+    );
     expect(whichMock).not.toHaveBeenCalledWith("which", expect.anything(), expect.anything());
+    vi.unstubAllEnvs();
   });
 });

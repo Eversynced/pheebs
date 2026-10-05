@@ -26,12 +26,18 @@ describe("getLatestVersion", () => {
     expect(execSyncMock).not.toHaveBeenCalled();
   });
 
-  it("goes through a shell on Windows, where npm is npm.cmd", () => {
+  it("goes through System32's cmd.exe on Windows, where npm is npm.cmd", () => {
+    vi.stubEnv("SystemRoot", "C:\\Windows");
     expect(onPlatform("win32", getLatestVersion)).toBe("1.2.3");
     expect(execSyncMock).toHaveBeenCalledWith(
       "npm view pheebs version",
-      expect.objectContaining({ windowsHide: true }),
+      expect.objectContaining({
+        shell: "C:\\Windows\\System32\\cmd.exe",
+        windowsHide: true,
+        env: expect.objectContaining({ NoDefaultCurrentDirectoryInExePath: "1" }),
+      }),
     );
     expect(execFileSyncMock).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
   });
 });
