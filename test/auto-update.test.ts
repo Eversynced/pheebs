@@ -88,7 +88,7 @@ describe("maybeAutoUpdate", () => {
     const [bin, argv, opts] = spawnMock.mock.calls[0];
     expect(bin).toBe(process.execPath);
     expect(argv).toEqual(["/path/to/cli.js", "update"]);
-    expect(opts).toMatchObject({ detached: true, stdio: "ignore" });
+    expect(opts).toMatchObject({ detached: true, stdio: "ignore", windowsHide: true });
   });
 
   it("does not spawn or stamp when a check ran within the last day", () => {
