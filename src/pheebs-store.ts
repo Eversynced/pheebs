@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { stripBom } from "./bom.js";
 import { systemExe } from "./windows.js";
 
 // Shared persistence for the small owner-private files under ~/.pheebs (the token and
@@ -11,7 +10,8 @@ import { systemExe } from "./windows.js";
 /** Read and JSON-parse a file; undefined if it is missing, empty, or malformed. */
 export function readJsonFile<T>(path: string): T | undefined {
   try {
-    const raw = stripBom(readFileSync(path, "utf-8")).trim();
+    // trim() also drops a leading UTF-8 byte order mark, so no stripBom is needed here.
+    const raw = readFileSync(path, "utf-8").trim();
     return raw ? (JSON.parse(raw) as T) : undefined;
   } catch {
     return undefined;

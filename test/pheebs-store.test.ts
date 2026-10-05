@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { onPlatform } from "./platform.js";
 
@@ -11,7 +14,7 @@ vi.mock("node:fs", async (importOriginal) => ({
   chmodSync: (...args: unknown[]) => chmodSyncMock(...args),
 }));
 
-const { restrictToOwner } = await import("../src/pheebs-store.js");
+const { readJsonFile, restrictToOwner } = await import("../src/pheebs-store.js");
 
 const WHOAMI = "C:\\Windows\\System32\\whoami.exe";
 const ICACLS = "C:\\Windows\\System32\\icacls.exe";
@@ -79,6 +82,19 @@ describe("restrictToOwner on Windows", () => {
 
     expect(() => onPlatform("win32", () => restrictToOwner(SETTINGS))).not.toThrow();
     expect(execFileSyncMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("readJsonFile", () => {
+  it("reads a file saved with a UTF-8 byte order mark", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pheebs-store-"));
+    try {
+      const path = join(dir, "config.json");
+      writeFileSync(path, `﻿${JSON.stringify({ autoUpdate: true })}\n`);
+      expect(readJsonFile(path)).toEqual({ autoUpdate: true });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
