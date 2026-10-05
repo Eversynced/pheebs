@@ -42,7 +42,8 @@ describe("detectInstalledTools", () => {
 
   it("detects a tool by its CLI binary", () => {
     whichMock.mockImplementation((_cmd: string, args: string[]) => {
-      if (args[0] === "cursor") return Buffer.from("");
+      // Windows looks the name up as `$PATH:cursor`.
+      if (args[0].replace(/^\$PATH:/, "") === "cursor") return Buffer.from("");
       return commandNotFound();
     });
     existsSyncMock.mockReturnValue(false);
