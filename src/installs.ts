@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { AI_TOOLS, type AiTool } from "./hooks/definitions.js";
-import { readJsonFile } from "./pheebs-store.js";
+import { readJsonFile, restrictToOwner } from "./pheebs-store.js";
 
 /**
  * The paths `init` has written, so later commands can reach installs outside the current
@@ -51,6 +51,7 @@ function writeInstalls(records: InstallRecord[]): void {
     const temporary = `${INSTALLS_PATH}.${process.pid}`;
     mkdirSync(dirname(INSTALLS_PATH), { recursive: true });
     writeFileSync(temporary, `${JSON.stringify(records)}\n`, { mode: 0o600 });
+    restrictToOwner(temporary);
     renameSync(temporary, INSTALLS_PATH);
   } catch {}
 }

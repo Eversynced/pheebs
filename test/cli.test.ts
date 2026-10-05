@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -468,7 +468,14 @@ describe("installs outside the current directory", () => {
     run(home, "config", "set", "token", "pheebs_test_token");
     run(repoA, "init");
 
-    expect(statSync(settingsOf(repoA)).mode & 0o077).toBe(0);
+    if (process.platform === "win32") {
+      // No mode bits on Windows: owner-only is an ACL with nothing inherited from the folder.
+      const acl = execFileSync("icacls", [settingsOf(repoA)], { encoding: "utf-8" });
+      expect(acl).not.toContain("(I)");
+      expect(acl).toContain(`${userInfo().username}:(F)`);
+    } else {
+      expect(statSync(settingsOf(repoA)).mode & 0o077).toBe(0);
+    }
   });
 
   it("keeps a token-bearing project config out of git", () => {

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { stripBom } from "./bom.js";
@@ -17,13 +18,38 @@ export function readJsonFile<T>(path: string): T | undefined {
 }
 
 /**
+ * The current account's SID. A bare user name is not enough: on a domain-joined machine it can
+ * resolve to a local account of the same name, and stripping inheritance after granting that
+ * account would lock the developer out of their own settings file.
+ */
+function currentUserSid(): string | undefined {
+  const out = execFileSync("whoami", ["/user", "/fo", "csv", "/nh"], {
+    encoding: "utf-8",
+    windowsHide: true,
+  });
+  return out.match(/S-1-\d+(?:-\d+)+/)?.[0];
+}
+
+/**
  * Narrow an existing file to owner-only. For the agent config files pheebs writes the Bearer
  * token into: those belong to the agent, not to pheebs, so they are written in the agent's
  * own format and only their permissions are ours to tighten. Best-effort, and never widens.
  */
 export function restrictToOwner(path: string): void {
   try {
-    chmodSync(path, 0o600);
+    if (process.platform === "win32") {
+      // Windows ignores POSIX mode bits, so a file would keep whatever its folder grants, and a
+      // repo under a shared folder can grant other users. Drop the inherited entries and leave
+      // the current user as the only one with access.
+      const sid = currentUserSid();
+      if (!sid) return;
+      execFileSync("icacls", [path, "/inheritance:r", "/grant:r", `*${sid}:F`], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+    } else {
+      chmodSync(path, 0o600);
+    }
   } catch {}
 }
 
@@ -31,8 +57,6 @@ export function restrictToOwner(path: string): void {
 export function writeJsonFile(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value)}\n`, { mode: 0o600 });
-  // mode is ignored when the file already exists, so enforce it explicitly.
-  try {
-    chmodSync(path, 0o600);
-  } catch {}
+  // mode is ignored when the file already exists, and on Windows always, so enforce it explicitly.
+  restrictToOwner(path);
 }
