@@ -521,10 +521,31 @@ describe("installs outside the current directory", () => {
     run(repoA, "init");
 
     if (process.platform === "win32") {
-      // No mode bits on Windows: owner-only is an ACL with nothing inherited from the folder.
-      const acl = execFileSync(systemExe("icacls.exe"), [settingsOf(repoA)], { encoding: "utf-8" });
-      expect(acl).not.toContain("(I)");
-      expect(acl.match(/:\(F\)/g)).toHaveLength(1);
+      // No mode bits on Windows: owner-only is a protected ACL, read as SDDL so accounts are
+      // compared by SID rather than by locale-dependent names. SYSTEM and Administrators may keep
+      // access, as root does under 0600 and as Windows OpenSSH allows for a private key.
+      const sid = execFileSync(systemExe("whoami.exe"), ["/user", "/fo", "csv", "/nh"], {
+        encoding: "utf-8",
+      }).match(/S-1-\d+(?:-\d+)+/)?.[0];
+      const saved = join(home, "acl.txt");
+      execFileSync(systemExe("icacls.exe"), [settingsOf(repoA), "/save", saved]);
+      const raw = readFileSync(saved);
+      const sddl = raw.includes(0) ? raw.toString("utf16le") : raw.toString("utf-8");
+      const dacl = sddl.match(/D:([A-Z]*)((?:\([^)]*\))+)/);
+      const aces = [...(dacl?.[2] ?? "").matchAll(/\(([^)]*)\)/g)].map((m) => m[1].split(";"));
+      expect(dacl?.[1], sddl).toContain("P");
+      expect(
+        aces.filter((ace) => ace[1].includes("ID")),
+        sddl,
+      ).toEqual([]);
+      expect(
+        aces.filter((ace) => ![sid, "SY", "BA"].includes(ace[5])),
+        sddl,
+      ).toEqual([]);
+      expect(
+        aces.some((ace) => ace[5] === sid && ace[2] === "FA"),
+        sddl,
+      ).toBe(true);
     } else {
       expect(statSync(settingsOf(repoA)).mode & 0o077).toBe(0);
     }
