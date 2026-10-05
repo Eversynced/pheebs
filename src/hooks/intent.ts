@@ -32,7 +32,8 @@ const TOOL_NAME_INTENTS: Record<string, ToolIntent> = {
 };
 
 // Tool names whose intent depends on the shell command being run.
-const SHELL_TOOL_NAMES = new Set(["Bash", "Shell", "shell"]);
+// Claude Code on Windows runs commands through `PowerShell` rather than `Bash`.
+const SHELL_TOOL_NAMES = new Set(["Bash", "PowerShell", "Shell", "shell"]);
 
 // Ordered keyword table for shell commands: the first entry whose prefix matches
 // the command's leading token(s) wins. Add new tools by extending a `prefixes`

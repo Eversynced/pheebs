@@ -45,6 +45,15 @@ privacy line.
 
 ## Findings
 
+### 2026-10-05 — Claude Code on Windows runs shell commands through a tool named `PowerShell`, not `Bash` [Status: CONFIRMED (tool name) / UNVERIFIED (`tool_input.command`)]
+
+- **Tool(s):** claude_code
+- **Hook / event:** `PostToolUse` / `PostToolUseFailure` → `tool_use_completed` / `tool_use_failed`
+- **Claim (doc/assumption):** shell commands arrive as `tool_name: "Bash"` on every platform, so `Bash` in `SHELL_TOOL_NAMES` covered Claude Code.
+- **Finding:** in a live Claude Code session on Windows 11, shell commands logged `tool_name: "PowerShell"`, so every one was tagged `tool_intent: "other"` and tests, builds and commits went uncounted. The command is assumed to sit in `tool_input.command` as it does for Bash; the log never stores the command, so that field name is not yet confirmed.
+- **Method:** Windows test report, local mode, pheebs 1.1.0, live session in an instrumented repo; `tool_name` read from the JSONL log.
+- **Impact:** `PowerShell` added to `SHELL_TOOL_NAMES`. Confirm `tool_input.command` with a `PHEEBS_DEBUG` dump on Windows; until then a Windows session with no `test_run` is unverified rather than evidence of none.
+
 ### 2026-09-17 — Prometheus rendering adds unit and `_total` suffixes to the OTel metric names, so they are not what the Claude Code docs name them [Status: CONFIRMED]
 
 - **Tool(s):** claude_code
