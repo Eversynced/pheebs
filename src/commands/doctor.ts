@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { intro, log, note, outro } from "@clack/prompts";
@@ -164,7 +164,8 @@ function getLastEvent(
 
   const latest = files[files.length - 1];
   try {
-    const tail = execFileSync("tail", ["-1", join(logDir, latest)], { encoding: "utf-8" }).trim();
+    // Read in-process rather than through `tail`, which Windows does not have.
+    const tail = readFileSync(join(logDir, latest), "utf-8").trim().split("\n").pop();
     if (!tail) return null;
     const last = JSON.parse(tail) as Record<string, unknown>;
     return {
