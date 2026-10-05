@@ -45,6 +45,15 @@ privacy line.
 
 ## Findings
 
+### 2026-10-05 — Hook stdin can start with a UTF-8 BOM when a Windows PowerShell pipe delivers it; Claude Code's own runner sends none [Status: CONFIRMED (PowerShell pipe with UTF-8 `$OutputEncoding`, Claude Code runner) / UNVERIFIED (Cursor and Codex runners on Windows)]
+
+- **Tool(s):** claude_code; cursor and codex not checked
+- **Hook / event:** any; observed on `session_started`
+- **Claim (doc/assumption):** hook stdin is plain UTF-8 JSON on every platform, so `JSON.parse` on the decoded bytes is enough.
+- **Finding:** Windows PowerShell 5.1 with `$OutputEncoding` set to `[Text.Encoding]::UTF8` prepends `EF BB BF` when piping to a native program, and `JSON.parse` rejects the payload, so the event was dropped. The 5.1 default `$OutputEncoding` is ASCII and adds no BOM. Claude Code's own hook runner sent clean bytes in a live session. Not tested here but documented: 5.1's `-Encoding UTF8` also writes a BOM into files, so a settings file saved that way carries one.
+- **Method:** Windows test report, pheebs 1.1.0, Windows 11 and PowerShell 5.1: the same payload piped from PowerShell was dropped, fed from cmd with `<` was logged.
+- **Impact:** a leading BOM is stripped from hook stdin and from every settings file pheebs parses (`src/bom.ts`). Exposure is limited to runners or wrappers that pipe through PowerShell.
+
 ### 2026-10-05 — Claude Code on Windows runs shell commands through a tool named `PowerShell`, not `Bash` [Status: CONFIRMED (tool name) / UNVERIFIED (`tool_input.command`)]
 
 - **Tool(s):** claude_code

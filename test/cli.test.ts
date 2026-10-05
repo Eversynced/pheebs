@@ -124,7 +124,7 @@ describe("Codex test-outcome synthesis", () => {
 
 describe("hook stdin", () => {
   it("logs a payload that arrives with a UTF-8 byte order mark", () => {
-    // Windows PowerShell 5.1 prepends one when piping to a native program.
+    // A Windows PowerShell pipe can prepend one: the 2026-10-05 BOM entry in the findings ledger.
     const payload = { session_id: "s3", tool_name: "Bash", tool_input: { command: "npm test" } };
     const bom = Buffer.from([0xef, 0xbb, 0xbf]);
     const rows = runHookRows(
@@ -303,7 +303,7 @@ describe("init and doctor scope", () => {
   });
 
   it("keeps the rest of a settings file saved with a UTF-8 byte order mark", () => {
-    // PowerShell's `-Encoding UTF8` writes one, and read as malformed the file would start fresh.
+    // Windows PowerShell's `-Encoding UTF8` writes one: the 2026-10-05 BOM entry in the ledger.
     const settingsPath = join(cwd, ".claude", "settings.local.json");
     mkdirSync(join(cwd, ".claude"), { recursive: true });
     writeFileSync(
