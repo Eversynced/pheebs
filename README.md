@@ -137,6 +137,12 @@ Read your own data at any time — it is plain text:
 tail -qn 20 "$(ls -t ~/.pheebs/logs/*.jsonl | head -1)"
 ```
 
+On Windows, in PowerShell:
+
+```powershell
+Get-Content -Tail 20 (Get-ChildItem ~/.pheebs/logs/*.jsonl | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+```
+
 ### Prompt classification — the one exception
 
 On each prompt, Pheebs can send the prompt text to your backend's `/classify-prompt` route, which
@@ -322,7 +328,7 @@ pheebs init --no-otel
 
 Pheebs works out of the box, and out of the box it is local-only. Settings are managed with
 `pheebs config` and stored in `~/.pheebs/config.json` (the token lives separately in
-`~/.pheebs/.token`, `0600`):
+`~/.pheebs/.token`, `0600`, or an owner-only ACL on Windows):
 
 ```bash
 pheebs config list                 # show every setting and where it comes from
@@ -385,8 +391,9 @@ pheebs hook-codex <event_name>
 
 ## ✅ Requirements
 
-- macOS or Linux. Windows is untested: nothing in the client is deliberately POSIX-only, but CI
-  does not cover it.
+- macOS, Linux or Windows. CI runs on Linux and Windows. One Windows capture question is still
+  open: whether Claude Code's `PowerShell` tool carries its command where Pheebs reads it, so test
+  and commit detection there is unconfirmed (see the [findings ledger](./docs/spike-findings-ledger.md)).
 - Node.js >= 20
 - A git repository (for automatic codebase and developer detection)
 - One of: Claude Code, Cursor, or Codex with hooks support

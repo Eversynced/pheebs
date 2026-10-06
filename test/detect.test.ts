@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { onPlatform } from "./platform.js";
 
 const whichMock = vi.fn();
 const existsSyncMock = vi.fn();
@@ -41,7 +42,8 @@ describe("detectInstalledTools", () => {
 
   it("detects a tool by its CLI binary", () => {
     whichMock.mockImplementation((_cmd: string, args: string[]) => {
-      if (args[0] === "cursor") return Buffer.from("");
+      // Windows looks the name up as `$PATH:cursor`.
+      if (args[0].replace(/^\$PATH:/, "") === "cursor") return Buffer.from("");
       return commandNotFound();
     });
     existsSyncMock.mockReturnValue(false);
@@ -52,5 +54,19 @@ describe("detectInstalledTools", () => {
     whichMock.mockImplementation(commandNotFound);
     existsSyncMock.mockReturnValue(true);
     expect(detectInstalledTools()).toEqual([AI_TOOLS.CLAUDE_CODE, AI_TOOLS.CURSOR, AI_TOOLS.CODEX]);
+  });
+
+  it("looks a binary up on PATH alone with System32's `where` on Windows", () => {
+    vi.stubEnv("SystemRoot", "C:\\Windows");
+    whichMock.mockImplementation(commandNotFound);
+    existsSyncMock.mockReturnValue(false);
+    onPlatform("win32", detectInstalledTools);
+    expect(whichMock).toHaveBeenCalledWith(
+      "C:\\Windows\\System32\\where.exe",
+      ["$PATH:claude"],
+      expect.anything(),
+    );
+    expect(whichMock).not.toHaveBeenCalledWith("which", expect.anything(), expect.anything());
+    vi.unstubAllEnvs();
   });
 });

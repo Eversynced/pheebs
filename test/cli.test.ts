@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { systemExe } from "../src/windows.js";
 
 const repoRoot = join(import.meta.dirname, "..");
 const cliPath = join(repoRoot, "dist", "cli.js");
@@ -31,16 +32,33 @@ function runCli(...args: string[]): RunResult {
   }
 }
 
-// Run a hook, feeding the payload on stdin and writing logs to a throwaway dir.
-function runHookRows(args: string[], payload: unknown): Record<string, unknown>[] {
+// Without a cached handle, hooks and init resolve the developer through `gh api` and git, which
+// can reach GitHub and, on a cold Windows CI runner, took 18s on its first call.
+function seedDeveloperHandle(home: string): void {
+  mkdirSync(join(home, ".pheebs"), { recursive: true });
+  writeFileSync(join(home, ".pheebs", ".developer-handle"), `${Date.now()}\ntest-dev`);
+}
+
+// Run a hook, feeding the payload on stdin and writing logs to a throwaway dir. The home is
+// throwaway too: a hook reads ~/.pheebs, and a session start writes there and can launch
+// the developer's own auto-update.
+function runHookRows(
+  args: string[],
+  payload: unknown,
+  input: string | Buffer = JSON.stringify(payload),
+): Record<string, unknown>[] {
   const dir = mkdtempSync(join(tmpdir(), "pheebs-test-"));
+  const home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
+  seedDeveloperHandle(home);
   try {
     execFileSync(process.execPath, [cliPath, ...args], {
       encoding: "utf-8",
-      input: JSON.stringify(payload),
+      input,
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
+        HOME: home,
+        USERPROFILE: home,
         PHEEBS_LOG_PATH: dir,
         PHEEBS_CODEBASE_ID: "test/hooks",
         PHEEBS_DEBUG: "1", // route the remote transport to the no-network debug sink
@@ -53,6 +71,7 @@ function runHookRows(args: string[], payload: unknown): Record<string, unknown>[
       .map((line) => JSON.parse(line));
   } finally {
     rmSync(dir, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 }
 
@@ -111,14 +130,39 @@ describe("Codex test-outcome synthesis", () => {
   });
 });
 
+describe("hook stdin", () => {
+  it("logs a payload that arrives with a UTF-8 byte order mark", () => {
+    // A Windows PowerShell pipe can prepend one: the 2026-10-05 BOM entry in the findings ledger.
+    const payload = { session_id: "s3", tool_name: "Bash", tool_input: { command: "npm test" } };
+    const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+    const rows = runHookRows(
+      ["hook", "tool_use_completed"],
+      payload,
+      Buffer.concat([bom, Buffer.from(JSON.stringify(payload))]),
+    );
+    const toolRow = rows.find((r) => r.event === "tool_use_completed");
+    expect(toolRow?.tool_intent).toBe("test_run");
+  });
+});
+
 // spawnSync rather than the execFileSync helper above: the scope assertions below are about
 // warnings, which land on stderr even when the command succeeds.
-function runIn(cwd: string, home: string, args: string[]): RunResult {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    encoding: "utf-8",
-    cwd,
-    env: { ...process.env, HOME: home, USERPROFILE: home },
-  });
+function runIn(
+  cwd: string,
+  home: string,
+  args: string[],
+  { path, extraEnv }: { path?: string; extraEnv?: NodeJS.ProcessEnv } = {},
+): RunResult {
+  seedDeveloperHandle(home);
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home, ...extraEnv };
+  if (path !== undefined) {
+    // Windows spells it `Path`; drop every spelling so the child sees only the one set here.
+    for (const key of Object.keys(env)) {
+      if (key.toUpperCase() === "PATH") delete env[key];
+    }
+    env.PATH = path;
+  }
+  const result = spawnSync(process.execPath, [cliPath, ...args], { encoding: "utf-8", cwd, env });
   return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", status: result.status ?? 1 };
 }
 
@@ -128,13 +172,15 @@ describe("init and doctor scope", () => {
   let home: string;
   let cwd: string;
 
-  const runScoped = (...args: string[]) => runIn(cwd, home, args);
+  // doctor with no tool flag checks only the tools it detects, and detection looks for a binary
+  // on PATH or a ~/.<tool> marker. A PATH that resolves nothing keeps the developer's own
+  // `cursor` or `codex` out of the check, leaving the marker below as the only signal.
+  const noBin = () => join(home, "no-bin");
+  const runScoped = (...args: string[]) => runIn(cwd, home, args, { path: noBin() });
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
     cwd = mkdtempSync(join(tmpdir(), "pheebs-cwd-"));
-    // doctor with no tool flag checks only the tools it detects, and detection looks for a
-    // `claude` binary or ~/.claude. Neither exists on CI, so the marker stands in for an install.
     mkdirSync(join(home, ".claude"), { recursive: true });
   });
 
@@ -226,7 +272,6 @@ describe("init and doctor scope", () => {
     const result = runScoped("doctor");
 
     expect(result.stdout).toContain("every event fires twice");
-    expect(result.status).toBe(1);
   });
 
   it("does not count a settings file Claude Code wrote itself as an install", () => {
@@ -243,7 +288,7 @@ describe("init and doctor scope", () => {
     const result = runScoped("doctor");
 
     // On the report rather than the exit code: doctor also exits 1 when `pheebs` is missing
-    // from PATH, which it always is where the package is never installed globally.
+    // from PATH, which it always is on the empty PATH these tests run with.
     expect(result.stdout).not.toContain("every event fires twice");
     expect(result.stdout).toContain(join(home, ".claude", "settings.json"));
     expect(result.stdout).not.toContain(join(cwd, ".claude", "settings.local.json"));
@@ -253,7 +298,63 @@ describe("init and doctor scope", () => {
     const result = runScoped("doctor");
 
     expect(result.stdout).toContain("also checked");
-    expect(result.status).toBe(1);
+  });
+
+  it("names the emptied file after an uninstall rather than printing undefined", () => {
+    runScoped("init", "--no-otel");
+    runScoped("uninstall");
+    const result = runScoped("doctor");
+
+    expect(result.stdout).toContain("also checked");
+    expect(result.stdout).not.toContain("undefined");
+  });
+
+  it("keeps the rest of a settings file saved with a UTF-8 byte order mark", () => {
+    // Windows PowerShell's `-Encoding UTF8` writes one: the 2026-10-05 BOM entry in the ledger.
+    const settingsPath = join(cwd, ".claude", "settings.local.json");
+    mkdirSync(join(cwd, ".claude"), { recursive: true });
+    writeFileSync(
+      settingsPath,
+      `\uFEFF${JSON.stringify({ permissions: { allow: ["Bash(ls:*)"] } })}`,
+    );
+
+    const result = runScoped("init", "--no-otel");
+
+    expect(result.stderr).not.toContain("malformed");
+    expect(JSON.parse(readFileSync(settingsPath, "utf-8")).permissions).toEqual({
+      allow: ["Bash(ls:*)"],
+    });
+  });
+
+  it("uninstalls from a settings file saved with a UTF-8 byte order mark", () => {
+    runScoped("init", "--no-otel");
+    const settingsPath = join(cwd, ".claude", "settings.local.json");
+    writeFileSync(settingsPath, `﻿${readFileSync(settingsPath, "utf-8")}`);
+
+    const result = runScoped("uninstall");
+
+    expect(result.stderr).not.toContain("malformed");
+    expect(readFileSync(settingsPath, "utf-8")).not.toContain("pheebs hook");
+  });
+
+  it("reports the last logged event on a PATH with no tail", () => {
+    const logs = join(home, "logs");
+    mkdirSync(logs);
+    const rows = [
+      { event: "session_started", timestamp: "2026-10-05T09:42:02.938Z" },
+      { event: "turn_ended", timestamp: "2026-10-05T09:50:10.000Z" },
+    ];
+    writeFileSync(
+      join(logs, "a-2026-10-05.jsonl"),
+      rows.map((r) => `${JSON.stringify(r)}\n`).join(""),
+    );
+
+    const result = runIn(cwd, home, ["doctor"], {
+      path: noBin(),
+      extraEnv: { PHEEBS_LOG_PATH: logs },
+    });
+
+    expect(result.stdout).toContain("Last event: turn_ended at 2026-10-05T09:50:10.000Z");
   });
 
   it("restricts to one scope when the scope is named", () => {
@@ -419,7 +520,37 @@ describe("installs outside the current directory", () => {
     run(home, "config", "set", "token", "pheebs_test_token");
     run(repoA, "init");
 
-    expect(statSync(settingsOf(repoA)).mode & 0o077).toBe(0);
+    if (process.platform === "win32") {
+      // No mode bits on Windows: owner-only is a protected ACL, read as SDDL so accounts are
+      // compared by SID rather than by locale-dependent names. SYSTEM and Administrators may keep
+      // access, as root does under 0600 and as Windows OpenSSH allows for a private key.
+      const sid = execFileSync(systemExe("whoami.exe"), ["/user", "/fo", "csv", "/nh"], {
+        encoding: "utf-8",
+      }).match(/S-1-\d+(?:-\d+)+/)?.[0];
+      const saved = join(home, "acl.txt");
+      execFileSync(systemExe("icacls.exe"), [settingsOf(repoA), "/save", saved]);
+      const raw = readFileSync(saved);
+      const sddl = raw.includes(0) ? raw.toString("utf16le") : raw.toString("utf-8");
+      const dacl = sddl.match(/D:([A-Z]*)((?:\([^)]*\))+)/);
+      const aces = [...(dacl?.[2] ?? "").matchAll(/\(([^)]*)\)/g)].map((m) => m[1].split(";"));
+      // SDDL writes the built-in Administrator account, which hosted CI runs as, as `LA`.
+      const isUser = (who: string) => who === sid || (who === "LA" && !!sid?.endsWith("-500"));
+      expect(dacl?.[1], sddl).toContain("P");
+      expect(
+        aces.filter((ace) => ace[1].includes("ID")),
+        sddl,
+      ).toEqual([]);
+      expect(
+        aces.filter((ace) => !isUser(ace[5]) && ace[5] !== "SY" && ace[5] !== "BA"),
+        sddl,
+      ).toEqual([]);
+      expect(
+        aces.some((ace) => isUser(ace[5]) && ace[2] === "FA"),
+        sddl,
+      ).toBe(true);
+    } else {
+      expect(statSync(settingsOf(repoA)).mode & 0o077).toBe(0);
+    }
   });
 
   it("keeps a token-bearing project config out of git", () => {

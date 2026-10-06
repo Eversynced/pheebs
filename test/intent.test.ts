@@ -114,6 +114,7 @@ describe("classifyIntent", () => {
   it("classifies shell tools by their command", () => {
     expect(classifyIntent("Bash", "pytest")).toBe("test_run");
     expect(classifyIntent("Shell", "git push")).toBe("vcs");
+    expect(classifyIntent("PowerShell", "npm test")).toBe("test_run");
     expect(classifyIntent("Bash")).toBe("other");
   });
 

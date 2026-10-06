@@ -45,6 +45,24 @@ privacy line.
 
 ## Findings
 
+### 2026-10-05 — Hook stdin can start with a UTF-8 BOM when a Windows PowerShell pipe delivers it; Claude Code's own runner sends none [Status: CONFIRMED (PowerShell pipe with UTF-8 `$OutputEncoding`, Claude Code runner) / UNVERIFIED (Cursor and Codex runners on Windows)]
+
+- **Tool(s):** claude_code; cursor and codex not checked
+- **Hook / event:** any; observed on `session_started`
+- **Claim (doc/assumption):** hook stdin is plain UTF-8 JSON on every platform, so `JSON.parse` on the decoded bytes is enough.
+- **Finding:** Windows PowerShell 5.1 with `$OutputEncoding` set to `[Text.Encoding]::UTF8` prepends `EF BB BF` when piping to a native program, and `JSON.parse` rejects the payload, so the event was dropped. The 5.1 default `$OutputEncoding` is ASCII and adds no BOM. Claude Code's own hook runner sent clean bytes in a live session. Not tested here but documented: 5.1's `-Encoding UTF8` also writes a BOM into files, so a settings file saved that way carries one.
+- **Method:** Windows test report, pheebs 1.1.0, Windows 11 and PowerShell 5.1: the same payload piped from PowerShell was dropped, fed from cmd with `<` was logged.
+- **Impact:** a leading BOM is stripped from hook stdin and from every settings file pheebs parses (`src/bom.ts`). Exposure is limited to runners or wrappers that pipe through PowerShell.
+
+### 2026-10-05 — Claude Code on Windows runs shell commands through a tool named `PowerShell`, not `Bash` [Status: CONFIRMED (tool name) / UNVERIFIED (`tool_input.command`)]
+
+- **Tool(s):** claude_code
+- **Hook / event:** `PostToolUse` / `PostToolUseFailure` → `tool_use_completed` / `tool_use_failed`
+- **Claim (doc/assumption):** shell commands arrive as `tool_name: "Bash"` on every platform, so `Bash` in `SHELL_TOOL_NAMES` covered Claude Code.
+- **Finding:** in a live Claude Code session on Windows 11, shell commands logged `tool_name: "PowerShell"`, so every one was tagged `tool_intent: "other"` and tests, builds and commits went uncounted. The command is assumed to sit in `tool_input.command` as it does for Bash; the log never stores the command, so that field name is not yet confirmed.
+- **Method:** Windows test report, local mode, pheebs 1.1.0, live session in an instrumented repo; `tool_name` read from the JSONL log.
+- **Impact:** `PowerShell` added to `SHELL_TOOL_NAMES`. Confirm `tool_input.command` with a `PHEEBS_DEBUG` dump on Windows; until then a Windows session with no `test_run` is unverified rather than evidence of none.
+
 ### 2026-09-17 — Prometheus rendering adds unit and `_total` suffixes to the OTel metric names, so they are not what the Claude Code docs name them [Status: CONFIRMED]
 
 - **Tool(s):** claude_code

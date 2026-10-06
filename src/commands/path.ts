@@ -50,5 +50,11 @@ export function resolveSettingsPath(
  *  the two resolve to one file. Callers that contrast the scopes need to know, or they warn
  *  about a second install that does not exist and offer to remove the file they just wrote. */
 export function scopesCollide(tool: AiTool): boolean {
-  return resolveSettingsPath(tool, true).path === resolveSettingsPath(tool, false).path;
+  const project = resolveSettingsPath(tool, true).path;
+  const user = resolveSettingsPath(tool, false).path;
+  // Windows paths are case-insensitive, and the two can differ only in case: an editor terminal
+  // reports the drive as `c:` where homedir() says `C:`.
+  return process.platform === "win32"
+    ? project.toLowerCase() === user.toLowerCase()
+    : project === user;
 }

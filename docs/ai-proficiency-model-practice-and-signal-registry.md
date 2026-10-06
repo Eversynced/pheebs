@@ -222,13 +222,15 @@ Spawn events never feed Artifacts. A custom sub-agent definition is an artifact 
 
 | ID | Practice | Detector | CC | Cursor | Codex | Role | Status |
 | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
-| EV1 | In-loop verification | `tool_intent` in {test_run, build, typecheck, lint} with pass/fail outcome | 🟡 keyword table | 🟡 | 🟡 | Anchor | Live |
+| EV1 | In-loop verification | `tool_intent` in {test_run, build, typecheck, lint} with pass/fail outcome | 🟡 keyword table; Windows unverified, see below | 🟡 | 🟡 | Anchor | Live |
 | EV2 | Review pass | `role = review` sub-agent spawns | 🟡 table-only | 🟡 | 🟡 | Stat | Live |
 | EV3 | Eval harness present | Scan `eval_harness` | 🟢 presence | 🟢 | 🟢 | Stat, feeds TS3 | Live |
-| EV4 | Fix loop: failing `test_run`, then edit, then passing `test_run`, one session | Event sequence over `test_run` outcomes | 🟡 | 🟡 | 🟡 | Pattern | Live |
-| EV5 | Test-gated ship: `test_run` shortly before `vcs_action` in {commit, push, pr_create}, same session | Event sequence over `test_run` + `vcs_action` | 🟡 | 🟡 | 🟡 | Pattern | Live |
+| EV4 | Fix loop: failing `test_run`, then edit, then passing `test_run`, one session | Event sequence over `test_run` outcomes | 🟡 Windows unverified, see below | 🟡 | 🟡 | Pattern | Live |
+| EV5 | Test-gated ship: `test_run` shortly before `vcs_action` in {commit, push, pr_create}, same session | Event sequence over `test_run` + `vcs_action` | 🟡 Windows unverified, see below | 🟡 | 🟡 | Pattern | Live |
 
 EV1 stays 🟡 by nature: shell commands are an open world, so the keyword table undercounts newer and bespoke runners. It undercounts, it never fabricates, and Layer 2's verification coverage runs on the same intent table. The boundary in one sentence: **Layer 1 counts whether a practice occurs, Layer 2 rates the judgement behind what ships, on both the output and the input side.** Same events, different math.
+
+**Claude Code on Windows is not yet established for EV1, EV4 and EV5.** There, Claude Code runs shell commands through a tool named `PowerShell`, which clients up to 1.1.0 tagged `other` every time, so those versions cannot emit the `test_run` or `vcs_action` these practices read. Later clients classify `PowerShell` like `Bash`, but the field carrying the command, `tool_input.command`, has not been confirmed on that tool. Until it is, a Windows Claude Code engineer reads *Insufficient data* on these three practices, never Unobserved, under the third *Insufficient data* condition in [the model](./ai-proficiency-model.md#windows-and-placement). Evidence: the 2026-10-05 PowerShell entry in [`spike-findings-ledger.md`](./spike-findings-ledger.md).
 
 ### Context management (CX)
 

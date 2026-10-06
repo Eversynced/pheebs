@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { onPlatform } from "./platform.js";
 
 const existsSyncMock = vi.fn();
 const readFileSyncMock = vi.fn();
@@ -83,8 +84,11 @@ describe("readStoredToken", () => {
 });
 
 describe("writeStoredToken", () => {
-  it("writes JSON with 0600 perms and enforces the mode", () => {
-    writeStoredToken({ token: "pheebs_xyz", id: "tok-2", developer: "dev" });
+  it("writes JSON with 0600 perms and enforces the mode off Windows", () => {
+    // Windows gets an ACL instead of a mode, covered in pheebs-store.test.ts.
+    onPlatform("linux", () =>
+      writeStoredToken({ token: "pheebs_xyz", id: "tok-2", developer: "dev" }),
+    );
     expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), { recursive: true });
     const [, body, opts] = writeFileSyncMock.mock.calls[0];
     expect(String(body)).toContain("pheebs_xyz");

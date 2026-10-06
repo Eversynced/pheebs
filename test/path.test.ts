@@ -1,8 +1,9 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { resolveSettingsPath } from "../src/commands/path.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveSettingsPath, scopesCollide } from "../src/commands/path.js";
 import { AI_TOOLS } from "../src/hooks/definitions.js";
+import { onPlatform } from "./platform.js";
 
 describe("resolveSettingsPath", () => {
   it("resolves user-level paths under the home directory", () => {
@@ -33,5 +34,18 @@ describe("resolveSettingsPath", () => {
       path: join(process.cwd(), ".codex", "config.toml"),
       level: "project-level",
     });
+  });
+});
+
+describe("scopesCollide", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("treats a cwd that differs from home only in case as home on Windows", () => {
+    // An editor terminal reports the drive as `c:` where homedir() says `C:`.
+    vi.spyOn(process, "cwd").mockReturnValue(homedir().toUpperCase());
+    expect(onPlatform("win32", () => scopesCollide(AI_TOOLS.CODEX))).toBe(true);
+    expect(onPlatform("linux", () => scopesCollide(AI_TOOLS.CODEX))).toBe(false);
   });
 });

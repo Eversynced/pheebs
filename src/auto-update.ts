@@ -62,6 +62,9 @@ export function maybeAutoUpdate(): void {
     const child = spawn(process.execPath, [cliEntry, "update"], {
       detached: true,
       stdio: "ignore",
+      // A detached child gets its own console on Windows, which would open a window over the
+      // developer's editor for the length of the install.
+      windowsHide: true,
     });
     // A spawn that fails asynchronously must not crash the hook process.
     child.on("error", () => {});

@@ -1,5 +1,6 @@
 import { maybeAutoUpdate } from "../auto-update.js";
 import { ensureConfig } from "../backend-config.js";
+import { stripBom } from "../bom.js";
 import { classifyPrompt } from "../classify.js";
 import { getConfig } from "../config.js";
 import { getDeveloperHandle } from "../developer-id.js";
@@ -587,7 +588,7 @@ export async function handleHookEvent(
   for await (const chunk of process.stdin) {
     chunks.push(chunk);
   }
-  const raw = Buffer.concat(chunks).toString("utf-8");
+  const raw = stripBom(Buffer.concat(chunks).toString("utf-8"));
 
   let payload: Record<string, unknown>;
   try {

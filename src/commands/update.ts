@@ -1,12 +1,14 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { intro, log, outro, spinner } from "@clack/prompts";
 import { PHEEBS_VERSION } from "../version.js";
+import { systemExe } from "../windows.js";
 
 const PACKAGE = "pheebs";
 
 // A registry resolves through whatever `.npmrc` names, so its answer is untrusted input. It is
-// validated against this before it is used, and every call goes through execFileSync so no shell
-// ever parses it — an unvalidated value reaching a shell would be arbitrary code execution.
+// validated against this before it is used, and an unvalidated value reaching a shell would be
+// arbitrary code execution. Off Windows no shell is involved at all; on Windows `run` needs one,
+// and only fixed arguments and values that passed this check ever reach it.
 const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
 
 // A registry that accepts the connection and never answers would otherwise hang the (detached,
@@ -15,11 +17,21 @@ const VIEW_TIMEOUT_MS = 15_000;
 const INSTALL_TIMEOUT_MS = 120_000;
 
 function run(args: string[], timeout: number): string {
-  return execFileSync("npm", args, {
-    stdio: ["pipe", "pipe", "pipe"],
+  const options = {
+    stdio: "pipe",
     encoding: "utf-8",
     timeout,
     killSignal: "SIGKILL",
+    windowsHide: true,
+  } as const;
+  if (process.platform !== "win32") return execFileSync("npm", args, options);
+  // npm is `npm.cmd` here, which Node launches only through a shell, and as one joined string
+  // because shell: true with an args array prints a deprecation warning on Node 24. cmd.exe is
+  // named in full and told not to search the current folder, where a repo's own npm.cmd would win.
+  return execSync(["npm", ...args].join(" "), {
+    ...options,
+    shell: systemExe("cmd.exe"),
+    env: { ...process.env, NoDefaultCurrentDirectoryInExePath: "1" },
   });
 }
 

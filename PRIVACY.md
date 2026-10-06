@@ -212,6 +212,12 @@ tail -qn 20 "$(ls -t ~/.pheebs/logs/*.jsonl | head -1)"
 paths, which is exactly what this document says Pheebs does not record. The `ls -t` picks the most
 recent log rather than 20 lines from every file you have ever had.)
 
+On Windows, in PowerShell, the same check reads the newest log and prints no file name:
+
+```powershell
+Get-Content -Tail 20 (Get-ChildItem ~/.pheebs/logs/*.jsonl | Sort-Object LastWriteTime | Select-Object -Last 1).FullName
+```
+
 Nothing is sent through the event transport that is not in those rows, minus `developer`, which
 the client strips so the server can stamp identity from your token. (OpenTelemetry is separate —
 see below.)

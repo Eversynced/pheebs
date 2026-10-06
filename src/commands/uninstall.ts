@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import { stripBom } from "../bom.js";
 import {
   AI_TOOLS,
   type AiTool,
@@ -17,7 +18,7 @@ export function removeFromJsonConfig(settingsPath: string, tool: AiTool): boolea
 
   let settings: Record<string, unknown>;
   try {
-    settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    settings = JSON.parse(stripBom(readFileSync(settingsPath, "utf-8")));
   } catch {
     console.warn(`pheebs: ${settingsPath} is malformed, skipping`);
     return false;
@@ -63,7 +64,7 @@ export function removeFromTomlConfig(settingsPath: string): boolean {
 
   let config: Record<string, unknown>;
   try {
-    config = parseToml(readFileSync(settingsPath, "utf-8")) as Record<string, unknown>;
+    config = parseToml(stripBom(readFileSync(settingsPath, "utf-8"))) as Record<string, unknown>;
   } catch {
     console.warn(`pheebs: ${settingsPath} is malformed, skipping`);
     return false;
