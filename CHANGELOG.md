@@ -6,6 +6,25 @@ Pheebs was developed privately before this repository was opened. That history i
 so this changelog starts at the first public release rather than linking commits that cannot
 be resolved.
 
+## [1.1.1](https://github.com/Eversynced/pheebs/compare/v1.1.0...v1.1.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **auto-update:** hide the background update's console on Windows ([142552a](https://github.com/Eversynced/pheebs/commit/142552a3f40e29a2728f1c183881a70b89656ac6))
+* **config:** expand a backslash tilde in PHEEBS_LOG_PATH on Windows ([0c9fef0](https://github.com/Eversynced/pheebs/commit/0c9fef088854f30dd62942ce4ab4b2c93dd66977))
+* **doctor:** find binaries on Windows without which ([d2dca6f](https://github.com/Eversynced/pheebs/commit/d2dca6ff24cec82e0c723b489bc8df29b5bb3922))
+* **doctor:** name the emptied settings file instead of undefined ([2b36b80](https://github.com/Eversynced/pheebs/commit/2b36b80e2f52c4c5a1ab833feecb1a82a988077b))
+* **doctor:** read the last logged event without tail ([785b28f](https://github.com/Eversynced/pheebs/commit/785b28fa5fe9d2a7bf1962c779f78e4d42e2accd))
+* **hooks:** accept hook payloads that start with a UTF-8 BOM ([e767fbc](https://github.com/Eversynced/pheebs/commit/e767fbca608415ab48b0fc6400487a3a80aba74d))
+* **intent:** classify commands from Claude Code's PowerShell tool ([be61342](https://github.com/Eversynced/pheebs/commit/be613426ba429f2a77d8cf6959d7c74dbc26ff32))
+* **path:** compare settings scopes case-insensitively on Windows ([0af2acc](https://github.com/Eversynced/pheebs/commit/0af2acc5a6c2eec398e9b85b18e5719131e4d968))
+* **settings:** read BOM-prefixed config files instead of resetting them ([56c9335](https://github.com/Eversynced/pheebs/commit/56c933513b3a5e7cefc151cca0a0fe8acfced43e))
+* **store:** restrict token-bearing files to the owner on Windows ([2435121](https://github.com/Eversynced/pheebs/commit/2435121642999eb38d01b7d2dd7cef0595638b8f))
+* **update:** run npm through a shell on Windows ([a84e546](https://github.com/Eversynced/pheebs/commit/a84e54616458cc192b45edf8fce6417652064bfc))
+* Windows portability from the Windows 11 test report ([4b0603f](https://github.com/Eversynced/pheebs/commit/4b0603f978598826d045ce1b9f6a73a877b4926e))
+* **windows:** launch system tools by full path, never from the repo ([b400333](https://github.com/Eversynced/pheebs/commit/b40033361fc61127a3eda853030d4d882f5edc8a))
+
 ## [1.1.0](https://github.com/Eversynced/pheebs/compare/v1.0.0...v1.1.0) (2026-10-02)
 
 
