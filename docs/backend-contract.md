@@ -371,7 +371,8 @@ the section. The same three reasons apply, and `insufficient_data` still must ne
 zero.
 
 **Parts, not percentages**, as everywhere else here. `adoption_funnel` sends three engineer counts
-per practice, not a recurring share. `team_stats` sends counts against stated denominators —
+per practice, not a recurring share, and may add a fourth, `insufficient_data`, for engineers whose
+state cannot be judged yet, so the rows sum to `engineers`. `team_stats` sends counts against stated denominators —
 `team.engineers` for the reuse stats, its own `repos` for the repo stats. `wholesale_watch` sends
 unchallenged over total for this window and the one before, rather than two shares and a delta: a
 share that moved from 31% to 38% over a shrinking team is not the movement those numbers suggest.

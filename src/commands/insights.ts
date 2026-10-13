@@ -1,6 +1,8 @@
-import { fetchInsights } from "../insights.js";
+import { fetchInsights, fetchTeamInsights } from "../insights.js";
 import { escapeControlChars, normalize } from "../insights-normalize.js";
 import { type RenderOptions, renderInsights } from "../insights-render.js";
+import { normalizeTeam } from "../insights-team-normalize.js";
+import { renderTeamInsights } from "../insights-team-render.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -31,7 +33,7 @@ export function resolveRenderOptions(
 }
 
 export type InsightsArgs =
-  | { ok: true; days?: number; json: boolean }
+  | { ok: true; days?: number; json: boolean; team?: true }
   | { ok: false; error: string };
 
 // Both `--days 7` and `--days=7` are accepted: silently ignoring one form would report a window
@@ -39,11 +41,16 @@ export type InsightsArgs =
 export function parseInsightsArgs(args: string[]): InsightsArgs {
   let days: number | undefined;
   let json = false;
+  let team = false;
 
   for (let at = 0; at < args.length; at++) {
     const arg = args[at];
     if (arg === "--json") {
       json = true;
+      continue;
+    }
+    if (arg === "--team") {
+      team = true;
       continue;
     }
     if (arg === "--days" || arg.startsWith("--days=")) {
@@ -63,7 +70,7 @@ export function parseInsightsArgs(args: string[]): InsightsArgs {
     return { ok: false, error: `unknown option "${arg}". Run \`pheebs --help\` for the list.` };
   }
 
-  return { ok: true, days, json };
+  return { ok: true, days, json, ...(team && { team }) };
 }
 
 export async function runInsights(args: string[]): Promise<void> {
@@ -73,7 +80,7 @@ export async function runInsights(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const result = await fetchInsights(parsed.days);
+  const result = await (parsed.team ? fetchTeamInsights : fetchInsights)(parsed.days);
   if (!result.ok) {
     console.error(`pheebs: ${result.error}`);
     process.exit(1);
@@ -89,5 +96,8 @@ export async function runInsights(args: string[]): Promise<void> {
   }
 
   const opts = resolveRenderOptions(process.env, process.platform, process.stdout.columns);
-  console.log(renderInsights(normalize(result.payload), opts).join("\n"));
+  const lines = parsed.team
+    ? renderTeamInsights(normalizeTeam(result.payload), opts)
+    : renderInsights(normalize(result.payload), opts);
+  console.log(lines.join("\n"));
 }

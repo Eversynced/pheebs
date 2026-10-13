@@ -100,6 +100,7 @@ pheebs init --no-otel              # Skip OpenTelemetry configuration
 pheebs doctor [--global|--project] [--cursor|--codex]  # Verify hooks (both scopes by default)
 pheebs scan [--cursor|--codex]     # Scan repo for AI-config artifacts
 pheebs insights [--days N|--json]  # The caller's own report from the backend /insights
+pheebs insights --team [--days N|--json]  # A manager's team report from /insights/team
 pheebs config list|set|unset       # base-url | auto-update | classify | token
 ```
 
@@ -129,12 +130,13 @@ so run `npm run build` before the CLI tests mean anything.
 | `src/installs.ts` | `~/.pheebs/installs.json`, the paths `init` wrote. Project-local is the default scope, so the exporter config lives in a file per repo and nothing else knows where those are. Local only, never part of an event. |
 | `src/git-exclude.ts` | Keeps a token-bearing project config out of git via `.git/info/exclude`, never `.gitignore`: ignoring a file is the developer's own decision about a tracked repo. Reports `excluded` / `ignored` / `tracked` / `no-repo` / `unprotected`, each confirmed with git rather than inferred, because the caller turns the answer into a promise that the token is not committed. |
 | `src/transport.ts`, `src/transports/http.ts` | The one seam for backend calls. Fire-and-forget ingest, bounded blocking classify. |
-| `src/token.ts` | Token at `~/.pheebs/.token` (owner-only: 0600, an ACL on Windows), validation, cached identity and `prompt_collection`. |
+| `src/token.ts` | Token at `~/.pheebs/.token` (owner-only: 0600, an ACL on Windows), validation, cached identity, `prompt_collection` and `role`. The role is cached when a token is set (`config set token`, `init`) and nothing refreshes it later, so a promoted manager re-sets the token to see `--team` in help. The cached role only decides whether `--help` mentions `--team`; the backend decides who is answered. |
 | `src/classify.ts` | Prompt classification, consent-gated, degrades to `prompt_intent: "unclassified"` sending no text. |
-| `src/insights.ts` | `fetchInsights(days)`, the one `GET` in the contract. Redirects are manual, because a followed one would draw a report from a host the developer never configured, and the body is capped at 4 MB, because the 10s abort does not bound a fast link. Every failure returns a printable message. |
+| `src/insights.ts` | `fetchInsights(days)` and `fetchTeamInsights(days)`, the two `GET`s in the contract. Redirects are manual, because a followed one would draw a report from a host the developer never configured, and the body is capped at 4 MB, because the 10s abort does not bound a fast link. Every failure returns a printable message. |
 | `src/insights-normalize.ts` | The single boundary against an untrusted `/insights` response: shape guards, range checks, own-property lookups, control, ANSI and bidi stripping, bounded rows and string lengths. Also escapes the raw body for `--json`. |
 | `src/insights-render.ts` | The report as pure functions over a normalized `Report`, guarding nothing itself. Sparklines, gauges and aligned tables per [`docs/ai-proficiency-model.md`](./docs/ai-proficiency-model.md). An unavailable section prints one reason line, never a zero; a trend under two points gets no chart; block glyphs fall back to ASCII. Emits no colour, so the output is identical piped, in CI, and to a reader who cannot distinguish red from green. |
-| `src/commands/insights.ts` | `pheebs insights [--days N] [--json]`. Argument parsing (both `--days` spellings) and render options (terminal width, falling back to 80 off a TTY). Computes nothing: the backend produces the numbers. |
+| `src/insights-team-normalize.ts`, `src/insights-team-render.ts` | The same two halves for `/insights/team`, reusing the engineer report's primitives. Availability is per view, so a view that is off prints its reason; counts print beside the denominator the report states; the heatmap and the engineer table withhold opted-out developers by count, never by name. |
+| `src/commands/insights.ts` | `pheebs insights [--days N] [--json] [--team]`. Argument parsing (both `--days` spellings) and render options (terminal width, falling back to 80 off a TTY). Computes nothing: the backend produces the numbers. |
 | `src/config.ts` | Codebase id resolution: env override, git remote `org/repo`, then `local/<folder-name>`. Directory name only, never a full path. |
 | `src/developer-id.ts` | GitHub handle via `gh api`, falling back to a hashed git email. |
 

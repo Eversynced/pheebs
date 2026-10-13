@@ -11,7 +11,7 @@ vi.mock("node:fs", () => ({
   unlinkSync: vi.fn(),
 }));
 
-const { fetchInsights } = await import("../src/insights.js");
+const { fetchInsights, fetchTeamInsights } = await import("../src/insights.js");
 
 let storedToken: object | null = { token: "pheebs_x", id: "gustavo" };
 let cfg: object = { baseUrl: "https://api.test" };
@@ -156,5 +156,72 @@ describe("fetchInsights — refusing what it should not render", () => {
     const result = await fetchInsights();
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.body).toBe(body);
+  });
+});
+
+describe("fetchTeamInsights", () => {
+  it("GETs /insights/team with the stored token as a bearer credential", async () => {
+    await fetchTeamInsights();
+    const [url, init] = vi.mocked(fetch).mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toBe("https://api.test/insights/team");
+    expect(init.method).toBeUndefined();
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer pheebs_x");
+  });
+
+  it("passes the window through", async () => {
+    await fetchTeamInsights(28);
+    const [url] = vi.mocked(fetch).mock.calls[0] as [URL];
+    expect(String(url)).toBe("https://api.test/insights/team?days=28");
+  });
+
+  it("does not call out with no endpoint or no token", async () => {
+    cfg = {};
+    expect((await fetchTeamInsights()).ok).toBe(false);
+    cfg = { baseUrl: "https://api.test" };
+    storedToken = null;
+    expect((await fetchTeamInsights()).ok).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("returns the untouched body", async () => {
+    const body = '{"days":28,"team":{"kind":"tenant","engineers":2},"sections":{}}';
+    stubFetch(new Response(body));
+    const result = await fetchTeamInsights();
+    expect(result.ok && result.body).toBe(body);
+  });
+
+  async function errorFor(status: number): Promise<string> {
+    stubFetch(new Response('{"error":"x"}', { status }));
+    const result = await fetchTeamInsights();
+    if (result.ok) throw new Error("expected a failure");
+    return result.error;
+  }
+
+  it("says a 403 is a role matter and not a bad token", async () => {
+    const error = await errorFor(403);
+    expect(error).toContain("not a manager's");
+    expect(error).toContain("Ask an admin");
+    expect(error).not.toContain("config set token");
+  });
+
+  it("reports a 401 as a rejected token, as the engineer route does", async () => {
+    expect(await errorFor(401)).toContain("token was rejected");
+  });
+
+  it("reports an unserved route for 404 and 405", async () => {
+    expect(await errorFor(404)).toBe("This backend does not serve /insights/team.");
+    expect(await errorFor(405)).toBe("This backend does not serve /insights/team.");
+  });
+
+  it("reports the status for any other refusal and never the token", async () => {
+    const error = await errorFor(500);
+    expect(error).toBe("The backend answered 500.");
+    expect(error).not.toContain("pheebs_x");
+  });
+
+  it("keeps the engineer route's 403 reading as a rejected token", async () => {
+    stubFetch(new Response("no", { status: 403 }));
+    const result = await fetchInsights();
+    if (!result.ok) expect(result.error).toContain("token was rejected");
   });
 });

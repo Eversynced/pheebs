@@ -15,7 +15,8 @@ function hasFlag(...names: string[]): boolean {
   return args.some((a) => names.includes(a));
 }
 
-const HELP = `pheebs <command> [options]
+function helpText(manager: boolean): string {
+  return `pheebs <command> [options]
 
 Commands:
   hook <event>          Handle a Claude Code hook (reads JSON from stdin)
@@ -36,12 +37,22 @@ Options:
   --codex               Target Codex
   --no-otel             Skip OpenTelemetry configuration (init)
   --days <n>            Window for insights, 1 to 365 (default: the backend's)
-  --json                Print the raw insights payload, unchanged
+  --json                Print the raw insights payload, unchanged${
+    manager ? "\n  --team                Report on the team instead (manager tokens only)" : ""
+  }
   -h, --help            Show this help
   -v, --version         Show version
 
 Run \`pheebs init\` with no flags in a terminal for the interactive setup wizard.
 Run \`pheebs config\` to manage the endpoint, token, and toggles.`;
+}
+
+// Mentioning `--team` is a courtesy to the people it is for: the cached role only decides what
+// help says, and the backend decides who is answered.
+async function help(): Promise<string> {
+  const { isCachedManager } = await import("./token.js");
+  return helpText(isCachedManager());
+}
 
 function resolveTool(): AiTool {
   if (args.includes("--cursor")) return AI_TOOLS.CURSOR;
@@ -50,7 +61,7 @@ function resolveTool(): AiTool {
 }
 
 if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
-  console.log(HELP);
+  console.log(await help());
 } else if (args[0] === "--version" || args[0] === "-v") {
   console.log(PHEEBS_VERSION);
 } else if (Object.hasOwn(HOOK_COMMANDS, args[0]) && args[1]) {
@@ -101,6 +112,6 @@ if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
   const { runUninstall } = await import("./commands/uninstall.js");
   await runUninstall();
 } else {
-  console.error(`Unknown command: ${args[0]}\n\n${HELP}`);
+  console.error(`Unknown command: ${args[0]}\n\n${await help()}`);
   process.exit(1);
 }
