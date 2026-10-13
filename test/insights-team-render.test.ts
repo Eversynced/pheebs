@@ -207,7 +207,7 @@ describe("renderTeamInsights: empty and missing lists", () => {
 
   it("says so when a list is empty and prints nothing when it is absent", () => {
     const empty = stats({ skill_reuse: [], connectors: [], artifact_types: [], repos: 2 });
-    expect(empty).toContain("Skills and commands: none used by any engineer");
+    expect(empty).toContain("Skills and commands: none reported");
     expect(empty).toContain("Connectors: none used");
     expect(empty).toContain("AI-config artifacts: none found");
 
@@ -365,5 +365,32 @@ describe("renderTeamInsights: details the first tests missed", () => {
       sections: { repertoire: { enabled: true, adoption_funnel: { enabled: true, practices } } },
     });
     expect(out).toContain("and 5 more row(s), not shown.");
+  });
+});
+
+describe("renderTeamInsights: lists that cannot be trusted", () => {
+  it("reads a list of non-rows as absent, not as nobody", () => {
+    const out = render({
+      sections: {
+        repertoire: {
+          enabled: true,
+          team_stats: { enabled: true, repos: 1, skill_reuse: [null, "x"], connectors: [1] },
+        },
+      },
+    });
+    expect(out).not.toContain("none reported");
+    expect(out).not.toContain("Connectors");
+  });
+
+  it("flags a dollar figure whose coverage has no usable counts", () => {
+    const out = render({
+      sections: {
+        judgement_signals: {
+          enabled: true,
+          dollar_savings: { enabled: true, basis: "b", opportunity: 5, coverage: {} },
+        },
+      },
+    });
+    expect(out).toContain("Coverage: not reported");
   });
 });

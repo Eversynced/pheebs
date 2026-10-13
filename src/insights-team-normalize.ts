@@ -214,7 +214,8 @@ function heatmapOf(view: Record<string, unknown>): { data: Heatmap; dropped: num
 }
 
 function reuse(value: unknown): { rows: ReuseRow[] | undefined; dropped: number } {
-  if (!Array.isArray(value)) return { rows: undefined, dropped: 0 };
+  // A list with an entry that is not a row cannot be trusted to be empty, so it reads as absent.
+  if (!Array.isArray(value) || !value.every(isRecord)) return { rows: undefined, dropped: 0 };
   const { taken, dropped } = rows(value);
   return {
     dropped,
@@ -231,7 +232,10 @@ function statsOf(view: Record<string, unknown>): { data: TeamStats; dropped: num
   const skills = reuse(view.skill_reuse);
   const subagents = reuse(view.subagent_reuse);
   const connectors = reuse(view.connectors);
-  const artifacts = Array.isArray(view.artifact_types) ? rows(view.artifact_types) : undefined;
+  const artifacts =
+    Array.isArray(view.artifact_types) && view.artifact_types.every(isRecord)
+      ? rows(view.artifact_types)
+      : undefined;
 
   return {
     dropped: skills.dropped + subagents.dropped + connectors.dropped + (artifacts?.dropped ?? 0),
@@ -364,7 +368,7 @@ function classes(value: unknown): { rows: Dollars["actual"]; dropped: number } {
 }
 
 function dollarsOf(view: Record<string, unknown>): { data: Dollars; dropped: number } {
-  const coverage = isRecord(view.coverage)
+  const counts = isRecord(view.coverage)
     ? {
         complete: count(view.coverage.complete),
         incomplete: count(view.coverage.incomplete),
@@ -372,6 +376,8 @@ function dollarsOf(view: Record<string, unknown>): { data: Dollars; dropped: num
         unpriced: count(view.coverage.unpriced),
       }
     : undefined;
+  // Four unusable counts are no coverage at all, and the renderer says so above any figure.
+  const coverage = Object.values(counts ?? {}).some((n) => n !== undefined) ? counts : undefined;
   const distribution = isRecord(view.distribution) ? view.distribution : {};
   const actual = classes(distribution.actual);
   const asSized = classes(distribution.as_sized);

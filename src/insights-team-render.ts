@@ -139,7 +139,7 @@ function renderStats(data: TeamStats, engineers: number | undefined, opts: Rende
   const reuse = (title: string, rows: { name: string; engineers?: number }[] | undefined) => {
     if (rows === undefined) return;
     if (rows.length === 0) {
-      blocks.push(wrap(`${title}: none used by any engineer`, opts.width));
+      blocks.push(wrap(`${title}: none reported`, opts.width));
       return;
     }
     blocks.push([
