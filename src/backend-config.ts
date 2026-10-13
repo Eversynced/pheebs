@@ -82,3 +82,4 @@ export const validateUrl = (): string => `${baseUrl()}/validate-token`;
 export const otelBaseUrl = (): string => `${baseUrl()}/otel`;
 export const classifyPromptUrl = (): string => `${baseUrl()}/classify-prompt`;
 export const insightsUrl = (): string => `${baseUrl()}/insights`;
+export const teamInsightsUrl = (): string => `${baseUrl()}/insights/team`;
