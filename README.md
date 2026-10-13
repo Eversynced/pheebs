@@ -221,6 +221,19 @@ It reads the optional `GET /insights` route, so what you see depends on what you
 computes. A section it cannot produce says so in one line and gives the reason, rather than
 reporting a zero that reads like a measurement.
 
+Managers can read the same model across their tenant:
+
+```bash
+pheebs insights --team            # adoption, heatmap, team stats, signals by engineer, spend
+pheebs insights --team --days 28  # a narrower window
+pheebs insights --team --json     # the raw payload, for scripting
+```
+
+This reads `GET /insights/team` and needs a manager token from an admin. Anyone else gets a plain
+refusal, because the backend checks the role on every call. Developers who opted out are never a
+row in the two tables that name people, and each says how many were withheld. A view the backend
+cannot produce says why in one line rather than printing zeros.
+
 ### Scope
 
 `init` is project-local by default. It writes to `.claude/settings.local.json` in the current directory, so instrumentation is opt-in per repo and your personal projects stay out of the data.
@@ -365,7 +378,7 @@ Local logs are daily files, one per codebase:
 pheebs init [--global] [--cursor|--codex] [--no-otel]
 pheebs doctor [--global|--project] [--cursor|--codex]
 pheebs config <list | get <key> | set <key> <value> | unset <key>>
-pheebs insights [--days <n>] [--json]
+pheebs insights [--days <n>] [--json] [--team]
 pheebs hook <event_name> [--trigger-type <type>]
 pheebs hook-cursor <event_name>
 pheebs hook-codex <event_name>
@@ -379,6 +392,7 @@ pheebs hook-codex <event_name>
 | `insights` | Render your own report from the backend's `/insights` |
 | `insights --days <n>` | Narrow the window, 1 to 365 (default: whatever the backend uses) |
 | `insights --json` | Print the raw `/insights` payload, for scripting |
+| `insights --team` | Render the team report from `/insights/team` (manager tokens only; combines with `--days` and `--json`) |
 | `init --codex` | Configure Codex hooks |
 | `init --no-otel` | Skip OpenTelemetry configuration |
 | `doctor` | Verify hooks, the endpoint, and your token status |
