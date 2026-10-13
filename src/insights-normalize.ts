@@ -83,11 +83,12 @@ const MAX_ROWS = 200;
 const MAX_TEXT = 200;
 const MAX_TREND = 400;
 
-const FALLBACK_BASIS = "no basis supplied by this backend, so this is not money already saved";
+export const FALLBACK_BASIS =
+  "no basis supplied by this backend, so this is not money already saved";
 
 const REASONS: Reason[] = ["no_consent", "not_implemented", "insufficient_data"];
 
-const SIGNALS: [string, string][] = [
+export const SIGNALS: [string, string][] = [
   ["verification_coverage", "Verification coverage"],
   ["pushback_rate", "Pushback rate"],
   ["refinement_to_repair", "Refinement-to-repair ratio"],
@@ -106,7 +107,7 @@ const LABELS: Record<string, string> = {
 // block in the report: a dollar figure printed among the rates reads as one of them.
 const PRICED_LABEL = "Cost";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
@@ -143,7 +144,7 @@ function sanitize(value: string): string {
 // points: cutting at a UTF-16 unit can split a surrogate pair, which would manufacture the very
 // orphan `sanitize` exists to remove. One extra unit is taken before counting so a pair that
 // straddles the bound is seen whole rather than halved by the pre-slice.
-function text(value: unknown): string {
+export function text(value: unknown): string {
   if (typeof value !== "string") return "";
   if (value.length <= MAX_TEXT) return sanitize(value);
   return sanitize(
@@ -154,16 +155,16 @@ function text(value: unknown): string {
 }
 
 /** A row keeps an identity even when the backend sent no usable name for it. */
-function label(value: unknown): string {
+export function label(value: unknown): string {
   return text(value).trim() || "-";
 }
 
-function num(value: unknown): number | undefined {
+export function num(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 /** A count the schema means as a whole non-negative number; anything else is not reported. */
-function count(value: unknown): number | undefined {
+export function count(value: unknown): number | undefined {
   const parsed = num(value);
   return parsed !== undefined && Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
@@ -174,7 +175,7 @@ function share(value: unknown): number | undefined {
   return parsed !== undefined && parsed >= 0 && parsed <= 1 ? parsed : undefined;
 }
 
-function rows(value: unknown): { taken: Record<string, unknown>[]; dropped: number } {
+export function rows(value: unknown): { taken: Record<string, unknown>[]; dropped: number } {
   if (!Array.isArray(value)) return { taken: [], dropped: 0 };
   const usable = Array.from(value).filter(isRecord);
   return {
@@ -188,7 +189,7 @@ function rows(value: unknown): { taken: Record<string, unknown>[]; dropped: numb
  * span too wide to scale onto the ramp all make it unusable, because drawing a shortened chart
  * loses weeks without telling the reader.
  */
-function trendOf(value: unknown): { trend: number[]; unusable: boolean } {
+export function trendOf(value: unknown): { trend: number[]; unusable: boolean } {
   if (value === undefined || value === null) return { trend: [], unusable: false };
   if (!Array.isArray(value) || value.length > MAX_TREND) return { trend: [], unusable: true };
 
@@ -204,7 +205,7 @@ function trendOf(value: unknown): { trend: number[]; unusable: boolean } {
   return { trend, unusable: false };
 }
 
-function reasonOf(value: unknown): Reason | undefined {
+export function reasonOf(value: unknown): Reason | undefined {
   const name = text(value);
   return REASONS.find((r) => r === name);
 }

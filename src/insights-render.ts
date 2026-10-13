@@ -59,17 +59,17 @@ export function formatValue(value: number, unit: string): string {
   return String(value);
 }
 
-function cell(value: number | undefined, unit: string): string {
+export function cell(value: number | undefined, unit: string): string {
   return value === undefined ? "-" : formatValue(value, unit);
 }
 
 // A count no real window reaches is a backend fault, not a figure. Past the ceiling `String()`
 // goes exponential, the same failure formatUsd guards below.
-function formatCount(n: number): string {
+export function formatCount(n: number): string {
   return n >= 1e12 ? "-" : String(n);
 }
 
-function formatUsd(usd: number): string {
+export function formatUsd(usd: number): string {
   // toFixed goes exponential past 1e21, which is not a dollar figure any reader can use.
   if (Math.abs(usd) >= 1e15) return "-";
   return `${usd < 0 ? "-" : ""}$${Math.abs(usd).toFixed(2)}`;
@@ -117,7 +117,7 @@ function truncate(text: string, max: number, ascii: boolean): string {
 
 // Prose folds at word boundaries; tables truncate instead, because a shortened label still reads
 // whereas a folded row destroys the alignment that is the only thing making the row legible.
-function wrap(text: string, width: number, indent = 0): string[] {
+export function wrap(text: string, width: number, indent = 0): string[] {
   // An indent wider than the terminal would push every line past the width before a single word
   // was placed, so it gives way first.
   const prefix = " ".repeat(Math.max(0, Math.min(indent, width - 1)));
@@ -135,7 +135,7 @@ function wrap(text: string, width: number, indent = 0): string[] {
 // `fixed` is a column that must keep its natural width or not be drawn at all. A sparkline is the
 // only one: clipped, it drops weeks silently and then disagrees with the value printed beside it,
 // and in ASCII its ellipsis is indistinguishable from three floor-level ramp glyphs.
-type Align = "left" | "right" | "fixed";
+export type Align = "left" | "right" | "fixed";
 
 const LABEL_FLOOR = 4;
 const VALUE_FLOOR = 3;
@@ -147,7 +147,7 @@ interface TableOptions {
   labelWidth?: number;
 }
 
-function naturalWidths(rows: string[][], count: number): number[] {
+export function naturalWidths(rows: string[][], count: number): number[] {
   return Array.from({ length: count }, (_, i) =>
     rows.reduce((widest, r) => Math.max(widest, displayWidth(r[i] ?? "")), 0),
   );
@@ -155,7 +155,7 @@ function naturalWidths(rows: string[][], count: number): number[] {
 
 // Aligned columns that never wrap a row: past the available width, label columns are narrowed
 // first and value columns only once the labels are at their floor, with cells truncated to fit.
-function renderTable(
+export function renderTable(
   rows: string[][],
   align: Align[],
   opts: RenderOptions,
@@ -207,7 +207,7 @@ function renderTable(
   return [line(headers), "-".repeat(Math.min(total(), opts.width)), ...body];
 }
 
-const REASON_TEXT: Record<string, string> = {
+export const REASON_TEXT: Record<string, string> = {
   insufficient_data: "not enough sessions yet to say anything",
   no_consent: "off for your tenant, which has not enabled prompt collection",
   not_implemented: "this backend does not produce it",
@@ -294,6 +294,52 @@ function renderRepertoire(data: Repertoire, opts: RenderOptions): string[] {
   return lines;
 }
 
+interface Trended {
+  label: string;
+  unit: string;
+  trend: number[];
+}
+
+/** The first/chart/latest table under a "Trend, weekly" heading, shared by both reports. */
+export function renderTrends(
+  trended: Trended[],
+  labelWidth: number,
+  opts: RenderOptions,
+): string[] {
+  const charts = trended.map((s) => [
+    sparkline(s.trend, opts.ascii),
+    formatValue(s.trend[0], s.unit),
+    formatValue(s.trend[s.trend.length - 1], s.unit),
+  ]);
+
+  // Measured against the floor the label can shrink to, not its natural width: the label gives
+  // way first, and the chart is dropped only once even a truncated label cannot make room. A
+  // value column stops at `VALUE_FLOOR` even when its number is narrower, so leaving that out
+  // admitted a chart the row could not hold and the final slice then cut the value beside it.
+  const columns = naturalWidths(charts, 3);
+  const room =
+    LABEL_FLOOR +
+      columns[0] +
+      Math.max(columns[1], VALUE_FLOOR) +
+      Math.max(columns[2], VALUE_FLOOR) +
+      GUTTER * 3 <=
+    opts.width;
+
+  return renderTable(
+    trended.map((s, i) =>
+      room
+        ? [s.label, charts[i][1], charts[i][0], charts[i][2]]
+        : [s.label, charts[i][1], charts[i][2]],
+    ),
+    room ? ["left", "right", "fixed", "right"] : ["left", "right", "right"],
+    opts,
+    {
+      headers: room ? ["Signal", "First", "", "Latest"] : ["Signal", "First", "Latest"],
+      labelWidth,
+    },
+  );
+}
+
 function renderSignals(signals: Signal[], fit: Fit | undefined, opts: RenderOptions): string[] {
   if (signals.length === 0) return wrap("This backend produced no signals.", opts.width);
 
@@ -310,41 +356,8 @@ function renderSignals(signals: Signal[], fit: Fit | undefined, opts: RenderOpti
 
   const trended = signals.filter((s) => s.trend.length >= 2);
   if (trended.length > 0) {
-    const charts = trended.map((s) => [
-      sparkline(s.trend, opts.ascii),
-      formatValue(s.trend[0], s.unit),
-      formatValue(s.trend[s.trend.length - 1], s.unit),
-    ]);
-
-    // Measured against the floor the label can shrink to, not its natural width: the label gives
-    // way first, and the chart is dropped only once even a truncated label cannot make room. A
-    // value column stops at `VALUE_FLOOR` even when its number is narrower, so leaving that out
-    // admitted a chart the row could not hold and the final slice then cut the value beside it.
-    const columns = naturalWidths(charts, 3);
-    const room =
-      LABEL_FLOOR +
-        columns[0] +
-        Math.max(columns[1], VALUE_FLOOR) +
-        Math.max(columns[2], VALUE_FLOOR) +
-        GUTTER * 3 <=
-      opts.width;
-
     lines.push("", ...wrap("Trend, weekly", opts.width));
-    lines.push(
-      ...renderTable(
-        trended.map((s, i) =>
-          room
-            ? [s.label, charts[i][1], charts[i][0], charts[i][2]]
-            : [s.label, charts[i][1], charts[i][2]],
-        ),
-        room ? ["left", "right", "fixed", "right"] : ["left", "right", "right"],
-        opts,
-        {
-          headers: room ? ["Signal", "First", "", "Latest"] : ["Signal", "First", "Latest"],
-          labelWidth,
-        },
-      ),
-    );
+    lines.push(...renderTrends(trended, labelWidth, opts));
   }
 
   // A single point implies a history that does not exist, and an unusable series would draw a
