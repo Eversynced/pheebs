@@ -118,6 +118,7 @@ describe("pheebs insights --team: output", () => {
     const { stdout, status } = await cli(manager, "insights", "--team", "--json");
     expect(status).toBe(0);
     expect(stdout.trimEnd()).toBe(reply.body);
+    expect(requests.map((r) => r.url)).toEqual(["/insights/team"]);
   });
 
   it("renders the 90-day payload", async () => {

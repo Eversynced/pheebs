@@ -46,7 +46,9 @@ const STATE_CODES: [string, string, string][] = [
 
 function stateCode(state: string | undefined): string {
   if (!state) return "-";
-  return STATE_CODES.find(([key]) => key === state)?.[1] ?? state;
+  // A state outside the contract is named as unknown rather than printed raw, where it could pass
+  // for a code of its own.
+  return STATE_CODES.find(([key]) => key === state)?.[1] ?? "other";
 }
 
 function outOf(count: number | undefined, denominator: number | undefined): string {
@@ -112,7 +114,11 @@ function renderHeatmap(data: Heatmap, opts: RenderOptions): string[] {
       ),
     );
     const columns = data.competencies.map((name, i) => `${i + 1} ${name}`).join(", ");
-    const cells = [...STATE_CODES.map(([, code, word]) => `${code} ${word}`), "- not reported"];
+    const cells = [
+      ...STATE_CODES.map(([, code, word]) => `${code} ${word}`),
+      "other a state this version does not know",
+      "- not reported",
+    ];
     lines.push("", ...wrap(`Columns: ${columns}`, opts.width));
     lines.push(...wrap(`Cells: ${cells.join(", ")}`, opts.width));
   }
@@ -367,8 +373,8 @@ function renderDollars(data: Dollars, opts: RenderOptions): string[] {
   }
 
   const { actual, asSized } = data;
-  if (actual !== undefined || asSized !== undefined) {
-    const names = [...new Set([...(actual ?? []), ...(asSized ?? [])].map((c) => c.label))];
+  const names = [...new Set([...(actual ?? []), ...(asSized ?? [])].map((c) => c.label))];
+  if (names.length > 0) {
     const sessionsFor = (rows: typeof actual, name: string) => {
       const found = rows?.find((c) => c.label === name);
       return found?.sessions === undefined ? "-" : formatCount(found.sessions);

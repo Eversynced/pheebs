@@ -229,3 +229,141 @@ describe("renderTeamInsights: empty and missing lists", () => {
     expect(out.indexOf("Coverage: not reported")).toBeLessThan(out.indexOf("Opportunity"));
   });
 });
+
+describe("renderTeamInsights: untrusted shapes", () => {
+  it("names a heatmap state it does not know instead of printing it as a code", () => {
+    const out = render({
+      sections: {
+        repertoire: {
+          enabled: true,
+          practice_heatmap: {
+            enabled: true,
+            competencies: ["Models"],
+            engineers: [{ developer: "a", competencies: [{ name: "Models", state: "rec" }] }],
+          },
+        },
+      },
+    });
+    expect(out).toMatch(/\ba\s+other\b/);
+  });
+
+  it("draws one column for a signal declared twice", () => {
+    const out = render({
+      sections: {
+        judgement_signals: {
+          enabled: true,
+          signals_by_engineer: {
+            enabled: true,
+            signals: [
+              { key: "pushback_rate", unit: "share" },
+              { key: "pushback_rate", unit: "ratio" },
+            ],
+            engineers: [{ developer: "a", signals: [{ key: "pushback_rate", value: 0.5 }] }],
+          },
+        },
+      },
+    });
+    expect(out).toMatch(/^\s*Engineer\s+Push\s*$/m);
+    expect(out).toMatch(/\ba\s+50%\s*$/m);
+  });
+
+  it("prints no class heading when both distributions are empty", () => {
+    const out = render({
+      sections: {
+        judgement_signals: {
+          enabled: true,
+          dollar_savings: { enabled: true, basis: "b", distribution: { actual: [] } },
+        },
+      },
+    });
+    expect(out).not.toContain("Sessions by model class");
+  });
+});
+
+describe("renderTeamInsights: details the first tests missed", () => {
+  it("keeps a note at the last point of the trend and drops one just past it", () => {
+    const out = render({
+      sections: {
+        judgement_signals: {
+          enabled: true,
+          median_movement: {
+            enabled: true,
+            signals: [
+              {
+                key: "model_fit",
+                unit: "share",
+                trend: [0.1, 0.2, 0.3, 0.4],
+                annotations: [
+                  { index: 3, text: "last point" },
+                  { index: 4, text: "one past" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(out).toContain("week 4: last point");
+    expect(out).not.toContain("one past");
+  });
+
+  it("prints a count past its denominator bare rather than as a fraction", () => {
+    const out = render({
+      team: { kind: "tenant", engineers: 5 },
+      sections: {
+        repertoire: {
+          enabled: true,
+          adoption_funnel: {
+            enabled: true,
+            practices: [{ name: "Models", unobserved: 6, adopted: 1, recurring: 1 }],
+          },
+        },
+      },
+    });
+    expect(out).toMatch(/Models\s+6\s+1 \/ 5\s+1 \/ 5/);
+  });
+
+  it("falls back to the competencies the rows carry, and keeps the legend", () => {
+    const out = render({
+      sections: {
+        repertoire: {
+          enabled: true,
+          practice_heatmap: {
+            enabled: true,
+            engineers: [{ developer: "a", competencies: [{ name: "MCP", state: "adopted" }] }],
+          },
+        },
+      },
+    });
+    expect(out).toMatch(/\ba\s+ado\b/);
+    expect(out).toContain("Cells: rec recurring");
+  });
+
+  it("names a trend it cannot draw", () => {
+    const out = render({
+      sections: {
+        judgement_signals: {
+          enabled: true,
+          median_movement: {
+            enabled: true,
+            signals: [{ key: "model_fit", unit: "share", trend: [0.1, "x", 0.3] }],
+          },
+        },
+      },
+    });
+    expect(out).toContain("Trend not reported for: Model-fit rate");
+  });
+
+  it("says how many rows past the bound were not shown", () => {
+    const practices = Array.from({ length: 205 }, (_, i) => ({
+      name: `P${i}`,
+      unobserved: 0,
+      adopted: 0,
+      recurring: 1,
+    }));
+    const out = render({
+      sections: { repertoire: { enabled: true, adoption_funnel: { enabled: true, practices } } },
+    });
+    expect(out).toContain("and 5 more row(s), not shown.");
+  });
+});

@@ -263,9 +263,14 @@ function byEngineerOf(view: Record<string, unknown>): { data: ByEngineer; droppe
   }));
   const median = Array.isArray(view.median) ? keyed(view.median) : undefined;
 
-  const declared = rows(view.signals).taken.flatMap((s) =>
-    text(s.key) ? [{ key: text(s.key), unit: text(s.unit) }] : [],
-  );
+  // A key declared twice would draw two columns over the same cells, so the first declaration wins.
+  const seen = new Set<string>();
+  const declared = rows(view.signals).taken.flatMap((s) => {
+    const key = text(s.key);
+    if (!key || seen.has(key)) return [];
+    seen.add(key);
+    return [{ key, unit: text(s.unit) }];
+  });
   // Without a declared column order the union in first-seen order is all there is, and the unit is
   // then unknown, so the value prints raw rather than at a guessed scale.
   const columns: Column[] = (

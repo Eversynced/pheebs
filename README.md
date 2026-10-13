@@ -229,7 +229,7 @@ pheebs insights --team --days 28  # a different window
 pheebs insights --team --json     # the raw payload, for scripting
 ```
 
-This reads `GET /insights/team` and needs a manager token from an admin. Anyone else gets a plain
+This reads `GET /insights/team` and needs a manager token from an admin. `pheebs --help` lists `--team` once a manager's token has been set, so after a promotion re-run `pheebs config set token`; the flag works either way. Anyone else gets a plain
 refusal, because the backend checks the role on every call. Developers who opted out are never a
 row in the two tables that name people, and each says how many were withheld. A view the backend
 cannot produce says why in one line rather than printing zeros.
