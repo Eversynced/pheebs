@@ -32,6 +32,7 @@ const {
   validateToken,
   setToken,
   revalidateStoredTokenIfStale,
+  isCachedManager,
 } = await import("../src/token.js");
 
 function stubFetch(response: Response | Error): void {
@@ -204,6 +205,17 @@ describe("setToken", () => {
     });
   });
 
+  it("caches a known role and drops one it does not recognize", async () => {
+    stubFetch(new Response(JSON.stringify({ id: "t", allowed: true, role: "manager" })));
+    await setToken("pheebs_secret");
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).role).toBe("manager");
+
+    writeFileSyncMock.mockReset();
+    stubFetch(new Response(JSON.stringify({ id: "t", allowed: true, role: "root" })));
+    await setToken("pheebs_secret");
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string)).not.toHaveProperty("role");
+  });
+
   it("still stores the id but reports 'opted_out'", async () => {
     stubFetch(
       new Response(
@@ -271,6 +283,30 @@ describe("setToken", () => {
       developer: "octocat",
     });
   });
+
+  it("keeps a cached role on an offline re-set of the same token", async () => {
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock.mockReturnValue(
+      JSON.stringify({ token: "pheebs_secret", id: "tok-9", role: "manager" }),
+    );
+    stubFetch(new Error("network down"));
+    await setToken("pheebs_secret");
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).role).toBe("manager");
+  });
+});
+
+describe("isCachedManager", () => {
+  it("is true only for a cached manager role", () => {
+    existsSyncMock.mockReturnValue(true);
+    for (const [stored, expected] of [
+      [{ token: "t", role: "manager" }, true],
+      [{ token: "t", role: "engineer" }, false],
+      [{ token: "t" }, false],
+    ] as const) {
+      readFileSyncMock.mockReturnValue(JSON.stringify(stored));
+      expect(isCachedManager()).toBe(expected);
+    }
+  });
 });
 
 describe("revalidateStoredTokenIfStale", () => {
@@ -312,6 +348,18 @@ describe("revalidateStoredTokenIfStale", () => {
       tenant: "acme",
     });
     expect(written.last_validated_at).toBeTypeOf("string");
+  });
+
+  it("refreshes the cached role, so a demotion reaches the machine", async () => {
+    storeReturns({
+      token: "pheebs_x",
+      id: "tok-1",
+      role: "manager",
+      last_validated_at: "2000-01-01T00:00:00.000Z",
+    });
+    stubFetch(new Response(JSON.stringify({ id: "tok-1", allowed: true, role: "engineer" })));
+    await revalidateStoredTokenIfStale();
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).role).toBe("engineer");
   });
 
   it("drops the id when the token has been revoked server-side", async () => {

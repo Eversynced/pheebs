@@ -6,6 +6,8 @@ import { readJsonFile, writeJsonFile } from "./pheebs-store.js";
 
 const TOKEN_PATH = join(homedir(), ".pheebs", ".token");
 
+export type TokenRole = "engineer" | "manager";
+
 /** Locally stored Pheebs API token. Only `id` (not the secret) is ever stamped on events. */
 export interface StoredToken {
   token: string;
@@ -14,6 +16,8 @@ export interface StoredToken {
   tenant?: string;
   /** Tenant consent gate for prompt collection, cached so it can be honored offline. */
   prompt_collection?: boolean;
+  /** Which report the token can draw, cached to decide whether to offer `insights --team`. */
+  role?: TokenRole;
   /** ISO time of the last successful validation; drives TTL revalidation. */
   last_validated_at?: string;
 }
@@ -28,6 +32,8 @@ export interface ValidateResult {
   opt_out?: boolean;
   /** True when the token's tenant has consented to prompt collection. */
   prompt_collection?: boolean;
+  /** Display only: the backend resolves the role from the token's own record on every call. */
+  role?: string;
   reason?: string;
 }
 
@@ -40,6 +46,19 @@ export interface SetTokenOutcome {
 export function readStoredToken(): StoredToken | undefined {
   const parsed = readJsonFile<StoredToken>(TOKEN_PATH);
   return parsed?.token ? parsed : undefined;
+}
+
+/**
+ * Courtesy only: whether to mention `--team`. A value edited by hand in `~/.pheebs/` gains
+ * nothing, since `/insights/team` checks the role again on every call.
+ */
+export function isCachedManager(): boolean {
+  return readStoredToken()?.role === "manager";
+}
+
+// Anything but the two known roles is not cached, so an unknown value reads as the default.
+function roleOf(result: ValidateResult): TokenRole | undefined {
+  return result.role === "manager" || result.role === "engineer" ? result.role : undefined;
 }
 
 export function writeStoredToken(stored: StoredToken): void {
@@ -114,6 +133,7 @@ export async function setToken(token: string): Promise<SetTokenOutcome> {
             developer: existing.developer,
             tenant: existing.tenant,
             prompt_collection: existing.prompt_collection,
+            role: existing.role,
             last_validated_at: existing.last_validated_at,
           }
         : { token };
@@ -146,6 +166,7 @@ export async function setToken(token: string): Promise<SetTokenOutcome> {
     developer: result.developer,
     tenant: result.tenant ?? undefined,
     prompt_collection: result.prompt_collection,
+    role: roleOf(result),
     last_validated_at: new Date().toISOString(),
   });
   const who = result.developer ?? result.id;
@@ -189,6 +210,7 @@ export async function revalidateStoredTokenIfStale(): Promise<void> {
     developer: result.developer,
     tenant: result.tenant ?? undefined,
     prompt_collection: result.prompt_collection,
+    role: roleOf(result),
     last_validated_at: new Date().toISOString(),
   });
 }
