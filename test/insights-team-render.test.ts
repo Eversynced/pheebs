@@ -1,0 +1,190 @@
+import { describe, expect, it } from "vitest";
+import { displayWidth } from "../src/insights-render.js";
+import { normalizeTeam } from "../src/insights-team-normalize.js";
+import { renderTeamInsights } from "../src/insights-team-render.js";
+import { ALL_OFF, WINDOW_28, WINDOW_90, WITH_REPERTOIRE } from "./fixtures/team-insights.js";
+
+const WIDE = { width: 80, ascii: false };
+
+function render(payload: unknown, opts = WIDE): string {
+  return renderTeamInsights(normalizeTeam(payload), opts).join("\n");
+}
+
+describe("renderTeamInsights: the cohort", () => {
+  it("names the window and the cohort", () => {
+    const out = render(WINDOW_90);
+    expect(out).toContain("Your team, last 90 days");
+    expect(out).toContain("Eversynced (tenant, 2 engineers)");
+  });
+
+  it("prints a cohort kind it does not know rather than refusing", () => {
+    expect(render({ days: 1, team: { kind: "squad", engineers: 1 }, sections: {} })).toContain(
+      "Cohort (squad, 1 engineer)",
+    );
+  });
+
+  it("says a backend with no sections produces none", () => {
+    expect(render({ sections: {} })).toContain("no team sections");
+    expect(render({ sections: { retention: { enabled: true } } })).toContain(
+      "1 section(s) that this version of pheebs does not render",
+    );
+  });
+});
+
+describe("renderTeamInsights: the live 90-day payload", () => {
+  const out = render(WINDOW_90);
+
+  it("renders the section that is off as one reason line", () => {
+    expect(out).toContain("Repertoire: this backend does not produce it");
+  });
+
+  it("renders the engineer table with a gap, not a zero, for a signal the row lacks", () => {
+    const row = out.split("\n").find((l) => l.includes("gustavo"));
+    expect(row).toMatch(/50%\s+14%\s+2\.2 : 1\s+0%\s+-$/);
+  });
+
+  it("says the median was not reported, and the count of named and withheld engineers", () => {
+    expect(out).toContain("Team median: not reported.");
+    expect(out).toContain("Engineers: 1 named, 0 withheld (opted out)");
+  });
+
+  it("renders a view that is off with its reason and no figure", () => {
+    expect(out).toContain("Median movement: not enough sessions yet to say anything");
+  });
+
+  it("renders wholesale watch as parts over totals", () => {
+    expect(out).toMatch(/Lines that shipped unchallenged\s+0 of 18/);
+    expect(out).toMatch(/Sessions that shipped unchallenged\s+0 of 2/);
+    expect(out).toContain("never ran: 3");
+    expect(out).toMatch(/Eversynced\/pheebs\s+0 of 18/);
+    expect(out).not.toContain("Window before");
+  });
+
+  it("puts coverage above the dollars and prints the basis even with no figure", () => {
+    expect(out).toMatch(/No usage telemetry\s+28/);
+    expect(out).toContain("API list-price equivalent, estimated upper bound");
+    expect(out).not.toMatch(/\$\d/);
+  });
+});
+
+describe("renderTeamInsights: the live 28-day payload", () => {
+  const out = render(WINDOW_28);
+
+  it("renders wholesale watch as unavailable, not as zeros", () => {
+    expect(out).toContain("Wholesale watch: not enough sessions yet to say anything");
+    expect(out).not.toContain("never ran");
+  });
+
+  it("renders only the signals the engineer has", () => {
+    const row = out.split("\n").find((l) => l.includes("gustavo"));
+    expect(row).toMatch(/100%\s+-\s+3\.1 : 1\s+-\s+-$/);
+  });
+});
+
+describe("renderTeamInsights: an enabled repertoire", () => {
+  const out = render(WITH_REPERTOIRE);
+
+  it("draws the funnel with the fourth count beside the three, out of the cohort", () => {
+    expect(out).toContain("Insufficient data");
+    expect(out).toMatch(/Models\s+2 \/ 5\s+1 \/ 5\s+1 \/ 5\s+1 \/ 5/);
+  });
+
+  it("omits the fourth column when no row carries it", () => {
+    const plain = render({
+      sections: {
+        repertoire: {
+          enabled: true,
+          adoption_funnel: {
+            enabled: true,
+            practices: [{ name: "Models", unobserved: 2, adopted: 2, recurring: 5 }],
+          },
+        },
+      },
+    });
+    expect(plain).not.toContain("Insufficient");
+    expect(plain).toMatch(/Models\s+2\s+2\s+5/);
+  });
+
+  it("draws the heatmap with a gap where a row has no cell", () => {
+    const dwight = out
+      .split("\n")
+      .find((l) => l.trimStart().startsWith("dwight") && l.includes("ado"));
+    expect(dwight).toMatch(/rec\s+ado\s+-\s+-\s+-\s+-$/);
+    expect(out).toContain("1 Models, 2 Artifacts, 3 MCP");
+    expect(out).toContain("Engineers: 3 named, 2 withheld (opted out)");
+  });
+
+  it("renders team stats with denominators and only the fields present", () => {
+    expect(out).toContain("Repos seen: 2");
+    expect(out).toMatch(/\/review\s+2 \/ 5/);
+    expect(out).toMatch(/code-reviewer\s+2 \/ 5/);
+    expect(out).toMatch(/Slack\s+2 \/ 5\s+reads, writes/);
+    expect(out).toMatch(/Github\s+1 \/ 5\s+-/);
+    expect(out).toMatch(/MCP config\s+2 \/ 2/);
+    expect(out).toContain("MCP in use (two or more engineers): 1 / 2 repos");
+    expect(out).not.toContain("Eval harness");
+  });
+
+  it("renders the median row, a trend with its notes, and drops a stray note", () => {
+    expect(out).toMatch(/Team median\s+62%\s+2\.5 : 1/);
+    expect(out).toMatch(/Verification coverage\s+40%\s+\S+\s+62%/);
+    expect(out).toContain("week 3: Added a test skill to the shared repo");
+    expect(out).not.toContain("Pinned past the end");
+    expect(out).toContain("Only one week of history for: Model-fit rate");
+  });
+
+  it("renders both windows for wholesale watch", () => {
+    expect(out).toMatch(/Lines that shipped unchallenged\s+40 of 400\s+20 of 150/);
+    expect(out).toMatch(/Sessions that shipped unchallenged\s+6 of 30\s+3 of 12/);
+  });
+
+  it("prints the basis under every dollar figure and the buckets above them", () => {
+    const lines = out.split("\n");
+    const basis = "API list-price equivalent, estimated upper bound";
+    for (const figure of ["Opportunity: $412.50", "List-price spend on those sessions: $1830.25"]) {
+      const at = lines.findIndex((l) => l.includes(figure));
+      expect(at).toBeGreaterThan(-1);
+      expect(lines[at + 1]).toContain(basis);
+    }
+    expect(out.indexOf("Sessions in the window")).toBeLessThan(out.indexOf("Opportunity"));
+    expect(out).toMatch(/medium\s+-\s+4/);
+  });
+});
+
+describe("renderTeamInsights: views that are off", () => {
+  const out = render(ALL_OFF);
+
+  it("gives each its own reason line and no table", () => {
+    expect(out).toContain("Adoption funnel: not enough sessions yet to say anything");
+    expect(out).toContain("Practice heatmap: not enough sessions yet to say anything");
+    expect(out).toContain("Team stats: not enough sessions yet to say anything");
+    expect(out).toContain("Judgement signals: off for your tenant");
+  });
+
+  it("never renders an unavailable view as zeros", () => {
+    expect(out).not.toMatch(/\b0\b|0%|\$/);
+  });
+
+  it("still marks a view with no reason as not available", () => {
+    const bare = render({
+      sections: { repertoire: { enabled: true, team_stats: { enabled: false } } },
+    });
+    expect(bare).toContain("Team stats: not available");
+  });
+});
+
+describe("renderTeamInsights: layout", () => {
+  it("fits every fixture in a narrow terminal", () => {
+    for (const payload of [WINDOW_28, WINDOW_90, WITH_REPERTOIRE, ALL_OFF]) {
+      for (const width of [30, 40, 60]) {
+        const lines = renderTeamInsights(normalizeTeam(payload), { width, ascii: true });
+        for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(width);
+      }
+    }
+  });
+
+  it("falls back to ascii glyphs", () => {
+    const out = render(WITH_REPERTOIRE, { width: 80, ascii: true });
+    expect(out).not.toMatch(/[▁-█]/);
+  });
+});
