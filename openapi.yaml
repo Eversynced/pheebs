@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.2.0"
+  version: "1.3.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -1099,8 +1099,9 @@ components:
             practices:
               type: array
               description: |
-                One row per practice. The three counts are engineers and sum to the cohort's
-                `engineers`, so a consumer can draw the bar without being handed a share.
+                One row per practice. The counts are engineers and sum to the cohort's
+                `engineers` (with `insufficient_data`, when sent), so a consumer can draw the bar
+                without being handed a share.
               items:
                 type: object
                 required: [name, unobserved, adopted, recurring]
@@ -1111,6 +1112,13 @@ components:
                   unobserved: { type: integer }
                   adopted: { type: integer }
                   recurring: { type: integer }
+                  insufficient_data:
+                    type: integer
+                    description: |
+                      Engineers whose state for this practice cannot be judged yet, optional. A
+                      backend that sends it makes the four counts sum to the cohort's `engineers`,
+                      and a client that does not know it ignores it, so the three required counts
+                      then sum to less.
 
     PracticeHeatmap:
       description: |
