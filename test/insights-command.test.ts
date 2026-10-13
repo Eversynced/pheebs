@@ -83,3 +83,26 @@ describe("parseInsightsArgs", () => {
     expect(parseInsightsArgs(["--days=365"])).toEqual({ ok: true, days: 365, json: false });
   });
 });
+
+describe("parseInsightsArgs: --team", () => {
+  it("is off unless asked for", () => {
+    expect(parseInsightsArgs([])).not.toHaveProperty("team");
+  });
+
+  it("reads --team alongside a window and --json in any order", () => {
+    expect(parseInsightsArgs(["--team"])).toEqual({ ok: true, json: false, team: true });
+    expect(parseInsightsArgs(["--days", "28", "--json", "--team"])).toEqual({
+      ok: true,
+      days: 28,
+      json: true,
+      team: true,
+    });
+  });
+
+  it("still rejects an option it does not know", () => {
+    expect(parseInsightsArgs(["--team", "--teams"])).toEqual({
+      ok: false,
+      error: 'unknown option "--teams". Run `pheebs --help` for the list.',
+    });
+  });
+});
