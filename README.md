@@ -225,7 +225,7 @@ Managers can read the same model across their tenant:
 
 ```bash
 pheebs insights --team            # adoption, heatmap, team stats, signals by engineer, spend
-pheebs insights --team --days 28  # a narrower window
+pheebs insights --team --days 28  # a different window
 pheebs insights --team --json     # the raw payload, for scripting
 ```
 

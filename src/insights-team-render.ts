@@ -128,8 +128,14 @@ function renderStats(data: TeamStats, engineers: number | undefined, opts: Rende
 
   if (data.repos !== undefined) blocks.push(wrap(`Repos seen: ${data.repos}`, opts.width));
 
+  // An empty list is the backend saying nobody did it, which is a finding, while an absent one is a
+  // list it could not measure and prints nothing.
   const reuse = (title: string, rows: { name: string; engineers?: number }[] | undefined) => {
-    if (rows === undefined || rows.length === 0) return;
+    if (rows === undefined) return;
+    if (rows.length === 0) {
+      blocks.push(wrap(`${title}: none used by any engineer`, opts.width));
+      return;
+    }
     blocks.push([
       ...wrap(`${title}, by engineers out of ${engineers ?? "the team"}`, opts.width),
       ...renderTable(
@@ -142,6 +148,7 @@ function renderStats(data: TeamStats, engineers: number | undefined, opts: Rende
   reuse("Skills and commands", data.skills);
   reuse("Sub-agents", data.subagents);
 
+  if (data.connectors?.length === 0) blocks.push(wrap("Connectors: none used", opts.width));
   if (data.connectors !== undefined && data.connectors.length > 0) {
     blocks.push([
       ...wrap(`Connectors, by engineers out of ${engineers ?? "the team"}`, opts.width),
@@ -158,6 +165,9 @@ function renderStats(data: TeamStats, engineers: number | undefined, opts: Rende
     ]);
   }
 
+  if (data.artifactTypes?.length === 0) {
+    blocks.push(wrap("AI-config artifacts: none found in the repos seen", opts.width));
+  }
   if (data.artifactTypes !== undefined && data.artifactTypes.length > 0) {
     blocks.push([
       ...wrap(`AI-config artifacts, by repos out of ${data.repos ?? "those seen"}`, opts.width),
@@ -314,6 +324,15 @@ function renderDollars(data: Dollars, opts: RenderOptions): string[] {
   // Coverage first and always above the dollars: a figure with no coverage line beside it reads
   // as the whole team when it may be half of it.
   const { coverage } = data;
+  const hasFigure = data.opportunity !== undefined || data.spend !== undefined;
+  if (coverage === undefined && hasFigure) {
+    lines.push(
+      ...wrap(
+        "Coverage: not reported, so these figures may cover only part of the team",
+        opts.width,
+      ),
+    );
+  }
   if (coverage !== undefined) {
     lines.push(...wrap("Sessions in the window", opts.width));
     lines.push(

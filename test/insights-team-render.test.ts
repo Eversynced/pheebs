@@ -188,3 +188,34 @@ describe("renderTeamInsights: layout", () => {
     expect(out).not.toMatch(/[▁-█]/);
   });
 });
+
+describe("renderTeamInsights: empty and missing lists", () => {
+  const stats = (team_stats: object) =>
+    render({
+      sections: { repertoire: { enabled: true, team_stats: { enabled: true, ...team_stats } } },
+    });
+
+  it("says so when a list is empty and prints nothing when it is absent", () => {
+    const empty = stats({ skill_reuse: [], connectors: [], artifact_types: [], repos: 2 });
+    expect(empty).toContain("Skills and commands: none used by any engineer");
+    expect(empty).toContain("Connectors: none used");
+    expect(empty).toContain("AI-config artifacts: none found");
+
+    const absent = stats({ repos: 2 });
+    expect(absent).not.toContain("none used");
+    expect(absent).not.toContain("Skills and commands");
+  });
+
+  it("flags a dollar figure that arrives without coverage", () => {
+    const out = render({
+      sections: {
+        judgement_signals: {
+          enabled: true,
+          dollar_savings: { enabled: true, basis: "b", opportunity: 5 },
+        },
+      },
+    });
+    expect(out.indexOf("Coverage: not reported")).toBeGreaterThan(-1);
+    expect(out.indexOf("Coverage: not reported")).toBeLessThan(out.indexOf("Opportunity"));
+  });
+});
