@@ -401,8 +401,8 @@ function renderView(view: View, engineers: number | undefined, opts: RenderOptio
   const { body } = view;
   // A view sits one level under its section, and its content one more, so the width given to the
   // tables is what remains after the indent rather than a width they would overrun.
-  const title = { ...opts, width: opts.width - INDENT };
-  const inner = { ...opts, width: opts.width - 2 * INDENT };
+  const title = { ...opts, width: Math.max(1, opts.width - INDENT) };
+  const inner = { ...opts, width: Math.max(1, opts.width - 2 * INDENT) };
 
   if (body.kind === "unavailable") {
     const reason = body.reason ? REASON_TEXT[body.reason] : "not available";

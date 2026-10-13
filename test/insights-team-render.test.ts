@@ -183,6 +183,16 @@ describe("renderTeamInsights: layout", () => {
     }
   });
 
+  it("does not throw on a terminal too narrow to draw in", () => {
+    for (const payload of [WINDOW_90, WITH_REPERTOIRE]) {
+      for (const width of [1, 2, 3]) {
+        expect(() =>
+          renderTeamInsights(normalizeTeam(payload), { width, ascii: true }),
+        ).not.toThrow();
+      }
+    }
+  });
+
   it("falls back to ascii glyphs", () => {
     const out = render(WITH_REPERTOIRE, { width: 80, ascii: true });
     expect(out).not.toMatch(/[▁-█]/);
