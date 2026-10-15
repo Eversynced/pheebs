@@ -228,6 +228,7 @@ describe("developer identity", () => {
     }
   });
 
+  // A named tool, because with none detected doctor stops before the identity lines.
   describe("in doctor", () => {
     let home: string;
     let cwd: string;
@@ -242,7 +243,10 @@ describe("developer identity", () => {
     it("names the git-email label without a token, never running gh", () => {
       const gh = fakeGh();
       try {
-        const result = runIn(cwd, home, ["doctor"], { path: gh.path, extraEnv: GIT_EMAIL_ENV });
+        const result = runIn(cwd, home, ["doctor", "--codex"], {
+          path: gh.path,
+          extraEnv: GIT_EMAIL_ENV,
+        });
         expect(result.stdout).toContain(`Developer on events: ${GIT_EMAIL_LABEL}`);
         expect(existsSync(gh.marker)).toBe(false);
       } finally {
@@ -256,7 +260,7 @@ describe("developer identity", () => {
         join(home, ".pheebs", ".token"),
         JSON.stringify({ token: "pheebs_e2e", id: "tok-e2e", developer: "octocat" }),
       );
-      const result = runIn(cwd, home, ["doctor"]);
+      const result = runIn(cwd, home, ["doctor", "--codex"]);
       expect(result.stdout).toContain("Pheebs token: octocat");
       expect(result.stdout).not.toContain("Developer on events");
     });
