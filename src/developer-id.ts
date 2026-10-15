@@ -8,7 +8,7 @@ import { getStoredTokenId } from "./token.js";
 // and `git config` answers per repo, so a machine-wide cache could stamp another repo's email.
 export function getDeveloperHandle(): string {
   const tokenId = getStoredTokenId();
-  if (tokenId) return tokenId;
+  if (typeof tokenId === "string" && tokenId) return tokenId;
 
   try {
     const email = execSync("git config user.email", { stdio: ["pipe", "pipe", "ignore"] })

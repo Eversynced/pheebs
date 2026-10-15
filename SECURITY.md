@@ -17,8 +17,8 @@ about data leaving a machine when it should not:
 - Any capture of content [`PRIVACY.md`](./PRIVACY.md) says is never captured — source, file
   paths, command strings, prompt text outside the documented classification path, or tool output.
 - Any **event, prompt, or telemetry payload** transmitted when no backend endpoint is configured,
-  or before consent is given. (The cached GitHub handle lookup and the once-a-day update check are
-  known and expected — see [`PRIVACY.md`](./PRIVACY.md).)
+  or before consent is given. (The opt-in once-a-day update check is known and expected, see
+  [`PRIVACY.md`](./PRIVACY.md).)
 - A token readable by another user on the machine, or leaking into a log, an event row, or an
   error message.
 - Anything in `pheebs init` that writes outside the agent config files it declares, or that

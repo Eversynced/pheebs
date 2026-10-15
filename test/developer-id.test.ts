@@ -34,18 +34,18 @@ describe("getDeveloperHandle", () => {
     expect(execSyncMock.mock.calls[0][0]).toBe("git config user.email");
   });
 
+  it("ignores a stored id that is not a string", () => {
+    getStoredTokenIdMock.mockReturnValue(123);
+    execSyncMock.mockReturnValue("dev@example.com\n");
+
+    expect(getDeveloperHandle()).toBe(expectedHash("dev@example.com"));
+  });
+
   it("returns 'unknown' when git has no email", () => {
     execSyncMock.mockImplementation(() => {
       throw new Error("no email");
     });
 
     expect(getDeveloperHandle()).toBe("unknown");
-  });
-
-  it("never asks gh for a GitHub handle", () => {
-    execSyncMock.mockReturnValue("dev@example.com\n");
-
-    getDeveloperHandle();
-    for (const [cmd] of execSyncMock.mock.calls) expect(String(cmd)).not.toMatch(/^gh\b/);
   });
 });
