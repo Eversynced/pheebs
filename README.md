@@ -299,7 +299,7 @@ When a hook fires, Pheebs:
 1. Reads the hook payload from stdin
 2. Pulls out session metadata (session ID, event type)
 3. Runs a tool-specific extractor for relevant fields
-4. Figures out who you are (GitHub handle or hashed email) and what repo you're in (`org/repo` from git remote)
+4. Figures out who you are (your token's id, or a hashed git email without a token) and what repo you're in (`org/repo` from git remote)
 5. Writes a JSONL line to a local log file
 6. Sends it to the Pheebs backend (`POST <endpoint>/ingest`, authenticated with your token) — the backend stamps your identity from the token and stores it. If no token is set, the send is skipped and only the local log is kept.
 
@@ -310,7 +310,7 @@ A log entry looks like this:
   "timestamp": "2026-03-13T14:30:00.000Z",
   "source": "hook",
   "event": "context_compacted",
-  "developer": "octocat",
+  "developer": "dev-3f9a1c",
   "codebase": "Eversynced/pheebs",
   "ai_tool": "claude_code",
   "session_id": "abc123",

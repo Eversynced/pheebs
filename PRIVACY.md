@@ -11,11 +11,8 @@ Three facts up front, because they determine everything else:
    Until someone sets one, Pheebs writes JSONL to `~/.pheebs/logs/` and sends no event, no prompt,
    and no OpenTelemetry data anywhere.
 
-   Two things do still contact the network, and neither carries telemetry — we would rather name
-   them than let you find them:
-   - **Identity**: `gh api /user` resolves your GitHub handle, cached 24h
-     ([`src/developer-id.ts`](./src/developer-id.ts)). Without `gh` it falls back to a hash of your
-     git email and makes no call.
+   One thing does still contact the network, and it carries no telemetry. We would rather name it
+   than let you find it:
    - **Self-update**: **off by default.** If you opt in with `pheebs config set auto-update on`,
      a session start checks npm for a newer release once a day
      ([`src/auto-update.ts`](./src/auto-update.ts)). Left alone, it never runs — `pheebs doctor`
@@ -50,7 +47,7 @@ Present on every event:
 | `timestamp` | ISO time |
 | `source` | always `hook` |
 | `event` | one of 16 event names (see [`src/hooks/types.ts`](./src/hooks/types.ts)) |
-| `developer` | your GitHub handle if `gh` is authenticated, otherwise `dev-XXXXXX` (a truncated hash of your git email), otherwise `unknown` |
+| `developer` | your token's id if a token is set, otherwise `dev-XXXXXX` (a truncated hash of your git email), otherwise `unknown`. Resolved locally, with no network call ([`src/developer-id.ts`](./src/developer-id.ts)) |
 | `codebase` | `PHEEBS_CODEBASE_ID` if set, else `org/repo` from your git remote, else `local/<folder-name>` (no remote, or started outside a repo), else `unknown` |
 | `ai_tool` | `claude_code` \| `cursor` \| `codex` |
 | `session_id` | the agent's own session identifier |

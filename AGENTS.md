@@ -138,7 +138,7 @@ so run `npm run build` before the CLI tests mean anything.
 | `src/insights-team-normalize.ts`, `src/insights-team-render.ts` | The same two halves for `/insights/team`, reusing the engineer report's primitives. Availability is per view, so a view that is off prints its reason; counts print beside the denominator the report states; the heatmap and the engineer table withhold opted-out developers by count, never by name. |
 | `src/commands/insights.ts` | `pheebs insights [--days N] [--json] [--team]`. Argument parsing (both `--days` spellings) and render options (terminal width, falling back to 80 off a TTY). Computes nothing: the backend produces the numbers. |
 | `src/config.ts` | Codebase id resolution: env override, git remote `org/repo`, then `local/<folder-name>`. Directory name only, never a full path. |
-| `src/developer-id.ts` | GitHub handle via `gh api`, falling back to a hashed git email. |
+| `src/developer-id.ts` | The local `developer` label: the stored token id, falling back to a hashed git email. Never a GitHub handle, and never a network call. |
 
 ## Scope
 
