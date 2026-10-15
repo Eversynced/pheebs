@@ -47,7 +47,7 @@ Present on every event:
 | `timestamp` | ISO time |
 | `source` | always `hook` |
 | `event` | one of 16 event names (see [`src/hooks/types.ts`](./src/hooks/types.ts)) |
-| `developer` | your token's id if a token is set, otherwise `dev-XXXXXX` (a truncated hash of your git email), otherwise `unknown`. Resolved locally, with no network call ([`src/developer-id.ts`](./src/developer-id.ts)) |
+| `developer` | your token's id once the token has been validated, otherwise `dev-XXXXXX` (a truncated hash of your git email), otherwise `unknown`. Resolved locally, with no network call ([`src/developer-id.ts`](./src/developer-id.ts)) |
 | `codebase` | `PHEEBS_CODEBASE_ID` if set, else `org/repo` from your git remote, else `local/<folder-name>` (no remote, or started outside a repo), else `unknown` |
 | `ai_tool` | `claude_code` \| `cursor` \| `codex` |
 | `session_id` | the agent's own session identifier |

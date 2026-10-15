@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const execSyncMock = vi.fn();
+const execFileSyncMock = vi.fn();
 const getStoredTokenIdMock = vi.fn();
 
-vi.mock("node:child_process", () => ({ execSync: (...args: unknown[]) => execSyncMock(...args) }));
+vi.mock("node:child_process", () => ({
+  execFileSync: (...args: unknown[]) => execFileSyncMock(...args),
+}));
 vi.mock("../src/token.js", () => ({ getStoredTokenId: () => getStoredTokenIdMock() }));
 
 const { getDeveloperHandle } = await import("../src/developer-id.js");
@@ -15,7 +17,7 @@ function expectedHash(email: string): string {
 
 describe("getDeveloperHandle", () => {
   beforeEach(() => {
-    execSyncMock.mockReset();
+    execFileSyncMock.mockReset();
     getStoredTokenIdMock.mockReset().mockReturnValue(undefined);
   });
 
@@ -23,26 +25,27 @@ describe("getDeveloperHandle", () => {
     getStoredTokenIdMock.mockReturnValue("tok-1");
 
     expect(getDeveloperHandle()).toBe("tok-1");
-    expect(execSyncMock).not.toHaveBeenCalled();
+    expect(execFileSyncMock).not.toHaveBeenCalled();
   });
 
   it("falls back to a hashed git email when no token id is stored", () => {
-    execSyncMock.mockReturnValue("dev@example.com\n");
+    execFileSyncMock.mockReturnValue("dev@example.com\n");
 
     expect(getDeveloperHandle()).toBe(expectedHash("dev@example.com"));
-    expect(execSyncMock).toHaveBeenCalledOnce();
-    expect(execSyncMock.mock.calls[0][0]).toBe("git config user.email");
+    expect(execFileSyncMock).toHaveBeenCalledOnce();
+    expect(execFileSyncMock.mock.calls[0].slice(0, 2)).toEqual(["git", ["config", "user.email"]]);
   });
 
-  it("ignores a stored id that is not a string", () => {
-    getStoredTokenIdMock.mockReturnValue(123);
-    execSyncMock.mockReturnValue("dev@example.com\n");
-
-    expect(getDeveloperHandle()).toBe(expectedHash("dev@example.com"));
+  it("ignores a stored id that is not a string, or is empty", () => {
+    execFileSyncMock.mockReturnValue("dev@example.com\n");
+    for (const id of [123, ""]) {
+      getStoredTokenIdMock.mockReturnValue(id);
+      expect(getDeveloperHandle()).toBe(expectedHash("dev@example.com"));
+    }
   });
 
   it("returns 'unknown' when git has no email", () => {
-    execSyncMock.mockImplementation(() => {
+    execFileSyncMock.mockImplementation(() => {
       throw new Error("no email");
     });
 

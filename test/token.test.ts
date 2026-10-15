@@ -315,12 +315,35 @@ describe("revalidateStoredTokenIfStale", () => {
     readFileSyncMock.mockReturnValue(JSON.stringify(stored));
   }
 
-  it("does nothing when no id has been resolved yet", async () => {
+  it("resolves the id of a token stored before it could be validated", async () => {
     storeReturns({ token: "pheebs_x" });
-    stubFetch(new Error("must not be called"));
+    stubFetch(new Response(JSON.stringify({ id: "tok-1", allowed: true }), { status: 200 }));
     await revalidateStoredTokenIfStale();
-    expect(fetch).not.toHaveBeenCalled();
-    expect(writeFileSyncMock).not.toHaveBeenCalled();
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).id).toBe("tok-1");
+  });
+
+  it("revokes prompt consent but never grants it", async () => {
+    for (const [cached, served, expected] of [
+      [true, false, false],
+      [false, true, false],
+      [undefined, true, false],
+      [true, true, true],
+    ] as const) {
+      writeFileSyncMock.mockReset();
+      storeReturns({
+        token: "pheebs_x",
+        id: "tok-1",
+        prompt_collection: cached,
+        last_validated_at: "2000-01-01T00:00:00.000Z",
+      });
+      stubFetch(
+        new Response(JSON.stringify({ id: "tok-1", allowed: true, prompt_collection: served })),
+      );
+      await revalidateStoredTokenIfStale();
+      expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).prompt_collection).toBe(
+        expected,
+      );
+    }
   });
 
   it("does nothing while the last validation is within the TTL", async () => {
@@ -371,7 +394,10 @@ describe("revalidateStoredTokenIfStale", () => {
       ),
     );
     await revalidateStoredTokenIfStale();
-    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string)).toEqual({ token: "pheebs_x" });
+    const written = JSON.parse(writeFileSyncMock.mock.calls[0][1] as string);
+    expect(written).not.toHaveProperty("id");
+    // Stamped, so a revoked token is asked about once per TTL rather than every session.
+    expect(written.last_validated_at).toBeTypeOf("string");
   });
 
   it("keeps the cache untouched when the backend is unreachable", async () => {

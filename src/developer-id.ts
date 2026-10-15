@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { getStoredTokenId } from "./token.js";
 
@@ -11,7 +11,9 @@ export function getDeveloperHandle(): string {
   if (typeof tokenId === "string" && tokenId) return tokenId;
 
   try {
-    const email = execSync("git config user.email", { stdio: ["pipe", "pipe", "ignore"] })
+    const email = execFileSync("git", ["config", "user.email"], {
+      stdio: ["pipe", "pipe", "ignore"],
+    })
       .toString()
       .trim();
     if (email) {

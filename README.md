@@ -120,7 +120,7 @@ This part matters:
 - No file paths or directory structures
 - No prompt text, except through classification — see below
 - No command strings — `npm test` is read in-process and recorded as `tool_intent: "test_run"`
-- Developer identity is your token's id, or a truncated hash of your git email without a token
+- Developer identity is your token's id once the token is validated, otherwise a truncated hash of your git email
 
 Pheebs is about interaction patterns, not surveillance.
 [`PRIVACY.md`](./PRIVACY.md) documents every field against the source.

@@ -6,6 +6,7 @@ import { getConfig } from "../config.js";
 import { getDeveloperHandle } from "../developer-id.js";
 import { appendLogEntry } from "../logger.js";
 import { runArtifactScan } from "../scanner.js";
+import { revalidateStoredTokenIfStale } from "../token.js";
 import { PHEEBS_VERSION } from "../version.js";
 import {
   AI_TOOLS,
@@ -626,6 +627,11 @@ export async function handleHookEvent(
     if (classified) Object.assign(extra, classified);
   }
 
+  // Before the stamp, so a whole session carries one identity. Throttled by the token's TTL.
+  if (eventName === EVENTS.SessionStarted) {
+    await revalidateStoredTokenIfStale().catch(() => {});
+  }
+
   const developerHandle = getDeveloperHandle();
   const config = getConfig();
 
@@ -649,7 +655,7 @@ export async function handleHookEvent(
   // session start waits on this scan — it has to stay bounded.
   if (eventName === EVENTS.SessionStarted) {
     ensureConfig();
-    runArtifactScan(tool, sessionId);
+    runArtifactScan(tool, sessionId, developerHandle);
     maybeAutoUpdate();
   }
 }

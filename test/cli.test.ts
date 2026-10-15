@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, execSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -156,19 +156,38 @@ describe("hook stdin", () => {
   });
 });
 
+// A `gh` that leaves a marker when run, ahead of the real one on PATH, so a test proves no
+// process asked GitHub for a handle rather than only that none was recorded.
+function fakeGh(): { path: string; marker: string; cleanup: () => void } {
+  const bin = mkdtempSync(join(tmpdir(), "pheebs-fake-gh-"));
+  const marker = join(bin, "gh-ran");
+  writeFileSync(join(bin, "gh"), `#!/bin/sh\necho ran > "${marker}"\necho octocat\n`, {
+    mode: 0o755,
+  });
+  writeFileSync(join(bin, "gh.cmd"), `@echo ran> "${marker}"\r\n@echo octocat\r\n`);
+  const path = `${bin}${delimiter}${process.env.PATH ?? process.env.Path ?? ""}`;
+  return { path, marker, cleanup: () => rmSync(bin, { recursive: true, force: true }) };
+}
+
+const GIT_EMAIL_ENV = {
+  // Command-line-level git config, so neither the runner's nor the repo's email leaks in.
+  GIT_CONFIG_COUNT: "1",
+  GIT_CONFIG_KEY_0: "user.email",
+  GIT_CONFIG_VALUE_0: "dev@example.com",
+};
+const GIT_EMAIL_LABEL = `dev-${createHash("sha256").update("dev@example.com").digest("hex").substring(0, 6)}`;
+
 describe("developer identity", () => {
-  // A `gh` that leaves a marker when run, ahead of the real one on PATH, so the test proves no
-  // process asked GitHub for a handle rather than only that none was recorded.
-  function fakeGh(): { path: string; marker: string; cleanup: () => void } {
-    const bin = mkdtempSync(join(tmpdir(), "pheebs-fake-gh-"));
-    const marker = join(bin, "gh-ran");
-    writeFileSync(join(bin, "gh"), `#!/bin/sh\necho ran > "${marker}"\necho octocat\n`, {
-      mode: 0o755,
-    });
-    writeFileSync(join(bin, "gh.cmd"), `@echo ran> "${marker}"\r\n@echo octocat\r\n`);
-    const path = `${bin}${delimiter}${process.env.PATH ?? process.env.Path ?? ""}`;
-    return { path, marker, cleanup: () => rmSync(bin, { recursive: true, force: true }) };
-  }
+  // Without this, a shim the shell cannot find would make every "gh never ran" check pass.
+  it("runs the fake gh when something does invoke it", () => {
+    const gh = fakeGh();
+    try {
+      execSync("gh", { env: withPath({ ...process.env }, gh.path), stdio: "ignore" });
+      expect(existsSync(gh.marker)).toBe(true);
+    } finally {
+      gh.cleanup();
+    }
+  });
 
   it("stamps the stored token id on hook events and artifact_found, never running gh", () => {
     const gh = fakeGh();
@@ -197,22 +216,50 @@ describe("developer identity", () => {
     const gh = fakeGh();
     try {
       const rows = runHookRows(["hook", "session_started"], { session_id: "id-2" }, undefined, {
-        // Command-line-level git config, so neither the runner's nor the repo's email leaks in.
         path: gh.path,
-        extraEnv: {
-          GIT_CONFIG_COUNT: "1",
-          GIT_CONFIG_KEY_0: "user.email",
-          GIT_CONFIG_VALUE_0: "dev@example.com",
-        },
+        extraEnv: GIT_EMAIL_ENV,
       });
-      const expected = `dev-${createHash("sha256").update("dev@example.com").digest("hex").substring(0, 6)}`;
       expect(rows.length).toBeGreaterThan(0);
-      for (const row of rows) expect(row.developer).toBe(expected);
+      for (const row of rows) expect(row.developer).toBe(GIT_EMAIL_LABEL);
       expect(JSON.stringify(rows)).not.toContain("octocat");
       expect(existsSync(gh.marker)).toBe(false);
     } finally {
       gh.cleanup();
     }
+  });
+
+  describe("in doctor", () => {
+    let home: string;
+    let cwd: string;
+    beforeEach(() => {
+      home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
+      cwd = mkdtempSync(join(tmpdir(), "pheebs-cwd-"));
+    });
+    afterEach(() => {
+      for (const dir of [home, cwd]) rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("names the git-email label without a token, never running gh", () => {
+      const gh = fakeGh();
+      try {
+        const result = runIn(cwd, home, ["doctor"], { path: gh.path, extraEnv: GIT_EMAIL_ENV });
+        expect(result.stdout).toContain(`Developer on events: ${GIT_EMAIL_LABEL}`);
+        expect(existsSync(gh.marker)).toBe(false);
+      } finally {
+        gh.cleanup();
+      }
+    });
+
+    it("prints no second identity beside a token that has an id", () => {
+      mkdirSync(join(home, ".pheebs"), { recursive: true });
+      writeFileSync(
+        join(home, ".pheebs", ".token"),
+        JSON.stringify({ token: "pheebs_e2e", id: "tok-e2e", developer: "octocat" }),
+      );
+      const result = runIn(cwd, home, ["doctor"]);
+      expect(result.stdout).toContain("Pheebs token: octocat");
+      expect(result.stdout).not.toContain("Developer on events");
+    });
   });
 });
 
@@ -534,6 +581,20 @@ describe("installs outside the current directory", () => {
       const env = JSON.parse(readFileSync(settingsOf(repo), "utf-8")).env ?? {};
       expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBeUndefined();
       expect(env.OTEL_EXPORTER_OTLP_HEADERS).toBeUndefined();
+    }
+  });
+
+  it("clearing the token strips the exporter config from every repo", () => {
+    run(home, "config", "set", "base-url", "https://example.invalid");
+    run(home, "config", "set", "token", "pheebs_test_token");
+    run(repoA, "init");
+    run(repoB, "init");
+    expect(readFileSync(settingsOf(repoA), "utf-8")).toContain("pheebs_test_token");
+
+    run(home, "config", "unset", "token");
+
+    for (const repo of [repoA, repoB]) {
+      expect(readFileSync(settingsOf(repo), "utf-8")).not.toContain("pheebs_test_token");
     }
   });
 
