@@ -1,5 +1,5 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -143,5 +143,42 @@ describe("pheebs insights — against the example backend", () => {
 
   it("lists the command in the help", () => {
     expect(runCli(home, "--help").stdout).toContain("insights");
+  });
+});
+
+describe("session start revalidation, against the example backend", () => {
+  it("resolves the id of a token stored offline, and does not widen consent", () => {
+    // What `config set token` leaves behind when the backend was unreachable: no id, no consent.
+    const offlineHome = writePheebsHome(`http://127.0.0.1:${port}`);
+    writeFileSync(
+      join(offlineHome, ".pheebs", ".token"),
+      JSON.stringify({ token: "pheebs_local_consented" }),
+    );
+    const logs = mkdtempSync(join(tmpdir(), "pheebs-logs-"));
+    try {
+      execFileSync(process.execPath, [cliPath, "hook", "session_started"], {
+        input: JSON.stringify({ session_id: "reval-1" }),
+        stdio: ["pipe", "ignore", "ignore"],
+        env: {
+          ...process.env,
+          HOME: offlineHome,
+          USERPROFILE: offlineHome,
+          PHEEBS_LOG_PATH: logs,
+          PHEEBS_CODEBASE_ID: "test/revalidate",
+        },
+      });
+
+      const rows = readdirSync(logs)
+        .flatMap((f) => readFileSync(join(logs, f), "utf-8").trim().split("\n"))
+        .map((line) => JSON.parse(line));
+      expect(rows.find((r) => r.event === "session_started")?.developer).toBe("dev-local-2");
+
+      const stored = JSON.parse(readFileSync(join(offlineHome, ".pheebs", ".token"), "utf-8"));
+      expect(stored.id).toBe("dev-local-2");
+      expect(stored.prompt_collection).toBe(false);
+    } finally {
+      rmSync(offlineHome, { recursive: true, force: true });
+      rmSync(logs, { recursive: true, force: true });
+    }
   });
 });

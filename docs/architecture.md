@@ -46,7 +46,7 @@ Every event, from every tool, has the same base shape:
   "timestamp": "2026-03-13T14:30:00.000Z",
   "source": "hook",
   "event": "context_compacted",
-  "developer": "octocat",
+  "developer": "dev-3f9a1c",
   "codebase": "Eversynced/pheebs",
   "ai_tool": "claude_code",
   "session_id": "abc123",

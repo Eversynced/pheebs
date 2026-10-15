@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.3.0"
+  version: "1.4.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -595,11 +595,11 @@ components:
         prompt_collection:
           type: boolean
           description: |
-            The tenant's consent gate for /classify-prompt. Cached locally at token-set time
-            and NEVER refreshed automatically — nothing on the hook path revalidates it. So
-            revoking consent does not reach a machine until its developer re-runs
-            `pheebs config set token`. Enforce consent again on every /classify-prompt call;
-            that is the only gate that actually revokes.
+            The tenant's consent gate for /classify-prompt. Cached locally at token-set time.
+            A session start revalidates the token at most every 12 hours, and that refresh
+            only narrows: a revoke reaches the machine within the TTL, a grant waits until the
+            developer re-runs `pheebs config set token`. Enforce consent again on every
+            /classify-prompt call; that is the only gate that actually revokes.
         reason:
           type: string
           description: |

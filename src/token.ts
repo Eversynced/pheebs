@@ -91,7 +91,10 @@ export function tokenLast4(token: string): string {
  * backend is unreachable (the caller decides how to degrade). The token travels in the body;
  * the /validate-token route is unauthenticated and needs no other credential.
  */
-export async function validateToken(token: string): Promise<ValidateResult | undefined> {
+export async function validateToken(
+  token: string,
+  timeoutMs?: number,
+): Promise<ValidateResult | undefined> {
   // Indistinguishable from an unreachable backend on purpose: with no endpoint there is
   // nothing to reject the token, so the caller degrades exactly as it does when offline.
   if (!hasBackend()) return undefined;
@@ -101,6 +104,7 @@ export async function validateToken(token: string): Promise<ValidateResult | und
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token }),
+      signal: timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs),
     });
     // 5xx is a backend failure, not a verdict: degrade offline, don't reject.
     if (res.status >= 500) return undefined;
@@ -185,22 +189,28 @@ export async function setToken(token: string): Promise<SetTokenOutcome> {
 // Past this, the next event revalidates so a server-side revoke reaches the machine.
 const REVALIDATE_TTL_MS = 12 * 60 * 60 * 1000;
 
+// Session start waits on this under Cursor and Codex, which run hooks synchronously.
+const REVALIDATE_TIMEOUT_MS = 2000;
+
 /**
- * If the stored token is past its TTL, revalidate and rewrite the cache. Non-blocking:
- * the caller keeps using the cached id; a revoked token drops its id here.
+ * If the stored token is past its TTL, revalidate and rewrite the cache. Bounded: an
+ * unreachable or slow backend keeps the cached id; a revoked token drops its id here.
+ * A token stored offline has never been validated, so it is always stale and resolves its
+ * id on the first answer.
  */
 export async function revalidateStoredTokenIfStale(): Promise<void> {
   const stored = readStoredToken();
-  if (!stored?.id) return;
+  if (!stored) return;
   const last = stored.last_validated_at ? Date.parse(stored.last_validated_at) : 0;
   if (Number.isFinite(last) && Date.now() - last < REVALIDATE_TTL_MS) return;
 
-  const result = await validateToken(stored.token);
+  const result = await validateToken(stored.token, REVALIDATE_TIMEOUT_MS);
   if (result === undefined) return; // unreachable: keep the cache
 
-  // Revoked/unknown: drop the id so identity falls back. opt_out keeps its id.
+  // Revoked/unknown: drop the id so identity falls back. opt_out keeps its id. The time is
+  // kept so a revoked token is asked about once per TTL, not on every session start.
   if (result.reason === "revoked" || !result.id) {
-    writeStoredToken({ token: stored.token });
+    writeStoredToken({ token: stored.token, last_validated_at: new Date().toISOString() });
     return;
   }
 
@@ -209,7 +219,9 @@ export async function revalidateStoredTokenIfStale(): Promise<void> {
     id: result.id,
     developer: result.developer,
     tenant: result.tenant ?? undefined,
-    prompt_collection: result.prompt_collection,
+    // Narrows only. A revoke reaches the machine here, but a grant waits for the developer to
+    // set the token again, so prompt text never starts leaving a machine with no local action.
+    prompt_collection: stored.prompt_collection === true && result.prompt_collection === true,
     role: roleOf(result),
     last_validated_at: new Date().toISOString(),
   });

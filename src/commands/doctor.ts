@@ -6,6 +6,7 @@ import { parse as parseToml } from "smol-toml";
 import { baseUrl, hasBackend } from "../backend-config.js";
 import { stripBom } from "../bom.js";
 import { resolveLogPath } from "../config.js";
+import { getDeveloperHandle } from "../developer-id.js";
 import {
   AI_TOOLS,
   type AiTool,
@@ -14,7 +15,7 @@ import {
   isPheebsEntry,
   TOOL_LABELS,
 } from "../hooks/definitions.js";
-import { readStoredToken } from "../token.js";
+import { getStoredTokenId, readStoredToken } from "../token.js";
 import { TRANSPORT_ERROR_PATH } from "../transports/http.js";
 import { PHEEBS_VERSION } from "../version.js";
 import { commandExists, detectInstalledTools } from "./detect.js";
@@ -275,14 +276,12 @@ function diagnoseTools(tools: AiTool[], scope: DoctorScope): boolean {
   return allHealthy;
 }
 
-function checkGhAuth(): void {
-  try {
-    execSync("gh auth status", { stdio: "pipe" });
-    log.success("gh authenticated");
-  } catch {
-    log.warn("gh not authenticated — developer identity will fall back to hashed git email");
-    log.info("  Run `gh auth login` to fix.");
-  }
+// Only without a token id: with one, the token line already names the identity, and a second
+// name beside it reads as a conflict. Without one, events carry the git-email label, which
+// the log alone does not explain.
+function reportIdentity(): void {
+  if (getStoredTokenId()) return;
+  log.info(`Developer on events: ${getDeveloperHandle()}`);
 }
 
 /** Reports the backend endpoint + token status. Returns false only on a hard problem (a
@@ -374,7 +373,7 @@ export async function runDoctor(options?: { scope?: DoctorScope; tool?: AiTool }
 
   const allHealthy = diagnoseTools(tools, scope);
 
-  checkGhAuth();
+  reportIdentity();
   const backendOk = checkBackend();
   checkVersion();
   reportStatus();
