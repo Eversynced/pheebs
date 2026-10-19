@@ -51,6 +51,17 @@ export interface Fit {
   underPowered: number;
 }
 
+/**
+ * Repair-heavy sessions by reading, beside the signals rather than one of them. The readings sum to
+ * at most `sessions`: a session that matches none gets no reading rather than a default one.
+ */
+export interface Attribution {
+  sessions?: number;
+  context: number;
+  model: number;
+  taskDifficulty: number;
+}
+
 export interface Row {
   label: string;
   amount?: number;
@@ -69,7 +80,13 @@ export interface Cost {
 export type Body =
   | { kind: "unavailable"; reason?: Reason }
   | { kind: "repertoire"; data: Repertoire }
-  | { kind: "signals"; data: Signal[]; fit?: Fit; unavailable?: Unavailable[] }
+  | {
+      kind: "signals";
+      data: Signal[];
+      fit?: Fit;
+      attribution?: Attribution;
+      unavailable?: Unavailable[];
+    }
   | { kind: "cost"; data: Cost };
 
 /** A signal the local report names as missing, and why. */
@@ -304,6 +321,22 @@ function fitOf(section: Record<string, unknown>): Fit | undefined {
   return { sessions: count(raw.sessions), fit, overProvisioned: over, underPowered: under };
 }
 
+/**
+ * All three readings or none, as with the fit split: a reading left out moves its sessions somewhere
+ * the reader cannot see. Shared with the team view, which carries the same block.
+ */
+export function attributionOf(raw: unknown): Attribution | undefined {
+  if (!isRecord(raw) || !isRecord(raw.split)) return undefined;
+  const { split } = raw;
+  const context = count(split.context);
+  const model = count(split.model);
+  const taskDifficulty = count(split.task_difficulty);
+  if (context === undefined || model === undefined || taskDifficulty === undefined) {
+    return undefined;
+  }
+  return { sessions: count(raw.sessions), context, model, taskDifficulty };
+}
+
 function costOf(section: Record<string, unknown>): { data: Cost; dropped: number } {
   const classes = rows(section.sessions_by_recommended_class);
   const savings = rows(section.savings);
@@ -353,7 +386,12 @@ function bodyOf(
     const { data, dropped } = repertoireOf(section, local);
     return { body: { kind: "repertoire", data }, dropped };
   }
-  const body: Body = { kind: "signals", data: signalsOf(section), fit: fitOf(section) };
+  const body: Body = {
+    kind: "signals",
+    data: signalsOf(section),
+    fit: fitOf(section),
+    attribution: attributionOf(section.repair_attribution),
+  };
   if (local) body.unavailable = unavailableOf(section);
   return { body, dropped: 0 };
 }

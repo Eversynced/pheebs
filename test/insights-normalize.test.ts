@@ -475,3 +475,41 @@ describe("normalize: signals the local report names as missing", () => {
     expect(unavailable(false)).toBeUndefined();
   });
 });
+
+describe("normalize: repair attribution", () => {
+  const withBlock = (repair_attribution: unknown) =>
+    normalize({ days: 30, sections: { judgement_signals: { enabled: true, repair_attribution } } });
+
+  const attributionOf = (payload: ReturnType<typeof normalize>) => {
+    const body = payload.sections[0]?.body;
+    return body?.kind === "signals" ? body.attribution : undefined;
+  };
+
+  const split = { context: 2, model: 1, task_difficulty: 1 };
+
+  it("carries all three readings and the denominator they may fall short of", () => {
+    expect(attributionOf(withBlock({ sessions: 7, split }))).toEqual({
+      sessions: 7,
+      context: 2,
+      model: 1,
+      taskDifficulty: 1,
+    });
+  });
+
+  it("drops a split missing a reading rather than moving its sessions out of sight", () => {
+    const { task_difficulty: _, ...partial } = split;
+    expect(attributionOf(withBlock({ sessions: 7, split: partial }))).toBeUndefined();
+  });
+
+  it("drops a split whose readings are not whole counts", () => {
+    for (const bad of [{ model: "1" }, { model: -1 }, { model: 1.5 }, { model: null }]) {
+      expect(
+        attributionOf(withBlock({ sessions: 7, split: { ...split, ...bad } })),
+      ).toBeUndefined();
+    }
+  });
+
+  it("is absent when the backend sends no block", () => {
+    expect(attributionOf(withBlock(undefined))).toBeUndefined();
+  });
+});

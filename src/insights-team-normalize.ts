@@ -9,6 +9,8 @@
 // than collapsing to an empty table that reads as a zero.
 
 import {
+  type Attribution,
+  attributionOf,
   count,
   FALLBACK_BASIS,
   isRecord,
@@ -119,7 +121,9 @@ export type ViewBody =
   | { kind: "byEngineer"; data: ByEngineer }
   | { kind: "movement"; data: Movement[] }
   | { kind: "wholesale"; data: Wholesale }
-  | { kind: "dollars"; data: Dollars };
+  | { kind: "dollars"; data: Dollars }
+  /** Undefined when the split was unusable, which is not a split of zeros. */
+  | { kind: "repair"; data: Attribution | undefined };
 
 export interface View {
   title: string;
@@ -395,6 +399,13 @@ function dollarsOf(view: Record<string, unknown>): { data: Dollars; dropped: num
   };
 }
 
+function repairOf(view: Record<string, unknown>): {
+  data: Attribution | undefined;
+  dropped: number;
+} {
+  return { data: attributionOf(view), dropped: 0 };
+}
+
 const VIEWS: Record<
   string,
   [
@@ -414,6 +425,7 @@ const VIEWS: Record<
     ["median_movement", "Median movement", movementOf, "movement"],
     ["wholesale_watch", "Wholesale watch", wholesaleOf, "wholesale"],
     ["dollar_savings", "Dollar savings", dollarsOf, "dollars"],
+    ["repair_attribution", "Repair attribution", repairOf, "repair"],
   ],
 };
 
