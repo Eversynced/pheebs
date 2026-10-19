@@ -1,11 +1,13 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { repertoireSection } from "./repertoire.js";
+import { FULL_WINDOW_DAYS, field, isoDay, type Row, repertoireSection } from "./repertoire.js";
 import { verificationCoverage } from "./verification.js";
 
 // The window a backend reports when none is asked for, so `days` reads the same from either source.
 // Verification coverage runs over it; `repertoire` runs over the model's own four weeks regardless.
 export const DEFAULT_DAYS = 30;
+
+const DAY = 86_400_000;
 
 /**
  * Every event in the log directory. A line that is not JSON, or a file that cannot be read, is
@@ -41,27 +43,32 @@ export function readLogRows(dir: string): unknown[] {
 }
 
 /**
- * The developer stamps the rows carry, and how many carry none. The counts are not split by them:
- * a log folder is one developer's, so a filter would only hide rows. Two stamps are still reported
- * rather than merged in silence, since two tokens on one machine is the case where the merged
- * number is wrong. `unknown` is what a hook writes when it resolved no identity, so it is a row
- * without a stamp, never a developer named "unknown".
+ * The developer stamps on the rows the report reads, and the rows without one. The counts are not
+ * split by them: a log folder is one developer's, so a filter would only hide rows. Two stamps are
+ * still reported rather than merged in silence, since two tokens on one machine is the case where
+ * the merged number is wrong. Only rows from `since` on are counted, because a stamp on an older
+ * row moves no number in the report and would only raise a false two-stamp warning.
+ *
+ * `unknown` is a stamp a hook wrote when it could not resolve an identity, and a row with no
+ * `developer` at all is a different fact, so each is counted on its own and neither is attributed.
  */
-export function developersOf(rows: unknown[]): { stamps: string[]; unstamped: number } {
+export function developersOf(
+  rows: unknown[],
+  since: string,
+): { stamps: string[]; unknown: number; unstamped: number } {
   const stamps = new Set<string>();
+  let unknown = 0;
   let unstamped = 0;
   for (const row of rows) {
-    const developer =
-      typeof row === "object" && row !== null
-        ? (row as Record<string, unknown>).developer
-        : undefined;
-    if (typeof developer === "string" && developer !== "" && developer !== "unknown") {
-      stamps.add(developer);
-    } else {
-      unstamped++;
-    }
+    if (typeof row !== "object" || row === null) continue;
+    const at = Date.parse(field(row as Row, "timestamp") ?? "");
+    if (!Number.isFinite(at) || isoDay(new Date(at)) < since) continue;
+    const developer = (row as Row).developer;
+    if (developer === "unknown") unknown++;
+    else if (typeof developer === "string" && developer !== "") stamps.add(developer);
+    else unstamped++;
   }
-  return { stamps: [...stamps].sort(), unstamped };
+  return { stamps: [...stamps].sort(), unknown, unstamped };
 }
 
 /**
@@ -75,10 +82,12 @@ export function developersOf(rows: unknown[]): { stamps: string[]; unstamped: nu
  */
 export function localInsights(rows: unknown[], days: number, today: Date): Record<string, unknown> {
   const coverage = verificationCoverage(rows, days, today);
+  // The earlier of the two windows: verification coverage's `days` and Repertoire's four weeks.
+  const since = isoDay(new Date(today.getTime() - Math.max(days, FULL_WINDOW_DAYS - 1) * DAY));
   return {
     local: true,
     days,
-    developers: developersOf(rows),
+    developers: developersOf(rows, since),
     sections: {
       repertoire: repertoireSection(rows, today),
       judgement_signals: {

@@ -89,6 +89,9 @@ export interface Developers {
   stamps: string[];
   /** Stamps the bound left out, so a long list is not read as a short one. */
   dropped: number;
+  /** Rows stamped `unknown`, which a hook writes when it could not resolve an identity. */
+  unknown?: number;
+  /** Rows with no developer stamp at all. */
   unstamped?: number;
 }
 
@@ -396,6 +399,7 @@ function developersOf(value: unknown): Developers | undefined {
   return {
     stamps: stamps.slice(0, MAX_ROWS),
     dropped: Math.max(0, stamps.length - MAX_ROWS),
+    unknown: count(value.unknown),
     unstamped: count(value.unstamped),
   };
 }

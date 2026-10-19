@@ -450,11 +450,12 @@ describe("normalize — a report built from the local log", () => {
 
 describe("normalize: developer stamps on the local report", () => {
   it("reads them only when the caller says the report is local", () => {
-    const payload = { developers: { stamps: ["tok-1"], unstamped: 2 }, sections: {} };
+    const payload = { developers: { stamps: ["tok-1"], unknown: 3, unstamped: 2 }, sections: {} };
     expect(normalize(payload).developers).toBeUndefined();
     expect(normalize(payload, { local: true }).developers).toEqual({
       stamps: ["tok-1"],
       dropped: 0,
+      unknown: 3,
       unstamped: 2,
     });
   });

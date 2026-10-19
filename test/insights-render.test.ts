@@ -978,9 +978,20 @@ describe("renderInsights: developer stamps on the local report", () => {
   });
 
   it("counts the rows without a stamp rather than giving them one", () => {
-    const out = draw({ stamps: [], unstamped: 3 }).join("\n");
+    const out = draw({ stamps: [], unknown: 0, unstamped: 3 }).join("\n");
     expect(out).toContain("3 row(s) carry no developer stamp, and are counted under none.");
+    expect(out).not.toContain("stamped unknown");
     expect(out).not.toContain("Developer on these rows");
+  });
+
+  it("says apart the rows stamped unknown, which are a different fact", () => {
+    const out = draw({ stamps: ["tok-1"], unknown: 2, unstamped: 0 })
+      .join(" ")
+      .replace(/\s+/g, " ");
+    expect(out).toContain(
+      "2 row(s) are stamped unknown, because the hook could not resolve an identity, and are counted under none.",
+    );
+    expect(out).not.toContain("no developer stamp");
   });
 
   it("says nothing about developers on a backend's report", () => {

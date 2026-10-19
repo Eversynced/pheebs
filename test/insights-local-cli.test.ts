@@ -120,7 +120,7 @@ describe("pheebs insights — from the local log", () => {
     expect(status).toBe(0);
     const payload = JSON.parse(stdout);
     expect(payload.local).toBe(true);
-    expect(payload.developers).toEqual({ stamps: ["tok-1"], unstamped: 0 });
+    expect(payload.developers).toEqual({ stamps: ["tok-1"], unknown: 0, unstamped: 0 });
     expect(payload.sections.repertoire).toMatchObject({ enabled: true, sessions: 3 });
     expect(payload.sections.judgement_signals.verification_coverage).toEqual({
       value: 1,

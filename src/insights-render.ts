@@ -534,7 +534,7 @@ function renderSection(section: Section, opts: RenderOptions): string[] {
 // only the merged number would take it for one person's.
 function renderDevelopers(developers: Developers | undefined, opts: RenderOptions): string[] {
   if (developers === undefined) return [];
-  const { stamps, dropped, unstamped } = developers;
+  const { stamps, dropped, unknown, unstamped } = developers;
   const named = `${stamps.join(", ")}${dropped > 0 ? `, and ${dropped} more` : ""}`;
   const total = stamps.length + dropped;
   const lines: string[] = [];
@@ -543,6 +543,16 @@ function renderDevelopers(developers: Developers | undefined, opts: RenderOption
     lines.push(
       ...wrap(
         `These rows carry ${total} developer stamps: ${named}. The counts below are not split between them.`,
+        opts.width,
+      ),
+    );
+  }
+  // Two different facts, so two lines: a hook that could not resolve an identity, and a row with
+  // no stamp at all. Neither is given a developer.
+  if (unknown !== undefined && unknown > 0) {
+    lines.push(
+      ...wrap(
+        `${unknown} row(s) are stamped unknown, because the hook could not resolve an identity, and are counted under none.`,
         opts.width,
       ),
     );
