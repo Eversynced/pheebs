@@ -286,6 +286,11 @@ function renderRepertoire(data: Repertoire, opts: RenderOptions): string[] {
     data.manual === undefined ? "" : `${data.manual} manual`,
   ].filter(Boolean);
   if (compaction.length > 0) facts.push(`Compaction: ${compaction.join(", ")}`);
+  if (data.splitPhaseUndecided !== undefined) {
+    facts.push(
+      `Split-phase delivery: undecided in ${data.splitPhaseUndecided} session(s), whose model around a plan-to-execution change is not in the log`,
+    );
+  }
 
   if (facts.length > 0) {
     if (lines.length > 0) lines.push("");

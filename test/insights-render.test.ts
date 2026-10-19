@@ -938,6 +938,17 @@ describe("renderInsights — a report built from the local log", () => {
     expect(render(payload, WIDE)[0]).toBe("Your last 30 days");
   });
 
+  it("counts the sessions whose split-phase delivery the log cannot decide", () => {
+    const withGap = {
+      days: 30,
+      sections: { repertoire: { enabled: true, sessions: 4, split_phase_undecided: 2 } },
+    };
+    const line = "Split-phase delivery: undecided in 2 session(s)";
+    expect(renderInsights(normalize(withGap, { local: true }), WIDE).join("\n")).toContain(line);
+    // Not in the contract, so a backend that sends it is not believed.
+    expect(render(withGap, WIDE).join("\n")).not.toContain("Split-phase");
+  });
+
   it("gives judgement signals one line saying they need a backend", () => {
     const out = renderInsights(normalize(payload, { local: true }), WIDE).join("\n");
     expect(out).toContain("Judgement signals: needs a backend");

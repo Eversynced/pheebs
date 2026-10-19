@@ -4,7 +4,7 @@
 // (docs/ai-proficiency-model-practice-and-signal-registry.md); the states, the window and placement
 // are the model's (docs/ai-proficiency-model.md). Pure: the caller reads the log and passes `today`.
 
-type Row = Record<string, unknown>;
+export type Row = Record<string, unknown>;
 
 export type PracticeState = "unobserved" | "adopted" | "recurring" | "insufficient_data" | "n/a";
 export type CompetencyState = Exclude<PracticeState, "n/a">;
@@ -43,7 +43,10 @@ type Flag =
   | "or2"
   | "or6"
   | "or7"
-  | "md4";
+  | "md4"
+  | "md6"
+  /** A plan-to-execution change whose model the log cannot resolve. */
+  | "md6_open";
 type Values = "md1_models" | "md3_efforts" | "md5_modes" | "ar3_commands" | "mc2_servers";
 
 interface ClientVersion {
@@ -58,7 +61,7 @@ export const FULL_WINDOW_DAYS = 28;
 
 // A field as text, the way a stored event's extras read: a boolean `true` and the string "true"
 // are the same fact, and a number compares by its digits.
-function field(row: Row, key: string): string | undefined {
+export function field(row: Row, key: string): string | undefined {
   const value = row[key];
   if (value === undefined || value === null) return undefined;
   return typeof value === "string" ? value : JSON.stringify(value);
@@ -82,7 +85,7 @@ export function weekOf(day: string): string {
   return isoDay(date);
 }
 
-function isoDay(date: Date): string {
+export function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
@@ -114,8 +117,8 @@ interface Practice {
   /** How a week, or the whole window, fires. */
   fired: (days: PracticeDay[]) => boolean;
   cells: Record<Harness, Cell>;
-  /** Its detector joins telemetry that is exported to a backend and never written to the log. */
-  needsBackend?: true;
+  /** Whether the span holds an occurrence the detector could not decide either way. */
+  open?: (days: PracticeDay[]) => boolean;
 }
 
 const flag = (name: Flag) => (days: PracticeDay[]) => days.some((d) => d.flags.has(name));
@@ -164,13 +167,14 @@ const PRACTICES: Record<string, Practice> = {
     fired: distinct("md5_modes"),
     cells: { claude_code: { since: "0.9.0" }, cursor: "n/a", codex: "n/a" },
   },
-  // Its model half reads tokens-by-model from OpenTelemetry. Computing only the effort half would
-  // report an engineer who switches models as never splitting phases, which is a claim about them
-  // drawn from a gap in what this machine keeps.
+  // The model half reads the session's model timeline, which the log holds; OpenTelemetry's
+  // tokens-by-model is another route to the same fact, not one this needs. Judged from the release
+  // that captures model switches: before it the model half cannot fire, and reading its absence as
+  // Unobserved would be a claim drawn from our own gap.
   MD6: {
-    fired: () => false,
-    cells: { claude_code: { since: "0.9.0" }, cursor: "n/a", codex: "n/a" },
-    needsBackend: true,
+    fired: flag("md6"),
+    open: flag("md6_open"),
+    cells: { claude_code: { since: "1.0.0" }, cursor: "n/a", codex: "n/a" },
   },
   AR1: { fired: flag("ar1"), cells: all("0.15.0") },
   AR2: {
@@ -327,18 +331,8 @@ function addFacts(day: PracticeDay, row: Row): void {
  * against only what came before it there, over the whole session: a sequence that began before
  * the window still counts, credited to the day of the step that completes it.
  */
-function markPatterns(timed: Timed[], days: Map<string, PracticeDay>): void {
-  const sessions = new Map<string, Timed[]>();
-  for (const t of timed) {
-    const id = field(t.row, "session_id") as string;
-    const list = sessions.get(id);
-    if (list) list.push(t);
-    else sessions.set(id, [t]);
-  }
-
-  for (const events of sessions.values()) {
-    // Stable, so events with one timestamp keep the order they were written in.
-    events.sort((a, b) => a.at - b.at);
+function markPatterns(sessions: Timed[][], days: Map<string, PracticeDay>): void {
+  for (const events of sessions) {
     let lastEdit: number | undefined;
     let lastTest: number | undefined;
     let firstFail: number | undefined;
@@ -370,6 +364,118 @@ function markPatterns(timed: Timed[], days: Map<string, PracticeDay>): void {
   }
 }
 
+/** Each session's events in the order they happened. */
+function bySession(timed: Timed[]): Timed[][] {
+  const sessions = new Map<string, Timed[]>();
+  for (const t of timed) {
+    const id = field(t.row, "session_id") as string;
+    const list = sessions.get(id);
+    if (list) list.push(t);
+    else sessions.set(id, [t]);
+  }
+  // Stable, so events with one timestamp keep the order they were written in.
+  return [...sessions.values()].map((events) => events.sort((a, b) => a.at - b.at));
+}
+
+// A fallback or a model restored on resume is Claude Code's change, not the engineer's. These are
+// the sources the vendor schema names as deliberate; any other value, including one added later,
+// reads as not deliberate.
+const DELIBERATE_SWITCHES = new Set(["command", "picker", "sdk"]);
+
+/** A stretch of a session on one model, which is undefined until something names it. */
+interface Segment {
+  model?: string;
+  /** Entered by a switch the engineer made. */
+  deliberate: boolean;
+}
+
+// A split needs a deliberate switch between the plan segment and the execution one, and two
+// models that differ. A model nothing named leaves it undecided rather than not a split.
+function splitBetween(segments: Segment[], plans: number[], at: number): "split" | "none" | "open" {
+  let open = false;
+  for (const plan of plans) {
+    if (plan >= at || !segments.slice(plan + 1, at + 1).some((s) => s.deliberate)) continue;
+    const before = segments[plan].model;
+    const after = segments[at].model;
+    if (before === undefined || after === undefined) open = true;
+    else if (before !== after) return "split";
+  }
+  return open ? "open" : "none";
+}
+
+/**
+ * Split-phase delivery: an execution-mode event after a plan-mode one in the same session, on an
+ * effort no plan event used, or on another model reached by a deliberate switch. The model is a
+ * timeline: `session_started.model`, then each `model_switched`, with a later switch's
+ * `from_model` naming a segment whose start went unrecorded, which is how a resumed session's
+ * begins. A change that stays unresolved marks its day open. Returns how many sessions in the
+ * window it left undecided.
+ */
+function markSplitPhase(sessions: Timed[][], days: Map<string, PracticeDay>): number {
+  let undecided = 0;
+
+  for (const events of sessions) {
+    const segments: Segment[] = [{ deliberate: false }];
+    const planSegments = new Set<number>();
+    const planEfforts = new Set<string>();
+    const pending: { at: number; plans: number[]; day?: PracticeDay }[] = [];
+    let started = false;
+    let split = false;
+
+    for (const { row, day } of events) {
+      const event = field(row, "event");
+      const target = days.get(`${field(row, "ai_tool") ?? ""}|${day}`);
+      if (event === "session_started") {
+        const model = filled(row, "model");
+        // A resume restores the session's model without a switch event, so it starts a segment
+        // whose model is unknown until a start or a switch names it.
+        if (started) segments.push({ deliberate: false });
+        if (model) segments[segments.length - 1].model = canonicalModel(model);
+        started = true;
+      }
+      if (event === "model_switched") {
+        const current = segments[segments.length - 1];
+        const from = filled(row, "from_model");
+        if (current.model === undefined && from) current.model = canonicalModel(from);
+        const to = filled(row, "to_model");
+        segments.push({
+          model: to ? canonicalModel(to) : undefined,
+          deliberate: DELIBERATE_SWITCHES.has(field(row, "switch_source") ?? ""),
+        });
+      }
+
+      const mode = filled(row, "permission_mode");
+      const effort = filled(row, "effort");
+      const at = segments.length - 1;
+      if (mode === "plan") {
+        planSegments.add(at);
+        if (effort) planEfforts.add(effort);
+      } else if (mode && planSegments.size > 0) {
+        if (effort && planEfforts.size > 0 && !planEfforts.has(effort)) {
+          target?.flags.add("md6");
+          if (target) split = true;
+        } else {
+          pending.push({ at, plans: [...planSegments], day: target });
+        }
+      }
+    }
+
+    // Read at the end, because a switch after the execution can still name a segment's model.
+    let open = false;
+    for (const { at, plans, day } of pending) {
+      const verdict = splitBetween(segments, plans, at);
+      if (verdict === "split") day?.flags.add("md6");
+      if (verdict === "split" && day) split = true;
+      if (verdict === "open" && day) {
+        day.flags.add("md6_open");
+        open = true;
+      }
+    }
+    if (open && !split) undecided++;
+  }
+  return undecided;
+}
+
 function practiceStates(
   days: PracticeDay[],
   versions: ClientVersion[],
@@ -390,7 +496,6 @@ function practiceStates(
     // n/a only when every harness in the mix settles it so. A harness this table has no row for
     // is unknown, not unsupported.
     if (cells.every((cell) => cell === "n/a")) return "n/a";
-    if (practice.needsBackend) return "insufficient_data";
     const judgeable = mix.some((tool, i) => {
       const cell = cells[i];
       if (cell === undefined || typeof cell === "string") return false;
@@ -404,7 +509,17 @@ function practiceStates(
       practice.fired(days.filter((d) => weekOf(d.day) === w)),
     );
     if (firedWeeks.length >= 3) return "recurring";
-    return practice.fired(days) ? "adopted" : "unobserved";
+    // A week the detector could not decide might have fired, so a state such weeks could change
+    // is not given. Absent is not zero.
+    const open = practice.open;
+    if (open) {
+      const undecided = lastFour.filter(
+        (w) => !firedWeeks.includes(w) && open(days.filter((d) => weekOf(d.day) === w)),
+      );
+      if (firedWeeks.length + undecided.length >= 3) return "insufficient_data";
+    }
+    if (practice.fired(days)) return "adopted";
+    return open?.(days) ? "insufficient_data" : "unobserved";
   };
 
   return Object.fromEntries(Object.entries(PRACTICES).map(([id, p]) => [id, stateOf(p)]));
@@ -437,6 +552,8 @@ interface Window {
   windowed: Timed[];
   days: PracticeDay[];
   versions: ClientVersion[];
+  /** Sessions whose split-phase delivery the log cannot decide. */
+  undecided: number;
 }
 
 // Rows that are not events, or carry no usable time, are skipped rather than guessed at.
@@ -476,9 +593,11 @@ function readWindow(rows: unknown[], today: Date): Window {
     }
     addFacts(practice, row);
   }
-  markPatterns(timed, days);
+  const sessions = bySession(timed);
+  markPatterns(sessions, days);
+  const undecided = markSplitPhase(sessions, days);
 
-  return { windowed, days: [...days.values()], versions: [...firstSeen.values()] };
+  return { windowed, days: [...days.values()], versions: [...firstSeen.values()], undecided };
 }
 
 /** Every practice's state, keyed by registry id. */
@@ -489,7 +608,7 @@ export function practiceStatesOf(rows: unknown[], today: Date): Record<string, P
 
 /** The `repertoire` section as the contract shapes it, over every row of the log. */
 export function repertoireSection(rows: unknown[], today: Date): Record<string, unknown> {
-  const { windowed, days, versions } = readWindow(rows, today);
+  const { windowed, days, versions, undecided } = readWindow(rows, today);
   // No sessions is not zero sessions' worth of practice: there is nothing to say yet.
   if (windowed.length === 0) return { enabled: false, reason: "insufficient_data" };
 
@@ -529,5 +648,7 @@ export function repertoireSection(rows: unknown[], today: Date): Record<string, 
     artifact_breadth: commands.size,
     compaction: { auto, manual },
     competencies: competencyStates(states),
+    // Not in the contract: a count only the local report has, of the gap it cannot close.
+    ...(undecided > 0 && { split_phase_undecided: undecided }),
   };
 }

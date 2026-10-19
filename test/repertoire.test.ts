@@ -130,7 +130,7 @@ describe("practiceStatesOf", () => {
     expect(mixed.MD2).toBe("adopted");
   });
 
-  it("never judges split-phase delivery, whose model half is not in the log", () => {
+  it("finds split-phase delivery on an effort the plan segment did not use", () => {
     const rows = [
       ...base(),
       ...WEEKS.slice(1).flatMap((day) => [
@@ -138,13 +138,87 @@ describe("practiceStatesOf", () => {
         ev(day, "prompt_submitted", { permission_mode: "default", effort: "low", model: "b" }),
       ]),
     ];
-    expect(practiceStatesOf(rows, TODAY).MD6).toBe("insufficient_data");
-    // MD1 and MD3 to MD5 recur and single-harness MD2 does not: 4 of 5. Counted as Unobserved,
-    // MD6 would make it 4 of 6.
+    expect(practiceStatesOf(rows, TODAY).MD6).toBe("recurring");
+    // MD1 and MD3 to MD6 recur, and single-harness MD2 does not.
     expect(repertoireSection(rows, TODAY).competencies).toContainEqual({
       name: "Models",
       state: "recurring",
-      recurring_share: 0.8,
+      recurring_share: 5 / 6,
+    });
+  });
+
+  describe("split-phase delivery across a model switch", () => {
+    // One session in order, an hour apart, each step an event and its fields.
+    const session = (...steps: [string, Fields][]) => [
+      ...base(),
+      ...steps.map(([event, fields], i) =>
+        ev(WEEKS[3], event, { session_id: "split", ...fields }, `1${i}:00:00`),
+      ),
+    ];
+    const plan: [string, Fields] = ["prompt_submitted", { permission_mode: "plan" }];
+    const execute: [string, Fields] = ["tool_use_completed", { permission_mode: "acceptEdits" }];
+    const start = (fields: Fields = { model: "claude-opus-5[1m]" }): [string, Fields] => [
+      "session_started",
+      fields,
+    ];
+    const toSonnet = (fields: Fields): [string, Fields] => [
+      "model_switched",
+      { to_model: "claude-sonnet-5", ...fields },
+    ];
+
+    it("counts a plan segment on one model, then execution on another the engineer chose", () => {
+      const rows = session(
+        start(),
+        plan,
+        toSonnet({ from_model: "claude-opus-5[1m]", switch_source: "command" }),
+        execute,
+      );
+      expect(practiceStatesOf(rows, TODAY).MD6).toBe("adopted");
+      expect(repertoireSection(rows, TODAY)).not.toHaveProperty("split_phase_undecided");
+    });
+
+    it("does not read a switch Claude Code made for itself as a split", () => {
+      for (const switch_source of ["auto", "resume", "something_new", undefined]) {
+        const rows = session(start(), plan, toSonnet({ switch_source }), execute);
+        expect(practiceStatesOf(rows, TODAY).MD6).toBe("unobserved");
+      }
+    });
+
+    it("does not read a model restored on resume, which fires no switch, as a split", () => {
+      const rows = session(start(), plan, start({ start_source: "resume" }), execute);
+      expect(practiceStatesOf(rows, TODAY).MD6).toBe("unobserved");
+    });
+
+    it("names a resumed session's starting model from the next switch's from_model", () => {
+      const resumed = start({ start_source: "resume" });
+      const rows = session(
+        resumed,
+        plan,
+        toSonnet({ from_model: "claude-opus-5", switch_source: "picker" }),
+        execute,
+      );
+      expect(practiceStatesOf(rows, TODAY).MD6).toBe("adopted");
+    });
+
+    it("counts a change it cannot resolve as undecided, never as Unobserved", () => {
+      const rows = session(
+        start({ start_source: "resume" }),
+        plan,
+        toSonnet({ switch_source: "command" }),
+        execute,
+      );
+      expect(practiceStatesOf(rows, TODAY).MD6).toBe("insufficient_data");
+      expect(repertoireSection(rows, TODAY).split_phase_undecided).toBe(1);
+    });
+
+    it("is not judged on a client from before model switches were captured", () => {
+      const rows = session(
+        start(),
+        plan,
+        toSonnet({ from_model: "claude-opus-5", switch_source: "command" }),
+        execute,
+      ).map((r) => ({ ...r, version: "0.9.5" }));
+      expect(practiceStatesOf(rows, TODAY).MD6).toBe("insufficient_data");
     });
   });
 

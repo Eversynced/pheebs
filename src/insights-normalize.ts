@@ -24,6 +24,8 @@ export interface Repertoire {
   artifactBreadth?: number;
   auto?: number;
   manual?: number;
+  /** Local report only: sessions whose split-phase delivery the log cannot decide. */
+  splitPhaseUndecided?: number;
 }
 
 export interface Signal {
@@ -215,7 +217,10 @@ export function reasonOf(value: unknown, local = false): Reason | undefined {
   return (local ? LOCAL_REASONS : REASONS).find((r) => r === name);
 }
 
-function repertoireOf(section: Record<string, unknown>): { data: Repertoire; dropped: number } {
+function repertoireOf(
+  section: Record<string, unknown>,
+  local: boolean,
+): { data: Repertoire; dropped: number } {
   const { taken, dropped } = rows(section.competencies);
   const coverage = isRecord(section.coverage_index) ? section.coverage_index : undefined;
   const compaction = isRecord(section.compaction) ? section.compaction : undefined;
@@ -235,6 +240,7 @@ function repertoireOf(section: Record<string, unknown>): { data: Repertoire; dro
       artifactBreadth: count(section.artifact_breadth),
       auto: count(compaction?.auto),
       manual: count(compaction?.manual),
+      splitPhaseUndecided: local ? count(section.split_phase_undecided) : undefined,
     },
   };
 }
@@ -322,7 +328,7 @@ function bodyOf(
     return { body: { kind: "unavailable", reason: reasonOf(section.reason, local) }, dropped: 0 };
   }
   if (name === "repertoire") {
-    const { data, dropped } = repertoireOf(section);
+    const { data, dropped } = repertoireOf(section, local);
     return { body: { kind: "repertoire", data }, dropped };
   }
   return { body: { kind: "signals", data: signalsOf(section), fit: fitOf(section) }, dropped: 0 };
