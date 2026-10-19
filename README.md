@@ -392,9 +392,9 @@ pheebs hook-codex <event_name>
 | `init` | Register hooks (and OTel config) for the current repo, configure the endpoint, and set your token |
 | `init --global` | Write to user-level config instead of project-local |
 | `init --cursor` | Configure Cursor hooks |
-| `insights` | Render your own report from the backend's `/insights` |
+| `insights` | Render your own report from the backend's `/insights`, or from the local log when no backend is set |
 | `insights --days <n>` | Narrow the window, 1 to 365 (default: whatever the backend uses) |
-| `insights --json` | Print the raw `/insights` payload, for scripting |
+| `insights --json` | Print the raw `/insights` payload, or the local report marked `"local": true`, for scripting |
 | `insights --team` | Render the team report from `/insights/team` (manager tokens only; combines with `--days` and `--json`) |
 | `insights --local` | Render Repertoire and verification coverage from the local log with no request (what `insights` does when no backend is set) |
 | `init --codex` | Configure Codex hooks |

@@ -192,7 +192,7 @@ make; if you use someone else's, ask them.
 
 ## The insights command
 
-`pheebs insights` makes one authenticated `GET /insights` to the backend you configured and
+With a backend configured, `pheebs insights` makes one authenticated `GET /insights` to it and
 renders the report in your terminal ([`src/insights.ts`](./src/insights.ts)). It is the only
 outbound request that reads rather than writes: no event is emitted, no hook path runs, and
 nothing is added to `~/.pheebs/logs/`. The response is held in memory for as long as it takes to
