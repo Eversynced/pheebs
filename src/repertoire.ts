@@ -247,7 +247,7 @@ const RANK: Record<CompetencyState, number> = {
 const JUDGED: PracticeState[] = ["unobserved", "adopted", "recurring"];
 
 /** A row with a usable time, and the UTC day it falls on. */
-interface Timed {
+export interface Timed {
   row: Row;
   at: number;
   day: string;
@@ -255,7 +255,7 @@ interface Timed {
 
 // A manual `pheebs scan` is stamped with the session id "scan" because it has no session. It is
 // not a session, so it neither counts as one nor makes a week active.
-function inSession(row: Row): boolean {
+export function inSession(row: Row): boolean {
   const id = field(row, "session_id") ?? "";
   return id !== "" && id !== "scan";
 }
@@ -274,8 +274,8 @@ function practiceDay(ai_tool: string, day: string): PracticeDay {
   };
 }
 
-const VERIFY_INTENTS = new Set(["test_run", "build", "typecheck", "lint"]);
-const TOOL_OUTCOMES = new Set(["tool_use_completed", "tool_use_failed"]);
+export const VERIFY_INTENTS = new Set(["test_run", "build", "typecheck", "lint"]);
+export const TOOL_OUTCOMES = new Set(["tool_use_completed", "tool_use_failed"]);
 const SHIPS = new Set(["commit", "push", "pr_create"]);
 
 function addFacts(day: PracticeDay, row: Row): void {
@@ -365,7 +365,7 @@ function markPatterns(sessions: Timed[][], days: Map<string, PracticeDay>): void
 }
 
 /** Each session's events in the order they happened. */
-function bySession(timed: Timed[]): Timed[][] {
+export function bySession(timed: Timed[]): Timed[][] {
   const sessions = new Map<string, Timed[]>();
   for (const t of timed) {
     const id = field(t.row, "session_id") as string;

@@ -5,9 +5,14 @@
 // What comes out is a structure the renderer can be simple and total over, and the renderer does
 // no guarding of its own.
 
-// `needs_backend` is the client's own, for a section the local report cannot compute. It is never
-// read from a backend, which is the one place it would be false.
-export type Reason = "no_consent" | "not_implemented" | "insufficient_data" | "needs_backend";
+// The last two are the client's own, for what the local report cannot compute. They are never read
+// from a backend, which is the one place they would be false.
+export type Reason =
+  | "no_consent"
+  | "not_implemented"
+  | "insufficient_data"
+  | "needs_backend"
+  | "needs_classifier_gate";
 
 export interface Competency {
   name: string;
@@ -64,8 +69,14 @@ export interface Cost {
 export type Body =
   | { kind: "unavailable"; reason?: Reason }
   | { kind: "repertoire"; data: Repertoire }
-  | { kind: "signals"; data: Signal[]; fit?: Fit }
+  | { kind: "signals"; data: Signal[]; fit?: Fit; unavailable?: Unavailable[] }
   | { kind: "cost"; data: Cost };
+
+/** A signal the local report names as missing, and why. */
+export interface Unavailable {
+  label: string;
+  reason?: Reason;
+}
 
 export interface Section {
   label: string;
@@ -93,7 +104,7 @@ export const FALLBACK_BASIS =
   "no basis supplied by this backend, so this is not money already saved";
 
 const REASONS: Reason[] = ["no_consent", "not_implemented", "insufficient_data"];
-const LOCAL_REASONS: Reason[] = [...REASONS, "needs_backend"];
+const LOCAL_REASONS: Reason[] = [...REASONS, "needs_backend", "needs_classifier_gate"];
 
 export const SIGNALS: [string, string][] = [
   ["verification_coverage", "Verification coverage"],
@@ -263,6 +274,17 @@ function signalsOf(section: Record<string, unknown>): Signal[] {
   });
 }
 
+// In contract order, and only for a signal not also reported: a value and a reason for its absence
+// cannot both be true.
+function unavailableOf(section: Record<string, unknown>): Unavailable[] {
+  const raw = isRecord(section.unavailable) ? section.unavailable : {};
+  return SIGNALS.flatMap(([key, name]) =>
+    Object.hasOwn(raw, key) && !isRecord(section[key])
+      ? [{ label: name, reason: reasonOf(raw[key], true) }]
+      : [],
+  );
+}
+
 /**
  * The split behind the fit rate. All three directions or none: the contract requires them
  * together, and half a split printed as a whole one would show over-provisioning as the only way
@@ -331,7 +353,9 @@ function bodyOf(
     const { data, dropped } = repertoireOf(section, local);
     return { body: { kind: "repertoire", data }, dropped };
   }
-  return { body: { kind: "signals", data: signalsOf(section), fit: fitOf(section) }, dropped: 0 };
+  const body: Body = { kind: "signals", data: signalsOf(section), fit: fitOf(section) };
+  if (local) body.unavailable = unavailableOf(section);
+  return { body, dropped: 0 };
 }
 
 /**

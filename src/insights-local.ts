@@ -1,9 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { repertoireSection } from "./repertoire.js";
+import { verificationCoverage } from "./verification.js";
 
 // The window a backend reports when none is asked for, so `days` reads the same from either source.
-// Only `repertoire` is computed here, and it runs over the model's own four weeks whatever this is.
+// Verification coverage runs over it; `repertoire` runs over the model's own four weeks regardless.
 export const DEFAULT_DAYS = 30;
 
 /**
@@ -42,16 +43,29 @@ export function readLogRows(dir: string): unknown[] {
 /**
  * The report a backend's `/insights` would answer, built from the log alone, in the same shape so
  * the same normalize and render code draws it. `local` marks it for a script reading `--json`.
- * Judgement signals stay unavailable: they rest on prompt labels from a classifier and on
- * telemetry exported to a backend, and neither is in the log.
+ *
+ * Of the judgement signals only verification coverage can come from the log, since its checks are
+ * tool events. The other four rest on prompt labels from a classifier and on telemetry exported to
+ * a backend. `unavailable` is the local report's own field, naming why each one is missing.
  */
 export function localInsights(rows: unknown[], days: number, today: Date): Record<string, unknown> {
+  const coverage = verificationCoverage(rows, days, today);
   return {
     local: true,
     days,
     sections: {
       repertoire: repertoireSection(rows, today),
-      judgement_signals: { enabled: false, reason: "needs_backend" },
+      judgement_signals: {
+        enabled: true,
+        ...("value" in coverage && { verification_coverage: coverage }),
+        unavailable: {
+          ...("reason" in coverage && { verification_coverage: coverage.reason }),
+          pushback_rate: "needs_backend",
+          refinement_to_repair: "needs_backend",
+          wholesale_accept: "needs_backend",
+          model_fit: "needs_backend",
+        },
+      },
     },
   };
 }

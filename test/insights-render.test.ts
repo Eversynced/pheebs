@@ -955,3 +955,33 @@ describe("renderInsights — a report built from the local log", () => {
     expect(out).not.toMatch(/0%/);
   });
 });
+
+describe("renderInsights — judgement signals the local report cannot compute", () => {
+  const draw = (judgement_signals: unknown) =>
+    renderInsights(normalize({ sections: { judgement_signals } }, { local: true }), WIDE).join(
+      "\n",
+    );
+
+  it("names the missing signals once per reason, after the ones it computed", () => {
+    const out = draw({
+      enabled: true,
+      verification_coverage: { value: 0.75, unit: "share" },
+      unavailable: { pushback_rate: "needs_backend", model_fit: "needs_backend" },
+    });
+    expect(out).toContain("Verification coverage");
+    expect(out).toContain("75%");
+    expect(out).toContain("Pushback rate, Model-fit rate: needs a backend");
+    expect(out.indexOf("75%")).toBeLessThan(out.indexOf("Pushback rate"));
+  });
+
+  it("names the field the log lacks when verification coverage needs the classifier gate", () => {
+    const out = draw({
+      enabled: true,
+      unavailable: { verification_coverage: "needs_classifier_gate" },
+    });
+    expect(out).toContain("Verification coverage: needs a backend");
+    expect(out).toContain("classifier_version");
+    expect(out).not.toContain("produced no signals");
+    expect(out).not.toMatch(/0%/);
+  });
+});

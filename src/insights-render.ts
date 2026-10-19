@@ -8,7 +8,15 @@
 
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
-import type { Cost, Fit, Repertoire, Report, Section, Signal } from "./insights-normalize.js";
+import type {
+  Cost,
+  Fit,
+  Repertoire,
+  Report,
+  Section,
+  Signal,
+  Unavailable,
+} from "./insights-normalize.js";
 
 export interface RenderOptions {
   width: number;
@@ -213,6 +221,8 @@ export const REASON_TEXT: Record<string, string> = {
   not_implemented: "this backend does not produce it",
   needs_backend:
     "needs a backend, which computes them from prompt labels and telemetry this machine does not keep",
+  needs_classifier_gate:
+    "needs a backend, because a prompt asking for a check counts only under a classifier version the backend has validated, and the log records `classifier_version` but not that verdict",
 };
 
 const STATE_LABELS: Record<string, string> = {
@@ -347,8 +357,15 @@ export function renderTrends(
   );
 }
 
-function renderSignals(signals: Signal[], fit: Fit | undefined, opts: RenderOptions): string[] {
-  if (signals.length === 0) return wrap("This backend produced no signals.", opts.width);
+function renderSignals(
+  signals: Signal[],
+  fit: Fit | undefined,
+  opts: RenderOptions,
+  unavailable: Unavailable[] = [],
+): string[] {
+  if (signals.length === 0 && unavailable.length === 0) {
+    return wrap("This backend produced no signals.", opts.width);
+  }
 
   // One label width across all three blocks, as the model doc draws them, so the eye can run down
   // a signal instead of re-finding it at a new indent in each.
@@ -401,6 +418,18 @@ function renderSignals(signals: Signal[], fit: Fit | undefined, opts: RenderOpti
         opts,
       ),
     );
+  }
+
+  // One line per reason rather than per signal, so four signals missing for one cause read once.
+  const byReason = new Map<string, string[]>();
+  for (const { label, reason } of unavailable) {
+    const key = reason ?? "";
+    byReason.set(key, [...(byReason.get(key) ?? []), label]);
+  }
+  for (const [reason, labels] of byReason) {
+    if (lines.length > 0) lines.push("");
+    const why = reason ? REASON_TEXT[reason] : "not available";
+    lines.push(...wrap(`${labels.join(", ")}: ${why}`, opts.width));
   }
 
   return lines;
@@ -490,7 +519,7 @@ function renderSection(section: Section, opts: RenderOptions): string[] {
     body.kind === "repertoire"
       ? renderRepertoire(body.data, opts)
       : body.kind === "signals"
-        ? renderSignals(body.data, body.fit, opts)
+        ? renderSignals(body.data, body.fit, opts, body.unavailable)
         : renderCost(body.data, opts);
 
   const out = [...wrap(section.label, opts.width), "", ...lines];

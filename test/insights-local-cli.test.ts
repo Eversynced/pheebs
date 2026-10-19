@@ -55,6 +55,8 @@ function logDir(): string {
     row(7, "subagent_spawned"),
     row(0, "subagent_spawned"),
     row(0, "prompt_submitted", { command_name: "review" }),
+    row(0, "tool_use_completed", { tool_intent: "edit" }),
+    row(0, "tool_use_completed", { tool_intent: "test_run" }),
     "not json",
   ];
   writeFileSync(join(dir, "acme--app-2026-10-19.jsonl"), `${lines.join("\n")}\n`);
@@ -107,7 +109,9 @@ describe("pheebs insights — from the local log", () => {
     expect(stdout).toContain("Orchestration");
     expect(stdout).toContain("Sessions: 3 over 3 active week(s)");
     expect(stdout).toContain("Artifact breadth: 1 distinct skills and commands");
-    expect(stdout).toContain("Judgement signals: needs a backend");
+    expect(stdout).toMatch(/Verification coverage +100%/);
+    // Folded at the terminal's width, so read as one run of text.
+    expect(stdout.replace(/\s+/g, " ")).toContain("Model-fit rate: needs a backend");
   });
 
   it("marks the --json payload local, so a script can tell it apart", async () => {
@@ -116,10 +120,11 @@ describe("pheebs insights — from the local log", () => {
     const payload = JSON.parse(stdout);
     expect(payload.local).toBe(true);
     expect(payload.sections.repertoire).toMatchObject({ enabled: true, sessions: 3 });
-    expect(payload.sections.judgement_signals).toEqual({
-      enabled: false,
-      reason: "needs_backend",
+    expect(payload.sections.judgement_signals.verification_coverage).toEqual({
+      value: 1,
+      unit: "share",
     });
+    expect(payload.sections.judgement_signals.unavailable.model_fit).toBe("needs_backend");
   });
 
   it("says there is nothing to report yet on an empty log, rather than failing", async () => {
