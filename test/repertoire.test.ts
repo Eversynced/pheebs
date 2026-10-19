@@ -177,6 +177,17 @@ describe("practiceStatesOf", () => {
       expect(repertoireSection(rows, TODAY)).not.toHaveProperty("unknown_model_sessions");
     });
 
+    it("compares the execution with the model the planning ended on, not an earlier one", () => {
+      const rows = session(
+        start(),
+        plan,
+        toSonnet({ from_model: "claude-opus-5[1m]", switch_source: "command" }),
+        plan,
+        execute,
+      );
+      expect(practiceStatesOf(rows, TODAY).MD6).toBe("unobserved");
+    });
+
     it("does not read a switch Claude Code made for itself as a split", () => {
       for (const switch_source of ["auto", "resume", "something_new", undefined]) {
         const rows = session(start(), plan, toSonnet({ switch_source }), execute);

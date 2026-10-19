@@ -390,17 +390,16 @@ interface Segment {
 }
 
 // A split needs a deliberate switch between the plan segment and the execution one, and two
-// models that differ. A model nothing named leaves it undecided rather than not a split.
+// models that differ. The plan segment is the last one planned in: a switch made while still
+// planning moved the plan to that model, so an earlier segment is not what the execution left. A
+// model nothing named leaves it undecided rather than not a split.
 function splitBetween(segments: Segment[], plans: number[], at: number): "split" | "none" | "open" {
-  let open = false;
-  for (const plan of plans) {
-    if (plan >= at || !segments.slice(plan + 1, at + 1).some((s) => s.deliberate)) continue;
-    const before = segments[plan].model;
-    const after = segments[at].model;
-    if (before === undefined || after === undefined) open = true;
-    else if (before !== after) return "split";
-  }
-  return open ? "open" : "none";
+  const plan = Math.max(...plans);
+  if (plan >= at || !segments.slice(plan + 1, at + 1).some((s) => s.deliberate)) return "none";
+  const before = segments[plan].model;
+  const after = segments[at].model;
+  if (before === undefined || after === undefined) return "open";
+  return before !== after ? "split" : "none";
 }
 
 /**
