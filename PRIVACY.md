@@ -198,7 +198,10 @@ outbound request that reads rather than writes: no event is emitted, no hook pat
 nothing is added to `~/.pheebs/logs/`. The response is held in memory for as long as it takes to
 print it.
 
-With no backend endpoint set, the command makes no request at all and tells you to set one.
+With no backend endpoint set, or with `--local`, the command makes no request at all. It reads
+`~/.pheebs/logs/` and computes the Repertoire section on your machine
+([`src/insights-local.ts`](./src/insights-local.ts)); what it reads is held in memory to count
+and is not written anywhere.
 
 ## See it for yourself
 
