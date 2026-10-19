@@ -448,6 +448,30 @@ describe("normalize — a report built from the local log", () => {
   });
 });
 
+describe("normalize: developer stamps on the local report", () => {
+  it("reads them only when the caller says the report is local", () => {
+    const payload = { developers: { stamps: ["tok-1"], unstamped: 2 }, sections: {} };
+    expect(normalize(payload).developers).toBeUndefined();
+    expect(normalize(payload, { local: true }).developers).toEqual({
+      stamps: ["tok-1"],
+      dropped: 0,
+      unstamped: 2,
+    });
+  });
+
+  it("strips what a terminal would execute and bounds the list, saying how many it left out", () => {
+    const stamps = ["\u001b[31mtok-1", ...Array.from({ length: 204 }, (_, i) => `tok-${i + 2}`)];
+    const developers = normalize(
+      { developers: { stamps, unstamped: -1 } },
+      { local: true },
+    ).developers;
+    expect(developers?.stamps[0]).toBe("tok-1");
+    expect(developers?.stamps).toHaveLength(200);
+    expect(developers?.dropped).toBe(5);
+    expect(developers?.unstamped).toBeUndefined();
+  });
+});
+
 describe("normalize — signals the local report names as missing", () => {
   const section = {
     enabled: true,

@@ -956,6 +956,39 @@ describe("renderInsights — a report built from the local log", () => {
   });
 });
 
+describe("renderInsights: developer stamps on the local report", () => {
+  const draw = (developers: unknown) =>
+    renderInsights(normalize({ days: 30, developers, sections: {} }, { local: true }), WIDE);
+
+  it("names the one stamp under the local line", () => {
+    const out = draw({ stamps: ["tok-1"], unstamped: 0 });
+    expect(out[1]).toBe("Developer on these rows: tok-1.");
+    expect(out.join("\n")).not.toContain("no developer stamp");
+  });
+
+  it("says outright when the counts merge more than one stamp", () => {
+    // Folded at the width, so read as one run of text.
+    const out = draw({ stamps: ["tok-home", "tok-work"], unstamped: 0 })
+      .join(" ")
+      .replace(/\s+/g, " ");
+    expect(out).toContain(
+      "These rows carry 2 developer stamps: tok-home, tok-work. The counts below are not split between them.",
+    );
+    expect(out).not.toContain("Developer on these rows");
+  });
+
+  it("counts the rows without a stamp rather than giving them one", () => {
+    const out = draw({ stamps: [], unstamped: 3 }).join("\n");
+    expect(out).toContain("3 row(s) carry no developer stamp, and are counted under none.");
+    expect(out).not.toContain("Developer on these rows");
+  });
+
+  it("says nothing about developers on a backend's report", () => {
+    const payload = { days: 30, developers: { stamps: ["a", "b"], unstamped: 1 }, sections: {} };
+    expect(render(payload, WIDE).join("\n")).not.toContain("developer");
+  });
+});
+
 describe("renderInsights — judgement signals the local report cannot compute", () => {
   const draw = (judgement_signals: unknown) =>
     renderInsights(normalize({ sections: { judgement_signals } }, { local: true }), WIDE).join(

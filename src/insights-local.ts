@@ -41,18 +41,44 @@ export function readLogRows(dir: string): unknown[] {
 }
 
 /**
+ * The developer stamps the rows carry, and how many carry none. The counts are not split by them:
+ * a log folder is one developer's, so a filter would only hide rows. Two stamps are still reported
+ * rather than merged in silence, since two tokens on one machine is the case where the merged
+ * number is wrong. `unknown` is what a hook writes when it resolved no identity, so it is a row
+ * without a stamp, never a developer named "unknown".
+ */
+export function developersOf(rows: unknown[]): { stamps: string[]; unstamped: number } {
+  const stamps = new Set<string>();
+  let unstamped = 0;
+  for (const row of rows) {
+    const developer =
+      typeof row === "object" && row !== null
+        ? (row as Record<string, unknown>).developer
+        : undefined;
+    if (typeof developer === "string" && developer !== "" && developer !== "unknown") {
+      stamps.add(developer);
+    } else {
+      unstamped++;
+    }
+  }
+  return { stamps: [...stamps].sort(), unstamped };
+}
+
+/**
  * The report a backend's `/insights` would answer, built from the log alone, in the same shape so
  * the same normalize and render code draws it. `local` marks it for a script reading `--json`.
  *
  * Of the judgement signals only verification coverage can come from the log, since its checks are
  * tool events. The other four rest on prompt labels from a classifier and on telemetry exported to
- * a backend. `unavailable` is the local report's own field, naming why each one is missing.
+ * a backend. `unavailable` is the local report's own field, naming why each one is missing, and so
+ * is `developers`.
  */
 export function localInsights(rows: unknown[], days: number, today: Date): Record<string, unknown> {
   const coverage = verificationCoverage(rows, days, today);
   return {
     local: true,
     days,
+    developers: developersOf(rows),
     sections: {
       repertoire: repertoireSection(rows, today),
       judgement_signals: {

@@ -10,6 +10,7 @@ import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 import type {
   Cost,
+  Developers,
   Fit,
   Repertoire,
   Report,
@@ -529,6 +530,34 @@ function renderSection(section: Section, opts: RenderOptions): string[] {
   return out;
 }
 
+// The counts are not split by developer, so more than one stamp is said outright: a reader shown
+// only the merged number would take it for one person's.
+function renderDevelopers(developers: Developers | undefined, opts: RenderOptions): string[] {
+  if (developers === undefined) return [];
+  const { stamps, dropped, unstamped } = developers;
+  const named = `${stamps.join(", ")}${dropped > 0 ? `, and ${dropped} more` : ""}`;
+  const total = stamps.length + dropped;
+  const lines: string[] = [];
+  if (total === 1) lines.push(...wrap(`Developer on these rows: ${named}.`, opts.width));
+  if (total > 1) {
+    lines.push(
+      ...wrap(
+        `These rows carry ${total} developer stamps: ${named}. The counts below are not split between them.`,
+        opts.width,
+      ),
+    );
+  }
+  if (unstamped !== undefined && unstamped > 0) {
+    lines.push(
+      ...wrap(
+        `${unstamped} row(s) carry no developer stamp, and are counted under none.`,
+        opts.width,
+      ),
+    );
+  }
+  return lines;
+}
+
 /** The whole report as lines, over a payload `normalize` has already made safe. */
 export function renderInsights(report: Report, opts: RenderOptions): string[] {
   const header =
@@ -537,7 +566,11 @@ export function renderInsights(report: Report, opts: RenderOptions): string[] {
       : `Your last ${report.days} day${report.days === 1 ? "" : "s"}`;
   // First, so a report from the log is never read as the backend's.
   const lines: string[] = report.local
-    ? [...wrap("Local report, from this machine's log. No backend was asked.", opts.width), ""]
+    ? [
+        ...wrap("Local report, from this machine's log. No backend was asked.", opts.width),
+        ...renderDevelopers(report.developers, opts),
+        "",
+      ]
     : [];
   lines.push(...wrap(header, opts.width));
 

@@ -106,6 +106,7 @@ describe("pheebs insights — from the local log", () => {
     expect(status).toBe(0);
     const lines = stdout.split("\n");
     expect(lines[0]).toBe("Local report, from this machine's log. No backend was asked.");
+    expect(lines[1]).toBe("Developer on these rows: tok-1.");
     expect(stdout).toContain("Orchestration");
     expect(stdout).toContain("Sessions: 3 over 3 active week(s)");
     expect(stdout).toContain("Artifact breadth: 1 distinct skills and commands");
@@ -119,6 +120,7 @@ describe("pheebs insights — from the local log", () => {
     expect(status).toBe(0);
     const payload = JSON.parse(stdout);
     expect(payload.local).toBe(true);
+    expect(payload.developers).toEqual({ stamps: ["tok-1"], unstamped: 0 });
     expect(payload.sections.repertoire).toMatchObject({ enabled: true, sessions: 3 });
     expect(payload.sections.judgement_signals.verification_coverage).toEqual({
       value: 1,
