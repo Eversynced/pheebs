@@ -220,8 +220,8 @@ median, which answers "is this normal here" without naming anyone.
 
 It reads the optional `GET /insights` route, so what you see depends on what your backend
 computes. With no backend set, or with `--local`, it reads your local log instead, makes no
-request, and reports the Repertoire section only; the report says it is local before anything
-else. A section it cannot produce says so in one line and gives the reason, rather than
+request, and reports the Repertoire section and verification coverage, the one judgement signal
+the log can carry; the report says it is local before anything else. A section it cannot produce says so in one line and gives the reason, rather than
 reporting a zero that reads like a measurement.
 
 Managers can read the same model across their tenant:
@@ -396,7 +396,7 @@ pheebs hook-codex <event_name>
 | `insights --days <n>` | Narrow the window, 1 to 365 (default: whatever the backend uses) |
 | `insights --json` | Print the raw `/insights` payload, for scripting |
 | `insights --team` | Render the team report from `/insights/team` (manager tokens only; combines with `--days` and `--json`) |
-| `insights --local` | Render the Repertoire section from the local log with no request (what `insights` does when no backend is set) |
+| `insights --local` | Render Repertoire and verification coverage from the local log with no request (what `insights` does when no backend is set) |
 | `init --codex` | Configure Codex hooks |
 | `init --no-otel` | Skip OpenTelemetry configuration |
 | `doctor` | Verify hooks, the endpoint, and your token status |

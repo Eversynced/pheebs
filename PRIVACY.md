@@ -199,7 +199,7 @@ nothing is added to `~/.pheebs/logs/`. The response is held in memory for as lon
 print it.
 
 With no backend endpoint set, or with `--local`, the command makes no request at all. It reads
-`~/.pheebs/logs/` and computes the Repertoire section on your machine
+`~/.pheebs/logs/` and computes the Repertoire section and verification coverage on your machine
 ([`src/insights-local.ts`](./src/insights-local.ts)); what it reads is held in memory to count
 and is not written anywhere.
 
