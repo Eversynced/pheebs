@@ -84,9 +84,9 @@ is the only gate that actually revokes.**
 
 The same revalidation resolves the `id` of a token stored while the backend was unreachable, and
 deletes a revoked token from the machine along with the exporter config that carries it, so expect
-`/validate-token` calls from hooks, not only from `pheebs config set token`. Only `revoked` is a
-verdict there: any other answer without an `id`, a 4xx included, keeps the cached identity and is
-retried after an hour.
+`/validate-token` calls from hooks, not only from `pheebs config set token`. Only `revoked` deletes the token. A 2xx without an `id` drops the cached
+identity and consent; a non-2xx answer keeps them, since a proxy sends those as often as the
+backend does, and is retried after an hour.
 
 ## `/classify-prompt`
 

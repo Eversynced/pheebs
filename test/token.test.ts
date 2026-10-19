@@ -174,7 +174,11 @@ describe("validateToken", () => {
 
   it("maps a 4xx to an unknown rejection", async () => {
     stubFetch(new Response(null, { status: 401 }));
-    expect(await validateToken("pheebs_x")).toEqual({ allowed: false, reason: "unknown" });
+    expect(await validateToken("pheebs_x")).toEqual({
+      allowed: false,
+      reason: "unknown",
+      status: 401,
+    });
   });
 
   it("treats a 5xx as unreachable (undefined), not a rejection", async () => {
@@ -430,6 +434,29 @@ describe("revalidateStoredTokenIfStale", () => {
       expect(written.last_attempt_at).toBeTypeOf("string");
       expect(unlinkSyncMock).not.toHaveBeenCalled();
     }
+  });
+
+  it("drops the id and consent on a 2xx answer that carries no id", async () => {
+    storeReturns({
+      token: "pheebs_x",
+      id: "tok-1",
+      prompt_collection: true,
+      last_validated_at: "2000-01-01T00:00:00.000Z",
+    });
+    stubFetch(new Response(JSON.stringify({ allowed: false, reason: "unknown" })));
+    expect(await revalidateStoredTokenIfStale()).toBe(false);
+    const written = JSON.parse(writeFileSyncMock.mock.calls[0][1] as string);
+    expect(written).toEqual({ token: "pheebs_x", last_validated_at: expect.any(String) });
+    expect(unlinkSyncMock).not.toHaveBeenCalled();
+  });
+
+  it("neither asks nor records an attempt without a backend", async () => {
+    backend.configured = false;
+    storeReturns({ token: "pheebs_x" });
+    stubFetch(new Error("must not be called"));
+    await revalidateStoredTokenIfStale();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(writeFileSyncMock).not.toHaveBeenCalled();
   });
 
   it("does not retry within an hour of an unanswered attempt", async () => {

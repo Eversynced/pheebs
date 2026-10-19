@@ -37,6 +37,8 @@ export interface ValidateResult {
   /** Display only: the backend resolves the role from the token's own record on every call. */
   role?: string;
   reason?: string;
+  /** Set by the client, never the backend: the HTTP status of a non-2xx answer. */
+  status?: number;
 }
 
 export interface SetTokenOutcome {
@@ -112,7 +114,7 @@ export async function validateToken(
     });
     // 5xx is a backend failure, not a verdict: degrade offline, don't reject.
     if (res.status >= 500) return undefined;
-    if (!res.ok) return { allowed: false, reason: "unknown" };
+    if (!res.ok) return { allowed: false, reason: "unknown", status: res.status };
     return (await res.json()) as ValidateResult;
   } catch {
     return undefined;
@@ -212,6 +214,8 @@ function within(iso: string | undefined, ms: number): boolean {
  * out of the exporter config too.
  */
 export async function revalidateStoredTokenIfStale(): Promise<boolean> {
+  // Without an endpoint there is no one to ask, and so no failed attempt to record.
+  if (!hasBackend()) return false;
   const stored = readStoredToken();
   if (!stored) return false;
   if (within(stored.last_validated_at, REVALIDATE_TTL_MS)) return false;
@@ -222,16 +226,24 @@ export async function revalidateStoredTokenIfStale(): Promise<boolean> {
   // The file is shared by every session and by `config set token`, and the wait above is long
   // enough for either to rewrite it. Writing back over a token this call did not read would
   // resurrect an unset token or overwrite a new one.
-  if (readStoredToken()?.token !== stored.token) return false;
+  const current = readStoredToken();
+  if (!current || current.token !== stored.token) return false;
 
   if (result?.reason === "revoked") {
     clearStoredToken();
     return true;
   }
 
-  // Only a revoke is a verdict. A 429 or 404 from a proxy is no answer, so it keeps the id.
-  if (!result?.id) {
-    writeStoredToken({ ...stored, last_attempt_at: new Date().toISOString() });
+  // A non-2xx status comes from a proxy as often as from the backend, so it is no answer and
+  // keeps the id. Written over what is on disk now, not what was read before the wait.
+  if (result === undefined || result.status !== undefined) {
+    writeStoredToken({ ...current, last_attempt_at: new Date().toISOString() });
+    return false;
+  }
+
+  // A 2xx without an id is the backend's own rejection: drop the identity and consent with it.
+  if (!result.id) {
+    writeStoredToken({ token: stored.token, last_validated_at: new Date().toISOString() });
     return false;
   }
 

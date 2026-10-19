@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { readJsonFile, writeJsonFile } from "./pheebs-store.js";
+import { dirname, join } from "node:path";
+import { readJsonFile } from "./pheebs-store.js";
 import { getStoredTokenId } from "./token.js";
 
 // Keyed by session rather than machine-wide: `git config` answers per repo, and a session stays
@@ -47,7 +48,13 @@ export function getDeveloperHandle(sessionId?: string): string {
     const kept = Object.entries(cache)
       .filter(([id]) => id !== sessionId)
       .slice(-(MAX_CACHED_SESSIONS - 1));
-    writeJsonFile(SESSION_CACHE_PATH, Object.fromEntries([...kept, [sessionId, handle]]));
+    // Not owner-only like the token: it holds what every log line already carries, and the
+    // ACL on Windows would cost two more spawns than the git call this saves.
+    mkdirSync(dirname(SESSION_CACHE_PATH), { recursive: true });
+    writeFileSync(
+      SESSION_CACHE_PATH,
+      JSON.stringify(Object.fromEntries([...kept, [sessionId, handle]])),
+    );
   } catch {}
   return handle;
 }

@@ -11,7 +11,10 @@ vi.mock("node:child_process", () => ({
 vi.mock("../src/token.js", () => ({ getStoredTokenId: () => getStoredTokenIdMock() }));
 vi.mock("../src/pheebs-store.js", () => ({
   readJsonFile: (path: string) => store.files.get(path),
-  writeJsonFile: (path: string, value: unknown) => store.files.set(path, value),
+}));
+vi.mock("node:fs", () => ({
+  mkdirSync: () => {},
+  writeFileSync: (path: string, data: string) => store.files.set(path, JSON.parse(data)),
 }));
 
 const { getDeveloperHandle } = await import("../src/developer-id.js");
