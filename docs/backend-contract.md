@@ -83,8 +83,10 @@ the backend, keeps the cached value. **Enforce consent again on every `/classify
 is the only gate that actually revokes.**
 
 The same revalidation resolves the `id` of a token stored while the backend was unreachable, and
-drops the `id` of a revoked token, so expect `/validate-token` calls from hooks, not only from
-`pheebs config set token`.
+deletes a revoked token from the machine along with the exporter config that carries it, so expect
+`/validate-token` calls from hooks, not only from `pheebs config set token`. Only `revoked` is a
+verdict there: any other answer without an `id`, a 4xx included, keeps the cached identity and is
+retried after an hour.
 
 ## `/classify-prompt`
 

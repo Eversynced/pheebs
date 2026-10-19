@@ -20,6 +20,8 @@ export interface StoredToken {
   role?: TokenRole;
   /** ISO time of the last successful validation; drives TTL revalidation. */
   last_validated_at?: string;
+  /** ISO time of the last revalidation that got no answer; spaces out offline retries. */
+  last_attempt_at?: string;
 }
 
 /** Shape returned by the backend's /validate-token route. */
@@ -67,7 +69,9 @@ export function writeStoredToken(stored: StoredToken): void {
 
 /** The token id used as the developer identity, if one has been resolved. */
 export function getStoredTokenId(): string | undefined {
-  return readStoredToken()?.id;
+  const id = readStoredToken()?.id;
+  // Hand-editable JSON: anything but a non-empty string is no id at all.
+  return typeof id === "string" && id ? id : undefined;
 }
 
 /** Remove the stored token. Returns whether a file existed. */
@@ -186,32 +190,49 @@ export async function setToken(token: string): Promise<SetTokenOutcome> {
   return { status: "set", developer: result.developer, message: `Token set for ${who} (…${l4}).` };
 }
 
-// Past this, the next event revalidates so a server-side revoke reaches the machine.
+// Past this, the next session start revalidates so a server-side revoke reaches the machine.
 const REVALIDATE_TTL_MS = 12 * 60 * 60 * 1000;
+
+// After a revalidation that got no answer, so an offline machine does not wait on every session.
+const RETRY_AFTER_MS = 60 * 60 * 1000;
 
 // Session start waits on this under Cursor and Codex, which run hooks synchronously.
 const REVALIDATE_TIMEOUT_MS = 2000;
 
+function within(iso: string | undefined, ms: number): boolean {
+  const at = iso ? Date.parse(iso) : Number.NaN;
+  return Number.isFinite(at) && Date.now() - at < ms;
+}
+
 /**
- * If the stored token is past its TTL, revalidate and rewrite the cache. Bounded: an
- * unreachable or slow backend keeps the cached id; a revoked token drops its id here.
- * A token stored offline has never been validated, so it is always stale and resolves its
- * id on the first answer.
+ * If the stored token is past its TTL, revalidate and rewrite the cache. Bounded: a backend
+ * that gives no verdict keeps the cached id and is retried after RETRY_AFTER_MS. A token
+ * stored offline has never been validated, so it is always stale and resolves its id on the
+ * first answer. Returns true when the token was revoked and cleared, so the caller can pull it
+ * out of the exporter config too.
  */
-export async function revalidateStoredTokenIfStale(): Promise<void> {
+export async function revalidateStoredTokenIfStale(): Promise<boolean> {
   const stored = readStoredToken();
-  if (!stored) return;
-  const last = stored.last_validated_at ? Date.parse(stored.last_validated_at) : 0;
-  if (Number.isFinite(last) && Date.now() - last < REVALIDATE_TTL_MS) return;
+  if (!stored) return false;
+  if (within(stored.last_validated_at, REVALIDATE_TTL_MS)) return false;
+  if (within(stored.last_attempt_at, RETRY_AFTER_MS)) return false;
 
   const result = await validateToken(stored.token, REVALIDATE_TIMEOUT_MS);
-  if (result === undefined) return; // unreachable: keep the cache
 
-  // Revoked/unknown: drop the id so identity falls back. opt_out keeps its id. The time is
-  // kept so a revoked token is asked about once per TTL, not on every session start.
-  if (result.reason === "revoked" || !result.id) {
-    writeStoredToken({ token: stored.token, last_validated_at: new Date().toISOString() });
-    return;
+  // The file is shared by every session and by `config set token`, and the wait above is long
+  // enough for either to rewrite it. Writing back over a token this call did not read would
+  // resurrect an unset token or overwrite a new one.
+  if (readStoredToken()?.token !== stored.token) return false;
+
+  if (result?.reason === "revoked") {
+    clearStoredToken();
+    return true;
+  }
+
+  // Only a revoke is a verdict. A 429 or 404 from a proxy is no answer, so it keeps the id.
+  if (!result?.id) {
+    writeStoredToken({ ...stored, last_attempt_at: new Date().toISOString() });
+    return false;
   }
 
   writeStoredToken({
@@ -225,4 +246,5 @@ export async function revalidateStoredTokenIfStale(): Promise<void> {
     role: roleOf(result),
     last_validated_at: new Date().toISOString(),
   });
+  return false;
 }

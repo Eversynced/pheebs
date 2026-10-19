@@ -1,14 +1,14 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cliPath, runHookRows } from "./hook-runner.js";
 
 // End to end against the example backend in examples/backend-node/, over a real socket.
 
 const repoRoot = join(import.meta.dirname, "..");
-const cliPath = join(repoRoot, "dist", "cli.js");
 const serverPath = join(repoRoot, "examples", "backend-node", "server.js");
 
 let server: ChildProcess;
@@ -154,31 +154,64 @@ describe("session start revalidation, against the example backend", () => {
       join(offlineHome, ".pheebs", ".token"),
       JSON.stringify({ token: "pheebs_local_consented" }),
     );
-    const logs = mkdtempSync(join(tmpdir(), "pheebs-logs-"));
+    // The example backend is the sink here, so the debug sink is off.
+    const opts = { home: offlineHome, extraEnv: { PHEEBS_DEBUG: "" } };
     try {
-      execFileSync(process.execPath, [cliPath, "hook", "session_started"], {
-        input: JSON.stringify({ session_id: "reval-1" }),
-        stdio: ["pipe", "ignore", "ignore"],
-        env: {
-          ...process.env,
-          HOME: offlineHome,
-          USERPROFILE: offlineHome,
-          PHEEBS_LOG_PATH: logs,
-          PHEEBS_CODEBASE_ID: "test/revalidate",
-        },
-      });
-
-      const rows = readdirSync(logs)
-        .flatMap((f) => readFileSync(join(logs, f), "utf-8").trim().split("\n"))
-        .map((line) => JSON.parse(line));
-      expect(rows.find((r) => r.event === "session_started")?.developer).toBe("dev-local-2");
+      const started = runHookRows(
+        ["hook", "session_started"],
+        { session_id: "reval-1" },
+        undefined,
+        opts,
+      );
+      // Revalidation runs after the write, so the id reaches the session's later events.
+      expect(started.find((r) => r.event === "session_started")?.developer).not.toBe("dev-local-2");
+      const later = runHookRows(
+        ["hook", "session_end"],
+        { session_id: "reval-1" },
+        undefined,
+        opts,
+      );
+      expect(later.find((r) => r.event === "session_end")?.developer).toBe("dev-local-2");
 
       const stored = JSON.parse(readFileSync(join(offlineHome, ".pheebs", ".token"), "utf-8"));
       expect(stored.id).toBe("dev-local-2");
       expect(stored.prompt_collection).toBe(false);
     } finally {
       rmSync(offlineHome, { recursive: true, force: true });
-      rmSync(logs, { recursive: true, force: true });
+    }
+  });
+
+  it("deletes a revoked token and strips it from the exporter config", async () => {
+    // The example backend has no revoked token, so a stub that revokes everything stands in.
+    const revokePort = await freePort();
+    const revoker = spawn(
+      process.execPath,
+      [
+        "-e",
+        `require("node:http").createServer((_, res) => res.end('{"allowed":false,"reason":"revoked"}')).listen(${revokePort}, "127.0.0.1")`,
+      ],
+      { stdio: "ignore" },
+    );
+    const revokedHome = writePheebsHome(`http://127.0.0.1:${revokePort}`, "pheebs_gone");
+    const settingsPath = join(revokedHome, ".claude", "settings.json");
+    mkdirSync(join(revokedHome, ".claude"), { recursive: true });
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        env: { OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Bearer pheebs_gone", KEEP: "1" },
+      }),
+    );
+    try {
+      await waitForServer(`http://127.0.0.1:${revokePort}/`);
+      runHookRows(["hook", "session_started"], { session_id: "revoked-1" }, undefined, {
+        home: revokedHome,
+      });
+
+      expect(existsSync(join(revokedHome, ".pheebs", ".token"))).toBe(false);
+      expect(JSON.parse(readFileSync(settingsPath, "utf-8")).env).toEqual({ KEEP: "1" });
+    } finally {
+      revoker.kill();
+      rmSync(revokedHome, { recursive: true, force: true });
     }
   });
 });

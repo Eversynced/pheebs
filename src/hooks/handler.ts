@@ -5,6 +5,7 @@ import { classifyPrompt } from "../classify.js";
 import { getConfig } from "../config.js";
 import { getDeveloperHandle } from "../developer-id.js";
 import { appendLogEntry } from "../logger.js";
+import { resyncOtelConfigs } from "../otel-resync.js";
 import { runArtifactScan } from "../scanner.js";
 import { revalidateStoredTokenIfStale } from "../token.js";
 import { PHEEBS_VERSION } from "../version.js";
@@ -627,12 +628,7 @@ export async function handleHookEvent(
     if (classified) Object.assign(extra, classified);
   }
 
-  // Before the stamp, so a whole session carries one identity. Throttled by the token's TTL.
-  if (eventName === EVENTS.SessionStarted) {
-    await revalidateStoredTokenIfStale().catch(() => {});
-  }
-
-  const developerHandle = getDeveloperHandle();
+  const developerHandle = getDeveloperHandle(sessionId);
   const config = getConfig();
 
   appendLogEntry(
@@ -657,5 +653,10 @@ export async function handleHookEvent(
     ensureConfig();
     runArtifactScan(tool, sessionId, developerHandle);
     maybeAutoUpdate();
+    // After the write, so a slow backend never holds back the durable copy. The token file is
+    // machine-wide, so what this resolves also reaches sessions already running.
+    try {
+      if (await revalidateStoredTokenIfStale()) resyncOtelConfigs();
+    } catch {}
   }
 }

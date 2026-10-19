@@ -4,7 +4,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -14,9 +13,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { systemExe } from "../src/windows.js";
-
-const repoRoot = join(import.meta.dirname, "..");
-const cliPath = join(repoRoot, "dist", "cli.js");
+import { cliPath, runHookRows, withPath } from "./hook-runner.js";
 
 type RunResult = { stdout: string; stderr: string; status: number };
 
@@ -30,59 +27,6 @@ function runCli(...args: string[]): RunResult {
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; status?: number };
     return { stdout: e.stdout ?? "", stderr: e.stderr ?? "", status: e.status ?? 1 };
-  }
-}
-
-// Windows spells it `Path`; drop every spelling so the child sees only the one set here.
-function withPath(env: NodeJS.ProcessEnv, path: string): NodeJS.ProcessEnv {
-  for (const key of Object.keys(env)) {
-    if (key.toUpperCase() === "PATH") delete env[key];
-  }
-  env.PATH = path;
-  return env;
-}
-
-// Run a hook, feeding the payload on stdin and writing logs to a throwaway dir. The home is
-// throwaway too: a hook reads ~/.pheebs, and a session start writes there and can launch
-// the developer's own auto-update.
-function runHookRows(
-  args: string[],
-  payload: unknown,
-  input: string | Buffer = JSON.stringify(payload),
-  {
-    path,
-    extraEnv,
-    setupHome,
-  }: { path?: string; extraEnv?: NodeJS.ProcessEnv; setupHome?: (home: string) => void } = {},
-): Record<string, unknown>[] {
-  const dir = mkdtempSync(join(tmpdir(), "pheebs-test-"));
-  const home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
-  setupHome?.(home);
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    HOME: home,
-    USERPROFILE: home,
-    PHEEBS_LOG_PATH: dir,
-    PHEEBS_CODEBASE_ID: "test/hooks",
-    PHEEBS_DEBUG: "1", // route the remote transport to the no-network debug sink
-    ...extraEnv,
-  };
-  if (path !== undefined) withPath(env, path);
-  try {
-    execFileSync(process.execPath, [cliPath, ...args], {
-      encoding: "utf-8",
-      input,
-      stdio: ["pipe", "pipe", "pipe"],
-      env,
-    });
-    return readdirSync(dir)
-      .filter((f) => f.endsWith(".jsonl"))
-      .flatMap((f) => readFileSync(join(dir, f), "utf-8").trim().split("\n"))
-      .filter(Boolean)
-      .map((line) => JSON.parse(line));
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(home, { recursive: true, force: true });
   }
 }
 
@@ -254,7 +198,7 @@ describe("developer identity", () => {
       }
     });
 
-    it("prints no second identity beside a token that has an id", () => {
+    it("names the token id events carry, not the developer name the token line shows", () => {
       mkdirSync(join(home, ".pheebs"), { recursive: true });
       writeFileSync(
         join(home, ".pheebs", ".token"),
@@ -262,7 +206,7 @@ describe("developer identity", () => {
       );
       const result = runIn(cwd, home, ["doctor", "--codex"]);
       expect(result.stdout).toContain("Pheebs token: octocat");
-      expect(result.stdout).not.toContain("Developer on events");
+      expect(result.stdout).toContain("Developer on events: tok-e2e");
     });
   });
 });

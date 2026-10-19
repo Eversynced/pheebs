@@ -15,7 +15,7 @@ import {
   isPheebsEntry,
   TOOL_LABELS,
 } from "../hooks/definitions.js";
-import { getStoredTokenId, readStoredToken } from "../token.js";
+import { readStoredToken } from "../token.js";
 import { TRANSPORT_ERROR_PATH } from "../transports/http.js";
 import { PHEEBS_VERSION } from "../version.js";
 import { commandExists, detectInstalledTools } from "./detect.js";
@@ -276,11 +276,9 @@ function diagnoseTools(tools: AiTool[], scope: DoctorScope): boolean {
   return allHealthy;
 }
 
-// Only without a token id: with one, the token line already names the identity, and a second
-// name beside it reads as a conflict. Without one, events carry the git-email label, which
-// the log alone does not explain.
+// Always, because the token line names the developer while events carry the token id, and
+// without a token events carry the git-email label, which the log alone does not explain.
 function reportIdentity(): void {
-  if (getStoredTokenId()) return;
   log.info(`Developer on events: ${getDeveloperHandle()}`);
 }
 
