@@ -429,7 +429,7 @@ describe("normalize — the model-fit split", () => {
   });
 });
 
-describe("normalize — a report built from the local log", () => {
+describe("normalize: a report built from the local log", () => {
   const local = { local: true, sections: { judgement_signals: { reason: "needs_backend" } } };
 
   it("is local only when the caller says so, never because the payload claims it", () => {
@@ -448,7 +448,7 @@ describe("normalize — a report built from the local log", () => {
   });
 });
 
-describe("normalize — signals the local report names as missing", () => {
+describe("normalize: signals the local report names as missing", () => {
   const section = {
     enabled: true,
     verification_coverage: { value: 0.5, unit: "share" },

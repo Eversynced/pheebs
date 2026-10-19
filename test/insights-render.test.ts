@@ -925,7 +925,7 @@ describe("renderInsights — the model-fit split", () => {
   });
 });
 
-describe("renderInsights — a report built from the local log", () => {
+describe("renderInsights: a report built from the local log", () => {
   const payload = {
     local: true,
     days: 30,
@@ -956,7 +956,7 @@ describe("renderInsights — a report built from the local log", () => {
   });
 });
 
-describe("renderInsights — judgement signals the local report cannot compute", () => {
+describe("renderInsights: judgement signals the local report cannot compute", () => {
   const draw = (judgement_signals: unknown) =>
     renderInsights(normalize({ sections: { judgement_signals } }, { local: true }), WIDE).join(
       "\n",

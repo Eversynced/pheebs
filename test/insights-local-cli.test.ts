@@ -100,7 +100,7 @@ afterAll(async () => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("pheebs insights — from the local log", () => {
+describe("pheebs insights: from the local log", () => {
   it("reads the log when no backend is configured, and says so first", async () => {
     const { stdout, status } = await run(home(), logDir());
     expect(status).toBe(0);
