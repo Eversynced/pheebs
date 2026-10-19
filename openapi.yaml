@@ -895,6 +895,58 @@ components:
             refinement_to_repair: { $ref: "#/components/schemas/JudgementSignal" }
             wholesale_accept: { $ref: "#/components/schemas/WholesaleAcceptSignal" }
             model_fit: { $ref: "#/components/schemas/ModelFitSignal" }
+            repair_attribution:
+              description: |
+                Left out when no session in the window was repair-heavy: there is nothing to
+                attribute, and a block of zeros would read as a finding about work that needed no
+                repair.
+              allOf: [{ $ref: "#/components/schemas/RepairAttribution" }]
+
+    RepairAttribution:
+      type: object
+      description: |
+        Why a repair-heavy session needed its repairs, as counts by reading. Not a sixth signal:
+        it carries no rate, no trend and no team median, only the sessions and how they read.
+
+        **Correlational, and the thresholds are provisional.** What makes a session repair-heavy,
+        and how little context counts as little, are the backend's own cutoffs and are expected to
+        move with calibration, which is why they are not in this contract. One session says little;
+        a pattern over weeks says something.
+
+        **Needs a prompt classifier and `model_fit`'s verdict.** Every reading compares the model
+        that ran against the one the work called for, so a session without a verdict gets no
+        reading rather than a guessed one.
+
+        **No default reading.** A repair-heavy session that matches none of the three gets none, so
+        `split` sums to at most `sessions`, and the difference is the sessions with no reading:
+        no verdict to compare against, or little context on a model below the work, where either
+        could be the cause.
+      required: [sessions, split]
+      properties:
+        sessions:
+          type: integer
+          description: |
+            Every repair-heavy session in the window, whether or not it got a reading. At least
+            the sum of `split`.
+        split:
+          type: object
+          description: |
+            The sessions that got a reading, by reading. All three are required together, for the
+            same reason as `model_fit`'s `split`: a split that omits a reading moves its sessions
+            somewhere a reader cannot see.
+          required: [context, model, task_difficulty]
+          properties:
+            context:
+              type: integer
+              description: Little context or direction before the work, on a model at or above it.
+            model:
+              type: integer
+              description: Normal context, on a model below what the work called for.
+            task_difficulty:
+              type: integer
+              description: |
+                Normal context, a model at or above the work, and mostly `open_ended` scope. Hard
+                work rather than a cause to name.
 
     JudgementSignal:
       type: object
@@ -1237,7 +1289,7 @@ components:
         with them.
 
         Views inside are gated again, because they do not cost the same to build. A backend with
-        labels but no price table answers three of these four and says `not_implemented` on
+        labels but no price table answers four of these five and says `not_implemented` on
         `dollar_savings`.
       allOf:
         - $ref: "#/components/schemas/InsightsSection"
@@ -1247,6 +1299,7 @@ components:
             median_movement: { $ref: "#/components/schemas/MedianMovement" }
             wholesale_watch: { $ref: "#/components/schemas/WholesaleWatch" }
             dollar_savings: { $ref: "#/components/schemas/DollarSavings" }
+            repair_attribution: { $ref: "#/components/schemas/TeamRepairAttribution" }
 
     SignalsByEngineer:
       description: |
@@ -1480,6 +1533,22 @@ components:
                     The same sessions by the cheapest class that handles the largest scope seen in
                     each, which is the same verdict `model_fit` reaches.
                   items: { $ref: "#/components/schemas/ClassCount" }
+
+    TeamRepairAttribution:
+      description: |
+        The engineer's `repair_attribution` summed across the team, with the same readings under
+        the same caveats. It names nobody, so opted-out developers count in it.
+
+        **Zeros are a finding here.** A team with labeled work and none of it repair-heavy reports
+        `sessions: 0`, which is a statement about the team, where on the engineer's report the
+        same is only an absence. A team with no labeled work answers `insufficient_data`.
+      allOf:
+        - $ref: "#/components/schemas/InsightsSection"
+        # The counts are required only on an enabled view: an off one carries its reason instead.
+        - if:
+            properties:
+              enabled: { const: true }
+          then: { $ref: "#/components/schemas/RepairAttribution" }
 
     ClassCount:
       type: object

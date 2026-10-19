@@ -266,6 +266,22 @@ toward it too, so a backend without a classifier undercounts this signal rather 
 same number by another route. The other four need prompt labels, so a backend without them omits
 those fields rather than reporting a zero.
 
+**`repair_attribution` sits beside the five, and is not a sixth.** It carries no rate, no trend and
+no median: `sessions` counts the repair-heavy sessions in the window and `split` says how many of
+them read which way. `context` is little context or direction before the work on a model at or
+above it, `model` is normal context on a model below the work, and `task_difficulty` is normal
+context and a sufficient model on mostly `open_ended` work. All three are required together, the
+same reasoning as `model_fit`'s `split`.
+
+**There is no default reading.** A repair-heavy session that matches none of the three, including
+every one with no `model_fit` verdict to compare against, gets no reading, so `split` sums to at
+most `sessions` and the difference is the sessions with none. Leave the block out when no session
+was repair-heavy: there is nothing to attribute, and zeros would read as a finding.
+
+It is correlational, and its thresholds are yours and provisional, which is why the contract
+names the readings and not the cutoffs. One session says little; a pattern over weeks says
+something. Render it with no dollar figure and no instruction.
+
 #### `model_fit.priced`
 
 The same sessions the signal counts, rendered in dollars at API list price: sessions by recommended
@@ -344,7 +360,7 @@ the cohort it answered for:
 ```
 
 **Why a separate route rather than a mode on `/insights`.** `/insights` promises the caller's own
-data and nothing else, in this document and in the schema. Two of the seven team views name
+data and nothing else, in this document and in the schema. Two of the eight team views name
 individuals. Adding a mode would have made that promise conditional on a query parameter, and a
 promise with an exception in it is not one a reader can rely on. The naming lives behind its own
 path, its own role check and its own status code instead, so each route says one true thing.
@@ -370,10 +386,10 @@ Note what that means for the median on `signals_by_engineer`: it is computed ove
 not over the rows shown. It answers "is this normal here", and a median over a filtered team
 answers a different question while looking identical.
 
-**Availability is per view, not just per section.** The seven views do not cost the same to build.
+**Availability is per view, not just per section.** The eight views do not cost the same to build.
 `practice_heatmap` needs the event stream; `signals_by_engineer` needs classifier labels;
 `dollar_savings` needs a price table and per-session token counts on top of those. Each view
-carries its own `enabled` and `reason`, so a backend reports the six it can rather than dropping
+carries its own `enabled` and `reason`, so a backend reports the seven it can rather than dropping
 the section. The same three reasons apply, and `insufficient_data` still must never render as a
 zero.
 
@@ -389,6 +405,11 @@ the same `basis` under the same rule: render it next to every figure. Its `cover
 window four ways — complete, incomplete, no telemetry, unpriced — and they do not collapse into
 each other. A session with no usage telemetry is not a session whose model is missing from your
 price table; the first is a gap in what reached you, the second is one you can close this afternoon.
+
+`repair_attribution` is the engineer's block summed across the team, under the same caveats. It
+names nobody, so opted-out developers count in it. Unlike the engineer's, it is sent with zeros
+when the team had labeled work and none of it was repair-heavy, since that is a statement about the
+team; a team with no labeled work answers `insufficient_data`.
 
 **A cohort smaller than the tenant is not defined today, and does not need to be.** Every response
 names what it answered for, so a backend can grow a selector later, a client reading tenant-wide
