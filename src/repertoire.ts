@@ -475,10 +475,17 @@ function markSplitPhase(sessions: Timed[][], days: Map<string, PracticeDay>): nu
   return undecided;
 }
 
+// Claude Code on Windows runs shell commands through `PowerShell`, whose command field is not yet
+// confirmed, so the test runs and ships these read may never be tagged there. The registry has the
+// engineer read Insufficient data on them, never Unobserved. EV4 is unverified on Claude Code
+// everywhere already.
+const WINDOWS_UNVERIFIED = new Set(["EV1", "EV5"]);
+
 function practiceStates(
   days: PracticeDay[],
   versions: ClientVersion[],
   today: Date,
+  windows: boolean,
 ): Record<string, PracticeState> {
   const weeks = [...new Set(days.map((d) => weekOf(d.day)))].sort().reverse();
   // Placement needs two active weeks. Below that every practice is a statement about the
@@ -490,8 +497,12 @@ function practiceStates(
   const mix = [...new Set(days.map((d) => d.ai_tool))];
   const cutoff = isoDay(new Date(today.getTime() - FULL_WINDOW_DAYS * 86_400_000));
 
-  const stateOf = (practice: Practice): PracticeState => {
-    const cells = mix.map((tool) => practice.cells[tool as Harness]);
+  const stateOf = (id: string, practice: Practice): PracticeState => {
+    const cells = mix.map((tool) =>
+      windows && tool === "claude_code" && WINDOWS_UNVERIFIED.has(id)
+        ? "unverified"
+        : practice.cells[tool as Harness],
+    );
     // n/a only when every harness in the mix settles it so. A harness this table has no row for
     // is unknown, not unsupported.
     if (cells.every((cell) => cell === "n/a")) return "n/a";
@@ -521,7 +532,7 @@ function practiceStates(
     return open?.(days) ? "insufficient_data" : "unobserved";
   };
 
-  return Object.fromEntries(Object.entries(PRACTICES).map(([id, p]) => [id, stateOf(p)]));
+  return Object.fromEntries(Object.entries(PRACTICES).map(([id, p]) => [id, stateOf(id, p)]));
 }
 
 function competencyStates(practices: Record<string, PracticeState>): Competency[] {
@@ -600,13 +611,21 @@ function readWindow(rows: unknown[], today: Date): Window {
 }
 
 /** Every practice's state, keyed by registry id. */
-export function practiceStatesOf(rows: unknown[], today: Date): Record<string, PracticeState> {
+export function practiceStatesOf(
+  rows: unknown[],
+  today: Date,
+  windows = false,
+): Record<string, PracticeState> {
   const { days, versions } = readWindow(rows, today);
-  return practiceStates(days, versions, today);
+  return practiceStates(days, versions, today, windows);
 }
 
 /** The `repertoire` section as the contract shapes it, over every row of the log. */
-export function repertoireSection(rows: unknown[], today: Date): Record<string, unknown> {
+export function repertoireSection(
+  rows: unknown[],
+  today: Date,
+  windows = false,
+): Record<string, unknown> {
   const { windowed, days, versions, undecided } = readWindow(rows, today);
   // No sessions is not zero sessions' worth of practice: there is nothing to say yet.
   if (windowed.length === 0) return { enabled: false, reason: "insufficient_data" };
@@ -630,7 +649,7 @@ export function repertoireSection(rows: unknown[], today: Date): Record<string, 
     }
   }
 
-  const states = practiceStates(days, versions, today);
+  const states = practiceStates(days, versions, today, windows);
   const judged = Object.values(states).filter((s) => JUDGED.includes(s));
 
   return {

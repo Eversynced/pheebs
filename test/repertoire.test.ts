@@ -244,6 +244,15 @@ describe("practiceStatesOf", () => {
     expect(practiceStatesOf(rows, TODAY).MD1).toBe("adopted");
   });
 
+  it("reads Insufficient data on Windows Claude Code where it cannot see test runs or ships", () => {
+    const rows = base();
+    expect(practiceStatesOf(rows, TODAY).EV1).toBe("unobserved");
+    expect(practiceStatesOf(rows, TODAY, true).EV1).toBe("insufficient_data");
+    expect(practiceStatesOf(rows, TODAY, true).EV5).toBe("insufficient_data");
+    // Only Claude Code runs shell commands through PowerShell there.
+    expect(practiceStatesOf(base("cursor"), TODAY, true).EV1).toBe("unobserved");
+  });
+
   it("credits a test-gated ship only when a test ran after the last edit", () => {
     const ship = (steps: Fields[]) => [
       ...base(),

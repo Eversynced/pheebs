@@ -123,7 +123,9 @@ export async function runInsights(args: string[]): Promise<void> {
 
 // Reads the log and nothing else: no token, no endpoint, no request.
 function runLocal(days: number, json: boolean): void {
-  const payload = localInsights(readLogRows(resolveLogPath()), days, new Date());
+  // The log was written on this machine, so its platform is the one the hooks ran on.
+  const windows = process.platform === "win32";
+  const payload = localInsights(readLogRows(resolveLogPath()), days, new Date(), windows);
   if (json) {
     process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     return;

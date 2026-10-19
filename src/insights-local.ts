@@ -48,13 +48,18 @@ export function readLogRows(dir: string): unknown[] {
  * tool events. The other four rest on prompt labels from a classifier and on telemetry exported to
  * a backend. `unavailable` is the local report's own field, naming why each one is missing.
  */
-export function localInsights(rows: unknown[], days: number, today: Date): Record<string, unknown> {
+export function localInsights(
+  rows: unknown[],
+  days: number,
+  today: Date,
+  windows = false,
+): Record<string, unknown> {
   const coverage = verificationCoverage(rows, days, today);
   return {
     local: true,
     days,
     sections: {
-      repertoire: repertoireSection(rows, today),
+      repertoire: repertoireSection(rows, today, windows),
       judgement_signals: {
         enabled: true,
         ...("value" in coverage && { verification_coverage: coverage }),
