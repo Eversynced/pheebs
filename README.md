@@ -221,9 +221,7 @@ median, which answers "is this normal here" without naming anyone.
 It reads the optional `GET /insights` route, so what you see depends on what your backend
 computes. With no backend set, or with `--local`, it reads your local log instead, makes no
 request, and reports the Repertoire section and verification coverage, the one judgement signal
-the log can carry; the report says it is local before anything else. It does not split its
-counts by developer, so it names the developer stamps on the rows in its window, says so when
-there is more than one, and counts apart the rows stamped `unknown` and the rows with no stamp. A section it cannot produce says so in one line and gives the reason, rather than
+the log can carry; the report says it is local before anything else. A section it cannot produce says so in one line and gives the reason, rather than
 reporting a zero that reads like a measurement.
 
 Managers can read the same model across their tenant:

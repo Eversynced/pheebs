@@ -125,8 +125,7 @@ export async function runInsights(args: string[]): Promise<void> {
 function runLocal(days: number, json: boolean): void {
   const payload = localInsights(readLogRows(resolveLogPath()), days, new Date());
   if (json) {
-    // Developer stamps are strings read off the log, and JSON.stringify leaves a C1 control raw.
-    process.stdout.write(`${escapeControlChars(JSON.stringify(payload, null, 2))}\n`);
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     return;
   }
   const opts = resolveRenderOptions(process.env, process.platform, process.stdout.columns);

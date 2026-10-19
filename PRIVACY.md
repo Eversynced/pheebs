@@ -201,8 +201,7 @@ print it.
 With no backend endpoint set, or with `--local`, the command makes no request at all. It reads
 `~/.pheebs/logs/` and computes the Repertoire section and verification coverage on your machine
 ([`src/insights-local.ts`](./src/insights-local.ts)); what it reads is held in memory to count
-and is not written anywhere. The report prints the `developer` labels found in the log, so you can
-see whose rows it counted.
+and is not written anywhere.
 
 ## See it for yourself
 

@@ -85,22 +85,10 @@ export interface Section {
   dropped: number;
 }
 
-export interface Developers {
-  stamps: string[];
-  /** Stamps the bound left out, so a long list is not read as a short one. */
-  dropped: number;
-  /** Rows stamped `unknown`, which a hook writes when it could not resolve an identity. */
-  unknown?: number;
-  /** Rows with no developer stamp at all. */
-  unstamped?: number;
-}
-
 export interface Report {
   /** Built from this machine's log rather than answered by a backend. */
   local: boolean;
   days?: number;
-  /** Local report only: the developer stamps on the rows read, which the counts do not split. */
-  developers?: Developers;
   sections: Section[];
   /** Sections this client version does not render, which is not the same as none at all. */
   unrecognized: number;
@@ -393,17 +381,6 @@ function pricedSection(raw: unknown): Section | undefined {
  * Total over any input: whatever arrives, a `Report` comes back. `local` is the caller's to say,
  * never the payload's, so a backend cannot label its own report as computed on this machine.
  */
-function developersOf(value: unknown): Developers | undefined {
-  if (!isRecord(value)) return undefined;
-  const stamps = Array.isArray(value.stamps) ? Array.from(value.stamps).map(label) : [];
-  return {
-    stamps: stamps.slice(0, MAX_ROWS),
-    dropped: Math.max(0, stamps.length - MAX_ROWS),
-    unknown: count(value.unknown),
-    unstamped: count(value.unstamped),
-  };
-}
-
 export function normalize(payload: unknown, { local = false }: { local?: boolean } = {}): Report {
   const root = isRecord(payload) ? payload : {};
   const map = isRecord(root.sections) ? root.sections : {};
@@ -423,7 +400,6 @@ export function normalize(payload: unknown, { local = false }: { local?: boolean
 
   return {
     local,
-    developers: local ? developersOf(root.developers) : undefined,
     days: days !== undefined && Number.isInteger(days) && days >= 1 ? days : undefined,
     sections,
     unrecognized: Object.keys(map).length - recognized,
