@@ -649,6 +649,6 @@ export function repertoireSection(rows: unknown[], today: Date): Record<string, 
     compaction: { auto, manual },
     competencies: competencyStates(states),
     // Not in the contract: a count only the local report has, of the gap it cannot close.
-    ...(undecided > 0 && { split_phase_undecided: undecided }),
+    ...(undecided > 0 && { unknown_model_sessions: undecided }),
   };
 }

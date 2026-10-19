@@ -30,7 +30,7 @@ export interface Repertoire {
   auto?: number;
   manual?: number;
   /** Local report only: sessions whose split-phase delivery the log cannot decide. */
-  splitPhaseUndecided?: number;
+  unknownModelSessions?: number;
 }
 
 export interface Signal {
@@ -251,7 +251,7 @@ function repertoireOf(
       artifactBreadth: count(section.artifact_breadth),
       auto: count(compaction?.auto),
       manual: count(compaction?.manual),
-      splitPhaseUndecided: local ? count(section.split_phase_undecided) : undefined,
+      unknownModelSessions: local ? count(section.unknown_model_sessions) : undefined,
     },
   };
 }

@@ -941,7 +941,7 @@ describe("renderInsights — a report built from the local log", () => {
   it("counts the sessions whose split-phase delivery the log cannot decide", () => {
     const withGap = {
       days: 30,
-      sections: { repertoire: { enabled: true, sessions: 4, split_phase_undecided: 2 } },
+      sections: { repertoire: { enabled: true, sessions: 4, unknown_model_sessions: 2 } },
     };
     const line = "Split-phase delivery: undecided in 2 session(s)";
     expect(renderInsights(normalize(withGap, { local: true }), WIDE).join("\n")).toContain(line);

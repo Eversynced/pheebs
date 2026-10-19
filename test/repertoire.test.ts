@@ -174,7 +174,7 @@ describe("practiceStatesOf", () => {
         execute,
       );
       expect(practiceStatesOf(rows, TODAY).MD6).toBe("adopted");
-      expect(repertoireSection(rows, TODAY)).not.toHaveProperty("split_phase_undecided");
+      expect(repertoireSection(rows, TODAY)).not.toHaveProperty("unknown_model_sessions");
     });
 
     it("does not read a switch Claude Code made for itself as a split", () => {
@@ -208,7 +208,7 @@ describe("practiceStatesOf", () => {
         execute,
       );
       expect(practiceStatesOf(rows, TODAY).MD6).toBe("insufficient_data");
-      expect(repertoireSection(rows, TODAY).split_phase_undecided).toBe(1);
+      expect(repertoireSection(rows, TODAY).unknown_model_sessions).toBe(1);
     });
 
     it("is not judged on a client from before model switches were captured", () => {
