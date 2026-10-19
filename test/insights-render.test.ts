@@ -972,6 +972,8 @@ describe("renderInsights — judgement signals the local report cannot compute",
     expect(out).toContain("75%");
     expect(out).toContain("Pushback rate, Model-fit rate: needs a backend");
     expect(out.indexOf("75%")).toBeLessThan(out.indexOf("Pushback rate"));
+    // One machine has no team to take a median of.
+    expect(out).not.toContain("Team median");
   });
 
   it("names the field the log lacks when verification coverage needs the classifier gate", () => {

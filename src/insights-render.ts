@@ -362,6 +362,7 @@ function renderSignals(
   fit: Fit | undefined,
   opts: RenderOptions,
   unavailable: Unavailable[] = [],
+  local = false,
 ): string[] {
   if (signals.length === 0 && unavailable.length === 0) {
     return wrap("This backend produced no signals.", opts.width);
@@ -371,12 +372,20 @@ function renderSignals(
   // a signal instead of re-finding it at a new indent in each.
   const labelWidth = signals.reduce((w, s) => Math.max(w, displayWidth(s.label)), 0);
 
-  const lines = renderTable(
-    signals.map((s) => [s.label, cell(s.value, s.unit), cell(s.teamMedian, s.unit)]),
-    ["left", "right", "right"],
-    opts,
-    { headers: ["Signal", "You", "Team median"], labelWidth },
-  );
+  // One machine's log has no team, so the local report has no median column to leave empty.
+  const lines = local
+    ? renderTable(
+        signals.map((s) => [s.label, cell(s.value, s.unit)]),
+        ["left", "right"],
+        opts,
+        { headers: ["Signal", "You"], labelWidth },
+      )
+    : renderTable(
+        signals.map((s) => [s.label, cell(s.value, s.unit), cell(s.teamMedian, s.unit)]),
+        ["left", "right", "right"],
+        opts,
+        { headers: ["Signal", "You", "Team median"], labelWidth },
+      );
 
   const trended = signals.filter((s) => s.trend.length >= 2);
   if (trended.length > 0) {
@@ -508,7 +517,7 @@ function renderCost(data: Cost, opts: RenderOptions): string[] {
   return lines;
 }
 
-function renderSection(section: Section, opts: RenderOptions): string[] {
+function renderSection(section: Section, opts: RenderOptions, local: boolean): string[] {
   const { body } = section;
   if (body.kind === "unavailable") {
     const reason = body.reason ? REASON_TEXT[body.reason] : "not available";
@@ -519,7 +528,7 @@ function renderSection(section: Section, opts: RenderOptions): string[] {
     body.kind === "repertoire"
       ? renderRepertoire(body.data, opts)
       : body.kind === "signals"
-        ? renderSignals(body.data, body.fit, opts, body.unavailable)
+        ? renderSignals(body.data, body.fit, opts, body.unavailable, local)
         : renderCost(body.data, opts);
 
   const out = [...wrap(section.label, opts.width), "", ...lines];
@@ -543,7 +552,7 @@ export function renderInsights(report: Report, opts: RenderOptions): string[] {
 
   for (const section of report.sections) {
     lines.push("");
-    for (const line of renderSection(section, opts)) lines.push(line);
+    for (const line of renderSection(section, opts, report.local)) lines.push(line);
   }
 
   if (report.sections.length === 0) {
