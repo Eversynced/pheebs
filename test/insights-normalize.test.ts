@@ -428,3 +428,22 @@ describe("normalize — the model-fit split", () => {
     expect(labels).toContain("Model-fit rate");
   });
 });
+
+describe("normalize — a report built from the local log", () => {
+  const local = { local: true, sections: { judgement_signals: { reason: "needs_backend" } } };
+
+  it("is local only when the caller says so, never because the payload claims it", () => {
+    expect(normalize(local).local).toBe(false);
+    expect(normalize(local, { local: true }).local).toBe(true);
+  });
+
+  // Read from a backend it would be false: the backend is the thing the reader is told is missing.
+  it("reads the needs-a-backend reason from the local report only", () => {
+    const reasonIn = (report: ReturnType<typeof normalize>) => {
+      const body = report.sections[0].body;
+      return body.kind === "unavailable" ? body.reason : "available";
+    };
+    expect(reasonIn(normalize(local))).toBeUndefined();
+    expect(reasonIn(normalize(local, { local: true }))).toBe("needs_backend");
+  });
+});

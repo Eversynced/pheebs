@@ -5,7 +5,9 @@
 // What comes out is a structure the renderer can be simple and total over, and the renderer does
 // no guarding of its own.
 
-export type Reason = "no_consent" | "not_implemented" | "insufficient_data";
+// `needs_backend` is the client's own, for a section the local report cannot compute. It is never
+// read from a backend, which is the one place it would be false.
+export type Reason = "no_consent" | "not_implemented" | "insufficient_data" | "needs_backend";
 
 export interface Competency {
   name: string;
@@ -71,6 +73,8 @@ export interface Section {
 }
 
 export interface Report {
+  /** Built from this machine's log rather than answered by a backend. */
+  local: boolean;
   days?: number;
   sections: Section[];
   /** Sections this client version does not render, which is not the same as none at all. */
@@ -87,6 +91,7 @@ export const FALLBACK_BASIS =
   "no basis supplied by this backend, so this is not money already saved";
 
 const REASONS: Reason[] = ["no_consent", "not_implemented", "insufficient_data"];
+const LOCAL_REASONS: Reason[] = [...REASONS, "needs_backend"];
 
 export const SIGNALS: [string, string][] = [
   ["verification_coverage", "Verification coverage"],
@@ -205,9 +210,9 @@ export function trendOf(value: unknown): { trend: number[]; unusable: boolean } 
   return { trend, unusable: false };
 }
 
-export function reasonOf(value: unknown): Reason | undefined {
+export function reasonOf(value: unknown, local = false): Reason | undefined {
   const name = text(value);
-  return REASONS.find((r) => r === name);
+  return (local ? LOCAL_REASONS : REASONS).find((r) => r === name);
 }
 
 function repertoireOf(section: Record<string, unknown>): { data: Repertoire; dropped: number } {
@@ -306,11 +311,15 @@ function costOf(section: Record<string, unknown>): { data: Cost; dropped: number
   };
 }
 
-function bodyOf(name: string, section: Record<string, unknown>): { body: Body; dropped: number } {
+function bodyOf(
+  name: string,
+  section: Record<string, unknown>,
+  local: boolean,
+): { body: Body; dropped: number } {
   // A section that does not say it is on is treated as off: the schema requires `enabled`, and
   // reading a missing one as "on" invents a report out of a malformed response.
   if (section.enabled !== true) {
-    return { body: { kind: "unavailable", reason: reasonOf(section.reason) }, dropped: 0 };
+    return { body: { kind: "unavailable", reason: reasonOf(section.reason, local) }, dropped: 0 };
   }
   if (name === "repertoire") {
     const { data, dropped } = repertoireOf(section);
@@ -338,8 +347,11 @@ function pricedSection(raw: unknown): Section | undefined {
   return { label: PRICED_LABEL, body: { kind: "cost", data }, dropped };
 }
 
-/** Total over any input: whatever arrives, a `Report` comes back. */
-export function normalize(payload: unknown): Report {
+/**
+ * Total over any input: whatever arrives, a `Report` comes back. `local` is the caller's to say,
+ * never the payload's, so a backend cannot label its own report as computed on this machine.
+ */
+export function normalize(payload: unknown, { local = false }: { local?: boolean } = {}): Report {
   const root = isRecord(payload) ? payload : {};
   const map = isRecord(root.sections) ? root.sections : {};
   const days = count(root.days);
@@ -347,7 +359,7 @@ export function normalize(payload: unknown): Report {
   const sections = SECTIONS.flatMap((name) => {
     const section = map[name];
     if (!isRecord(section)) return [];
-    const { body, dropped } = bodyOf(name, section);
+    const { body, dropped } = bodyOf(name, section, local);
     return [{ label: LABELS[name], body, dropped }];
   });
 
@@ -357,6 +369,7 @@ export function normalize(payload: unknown): Report {
   const recognized = SECTIONS.filter((name) => isRecord(map[name])).length;
 
   return {
+    local,
     days: days !== undefined && Number.isInteger(days) && days >= 1 ? days : undefined,
     sections,
     unrecognized: Object.keys(map).length - recognized,

@@ -211,6 +211,8 @@ export const REASON_TEXT: Record<string, string> = {
   insufficient_data: "not enough sessions yet to say anything",
   no_consent: "off for your tenant, which has not enabled prompt collection",
   not_implemented: "this backend does not produce it",
+  needs_backend:
+    "needs a backend, which computes them from prompt labels and telemetry this machine does not keep",
 };
 
 const STATE_LABELS: Record<string, string> = {
@@ -499,7 +501,11 @@ export function renderInsights(report: Report, opts: RenderOptions): string[] {
     report.days === undefined
       ? "Your recent work"
       : `Your last ${report.days} day${report.days === 1 ? "" : "s"}`;
-  const lines: string[] = wrap(header, opts.width);
+  // First, so a report from the log is never read as the backend's.
+  const lines: string[] = report.local
+    ? [...wrap("Local report, from this machine's log. No backend was asked.", opts.width), ""]
+    : [];
+  lines.push(...wrap(header, opts.width));
 
   for (const section of report.sections) {
     lines.push("");

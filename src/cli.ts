@@ -25,7 +25,7 @@ Commands:
   init                  Register hooks + OTel (interactive in a terminal)
   doctor                Verify hooks are registered (both scopes unless one is named)
   config <cmd>          Get/set settings — endpoint, token, auto-update, classify
-  insights              Report on your own work, from the backend
+  insights              Report on your own work, from the backend or else the local log
   scan                  Scan repo for AI-config artifacts
   update                Update pheebs to the latest npm release
   uninstall             Remove pheebs hooks + OTel
@@ -37,6 +37,7 @@ Options:
   --codex               Target Codex
   --no-otel             Skip OpenTelemetry configuration (init)
   --days <n>            Window for insights, 1 to 365 (default: the backend's)
+  --local               Report from the local log, even with a backend set
   --json                Print the raw insights payload, unchanged${
     manager ? "\n  --team                Report on the team instead (manager tokens only)" : ""
   }

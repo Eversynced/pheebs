@@ -924,3 +924,23 @@ describe("renderInsights — the model-fit split", () => {
     expect(out).not.toContain("e+");
   });
 });
+
+describe("renderInsights — a report built from the local log", () => {
+  const payload = {
+    local: true,
+    days: 30,
+    sections: { judgement_signals: { enabled: false, reason: "needs_backend" } },
+  };
+
+  it("opens by saying it is local, so nobody mistakes it for the backend's", () => {
+    const out = renderInsights(normalize(payload, { local: true }), WIDE);
+    expect(out[0]).toBe("Local report, from this machine's log. No backend was asked.");
+    expect(render(payload, WIDE)[0]).toBe("Your last 30 days");
+  });
+
+  it("gives judgement signals one line saying they need a backend", () => {
+    const out = renderInsights(normalize(payload, { local: true }), WIDE).join("\n");
+    expect(out).toContain("Judgement signals: needs a backend");
+    expect(out).not.toMatch(/0%/);
+  });
+});
