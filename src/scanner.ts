@@ -405,6 +405,7 @@ interface EmittedArtifact {
 function scanAndEmit(
   tool: AiTool,
   sessionId: string,
+  developerHandle?: string,
 ): { codebaseId: string; emitted: EmittedArtifact[] } | null {
   const { root, codebaseId } = resolveRepo();
   if (root === null) return null;
@@ -415,7 +416,7 @@ function scanAndEmit(
   const nowMs = Date.now();
   const timestamp = new Date(nowMs).toISOString();
   const config: PheebsConfig = { codebaseId, logPath: resolveLogPath() };
-  const developer = getDeveloperHandle();
+  const developer = developerHandle ?? getDeveloperHandle();
   const emitted: EmittedArtifact[] = [];
 
   for (const artifact of scanned) {
@@ -447,9 +448,9 @@ function scanAndEmit(
  * artifact type, recording presence and shape only. Never throws — scan failures
  * must not block the agent. Skips silently when not inside a git work tree.
  */
-export function runArtifactScan(tool: AiTool, sessionId?: string): void {
+export function runArtifactScan(tool: AiTool, sessionId?: string, developerHandle?: string): void {
   try {
-    scanAndEmit(tool, sessionId ?? SCAN_SESSION_ID);
+    scanAndEmit(tool, sessionId ?? SCAN_SESSION_ID, developerHandle);
   } catch (err) {
     process.stderr.write(`pheebs: artifact scan failed: ${err}\n`);
   }

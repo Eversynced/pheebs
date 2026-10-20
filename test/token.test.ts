@@ -108,6 +108,14 @@ describe("getStoredTokenId / tokenLast4", () => {
     expect(getStoredTokenId()).toBeUndefined();
   });
 
+  it("returns no id for a stored id that is not a non-empty string", () => {
+    existsSyncMock.mockReturnValue(true);
+    for (const id of [123, "", null]) {
+      readFileSyncMock.mockReturnValue(JSON.stringify({ token: "pheebs_abcd", id }));
+      expect(getStoredTokenId()).toBeUndefined();
+    }
+  });
+
   it("returns the last 4 characters", () => {
     expect(tokenLast4("pheebs_abcd1234")).toBe("1234");
   });
@@ -166,7 +174,11 @@ describe("validateToken", () => {
 
   it("maps a 4xx to an unknown rejection", async () => {
     stubFetch(new Response(null, { status: 401 }));
-    expect(await validateToken("pheebs_x")).toEqual({ allowed: false, reason: "unknown" });
+    expect(await validateToken("pheebs_x")).toEqual({
+      allowed: false,
+      reason: "unknown",
+      status: 401,
+    });
   });
 
   it("treats a 5xx as unreachable (undefined), not a rejection", async () => {
@@ -315,12 +327,35 @@ describe("revalidateStoredTokenIfStale", () => {
     readFileSyncMock.mockReturnValue(JSON.stringify(stored));
   }
 
-  it("does nothing when no id has been resolved yet", async () => {
+  it("resolves the id of a token stored before it could be validated", async () => {
     storeReturns({ token: "pheebs_x" });
-    stubFetch(new Error("must not be called"));
+    stubFetch(new Response(JSON.stringify({ id: "tok-1", allowed: true }), { status: 200 }));
     await revalidateStoredTokenIfStale();
-    expect(fetch).not.toHaveBeenCalled();
-    expect(writeFileSyncMock).not.toHaveBeenCalled();
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).id).toBe("tok-1");
+  });
+
+  it("revokes prompt consent but never grants it", async () => {
+    for (const [cached, served, expected] of [
+      [true, false, false],
+      [false, true, false],
+      [undefined, true, false],
+      [true, true, true],
+    ] as const) {
+      writeFileSyncMock.mockReset();
+      storeReturns({
+        token: "pheebs_x",
+        id: "tok-1",
+        prompt_collection: cached,
+        last_validated_at: "2000-01-01T00:00:00.000Z",
+      });
+      stubFetch(
+        new Response(JSON.stringify({ id: "tok-1", allowed: true, prompt_collection: served })),
+      );
+      await revalidateStoredTokenIfStale();
+      expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).prompt_collection).toBe(
+        expected,
+      );
+    }
   });
 
   it("does nothing while the last validation is within the TTL", async () => {
@@ -362,7 +397,7 @@ describe("revalidateStoredTokenIfStale", () => {
     expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).role).toBe("engineer");
   });
 
-  it("drops the id when the token has been revoked server-side", async () => {
+  it("deletes the token when it has been revoked server-side", async () => {
     storeReturns({ token: "pheebs_x", id: "old", last_validated_at: "2000-01-01T00:00:00.000Z" });
     stubFetch(
       new Response(
@@ -370,14 +405,82 @@ describe("revalidateStoredTokenIfStale", () => {
         { status: 200 },
       ),
     );
-    await revalidateStoredTokenIfStale();
-    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string)).toEqual({ token: "pheebs_x" });
+    expect(await revalidateStoredTokenIfStale()).toBe(true);
+    expect(unlinkSyncMock).toHaveBeenCalledOnce();
+    expect(writeFileSyncMock).not.toHaveBeenCalled();
   });
 
-  it("keeps the cache untouched when the backend is unreachable", async () => {
-    storeReturns({ token: "pheebs_x", id: "tok-1", last_validated_at: "2000-01-01T00:00:00.000Z" });
-    stubFetch(new Error("network down"));
+  it("keeps the id and stamps the attempt when there is no verdict", async () => {
+    for (const response of [
+      new Error("network down"),
+      new Response("", { status: 429 }),
+      new Response("", { status: 404 }),
+    ]) {
+      writeFileSyncMock.mockReset();
+      unlinkSyncMock.mockReset();
+      storeReturns({
+        token: "pheebs_x",
+        id: "tok-1",
+        last_validated_at: "2000-01-01T00:00:00.000Z",
+      });
+      stubFetch(response);
+      expect(await revalidateStoredTokenIfStale()).toBe(false);
+      const written = JSON.parse(writeFileSyncMock.mock.calls[0][1] as string);
+      expect(written).toMatchObject({
+        token: "pheebs_x",
+        id: "tok-1",
+        last_validated_at: "2000-01-01T00:00:00.000Z",
+      });
+      expect(written.last_attempt_at).toBeTypeOf("string");
+      expect(unlinkSyncMock).not.toHaveBeenCalled();
+    }
+  });
+
+  it("drops the id and consent on a 2xx answer that carries no id", async () => {
+    storeReturns({
+      token: "pheebs_x",
+      id: "tok-1",
+      prompt_collection: true,
+      last_validated_at: "2000-01-01T00:00:00.000Z",
+    });
+    stubFetch(new Response(JSON.stringify({ allowed: false, reason: "unknown" })));
+    expect(await revalidateStoredTokenIfStale()).toBe(false);
+    const written = JSON.parse(writeFileSyncMock.mock.calls[0][1] as string);
+    expect(written).toEqual({ token: "pheebs_x", last_validated_at: expect.any(String) });
+    expect(unlinkSyncMock).not.toHaveBeenCalled();
+  });
+
+  it("neither asks nor records an attempt without a backend", async () => {
+    backend.configured = false;
+    storeReturns({ token: "pheebs_x" });
+    stubFetch(new Error("must not be called"));
     await revalidateStoredTokenIfStale();
+    expect(fetch).not.toHaveBeenCalled();
     expect(writeFileSyncMock).not.toHaveBeenCalled();
+  });
+
+  it("does not retry within an hour of an unanswered attempt", async () => {
+    storeReturns({ token: "pheebs_x", last_attempt_at: new Date().toISOString() });
+    stubFetch(new Error("must not be called"));
+    await revalidateStoredTokenIfStale();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(writeFileSyncMock).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing when the token changed while the check was in flight", async () => {
+    existsSyncMock.mockReturnValue(true);
+    for (const response of [
+      new Response(JSON.stringify({ id: "old", allowed: true })),
+      new Response(JSON.stringify({ allowed: false, reason: "revoked" })),
+    ]) {
+      readFileSyncMock
+        .mockReset()
+        .mockReturnValueOnce(JSON.stringify({ token: "pheebs_old", id: "old" }))
+        .mockReturnValue(JSON.stringify({ token: "pheebs_new", id: "new" }));
+      stubFetch(response);
+      expect(await revalidateStoredTokenIfStale()).toBe(false);
+    }
+    expect(writeFileSyncMock).not.toHaveBeenCalled();
+    expect(unlinkSyncMock).not.toHaveBeenCalled();
   });
 });

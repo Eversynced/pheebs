@@ -1,21 +1,19 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, execSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { systemExe } from "../src/windows.js";
-
-const repoRoot = join(import.meta.dirname, "..");
-const cliPath = join(repoRoot, "dist", "cli.js");
+import { cliPath, runHookRows, withPath } from "./hook-runner.js";
 
 type RunResult = { stdout: string; stderr: string; status: number };
 
@@ -29,49 +27,6 @@ function runCli(...args: string[]): RunResult {
   } catch (err) {
     const e = err as { stdout?: string; stderr?: string; status?: number };
     return { stdout: e.stdout ?? "", stderr: e.stderr ?? "", status: e.status ?? 1 };
-  }
-}
-
-// Without a cached handle, hooks and init resolve the developer through `gh api` and git, which
-// can reach GitHub and, on a cold Windows CI runner, took 18s on its first call.
-function seedDeveloperHandle(home: string): void {
-  mkdirSync(join(home, ".pheebs"), { recursive: true });
-  writeFileSync(join(home, ".pheebs", ".developer-handle"), `${Date.now()}\ntest-dev`);
-}
-
-// Run a hook, feeding the payload on stdin and writing logs to a throwaway dir. The home is
-// throwaway too: a hook reads ~/.pheebs, and a session start writes there and can launch
-// the developer's own auto-update.
-function runHookRows(
-  args: string[],
-  payload: unknown,
-  input: string | Buffer = JSON.stringify(payload),
-): Record<string, unknown>[] {
-  const dir = mkdtempSync(join(tmpdir(), "pheebs-test-"));
-  const home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
-  seedDeveloperHandle(home);
-  try {
-    execFileSync(process.execPath, [cliPath, ...args], {
-      encoding: "utf-8",
-      input,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        HOME: home,
-        USERPROFILE: home,
-        PHEEBS_LOG_PATH: dir,
-        PHEEBS_CODEBASE_ID: "test/hooks",
-        PHEEBS_DEBUG: "1", // route the remote transport to the no-network debug sink
-      },
-    });
-    return readdirSync(dir)
-      .filter((f) => f.endsWith(".jsonl"))
-      .flatMap((f) => readFileSync(join(dir, f), "utf-8").trim().split("\n"))
-      .filter(Boolean)
-      .map((line) => JSON.parse(line));
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(home, { recursive: true, force: true });
   }
 }
 
@@ -145,6 +100,117 @@ describe("hook stdin", () => {
   });
 });
 
+// A `gh` that leaves a marker when run, ahead of the real one on PATH, so a test proves no
+// process asked GitHub for a handle rather than only that none was recorded.
+function fakeGh(): { path: string; marker: string; cleanup: () => void } {
+  const bin = mkdtempSync(join(tmpdir(), "pheebs-fake-gh-"));
+  const marker = join(bin, "gh-ran");
+  writeFileSync(join(bin, "gh"), `#!/bin/sh\necho ran > "${marker}"\necho octocat\n`, {
+    mode: 0o755,
+  });
+  writeFileSync(join(bin, "gh.cmd"), `@echo ran> "${marker}"\r\n@echo octocat\r\n`);
+  const path = `${bin}${delimiter}${process.env.PATH ?? process.env.Path ?? ""}`;
+  return { path, marker, cleanup: () => rmSync(bin, { recursive: true, force: true }) };
+}
+
+const GIT_EMAIL_ENV = {
+  // Command-line-level git config, so neither the runner's nor the repo's email leaks in.
+  GIT_CONFIG_COUNT: "1",
+  GIT_CONFIG_KEY_0: "user.email",
+  GIT_CONFIG_VALUE_0: "dev@example.com",
+};
+const GIT_EMAIL_LABEL = `dev-${createHash("sha256").update("dev@example.com").digest("hex").substring(0, 6)}`;
+
+describe("developer identity", () => {
+  // Without this, a shim the shell cannot find would make every "gh never ran" check pass.
+  it("runs the fake gh when something does invoke it", () => {
+    const gh = fakeGh();
+    try {
+      execSync("gh", { env: withPath({ ...process.env }, gh.path), stdio: "ignore" });
+      expect(existsSync(gh.marker)).toBe(true);
+    } finally {
+      gh.cleanup();
+    }
+  });
+
+  it("stamps the stored token id on hook events and artifact_found, never running gh", () => {
+    const gh = fakeGh();
+    try {
+      const rows = runHookRows(["hook", "session_started"], { session_id: "id-1" }, undefined, {
+        path: gh.path,
+        setupHome: (home) => {
+          mkdirSync(join(home, ".pheebs"), { recursive: true });
+          writeFileSync(
+            join(home, ".pheebs", ".token"),
+            JSON.stringify({ token: "pheebs_e2e", id: "tok-e2e", developer: "octocat" }),
+          );
+        },
+      });
+      expect(rows.some((r) => r.event === "session_started")).toBe(true);
+      expect(rows.some((r) => r.event === "artifact_found")).toBe(true);
+      for (const row of rows) expect(row.developer).toBe("tok-e2e");
+      expect(JSON.stringify(rows)).not.toContain("octocat");
+      expect(existsSync(gh.marker)).toBe(false);
+    } finally {
+      gh.cleanup();
+    }
+  });
+
+  it("stamps a hashed git email without a token, never running gh", () => {
+    const gh = fakeGh();
+    try {
+      const rows = runHookRows(["hook", "session_started"], { session_id: "id-2" }, undefined, {
+        path: gh.path,
+        extraEnv: GIT_EMAIL_ENV,
+      });
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) expect(row.developer).toBe(GIT_EMAIL_LABEL);
+      expect(JSON.stringify(rows)).not.toContain("octocat");
+      expect(existsSync(gh.marker)).toBe(false);
+    } finally {
+      gh.cleanup();
+    }
+  });
+
+  // A named tool, because with none detected doctor stops before the identity lines.
+  describe("in doctor", () => {
+    let home: string;
+    let cwd: string;
+    beforeEach(() => {
+      home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
+      cwd = mkdtempSync(join(tmpdir(), "pheebs-cwd-"));
+    });
+    afterEach(() => {
+      for (const dir of [home, cwd]) rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("names the git-email label without a token, never running gh", () => {
+      const gh = fakeGh();
+      try {
+        const result = runIn(cwd, home, ["doctor", "--codex"], {
+          path: gh.path,
+          extraEnv: GIT_EMAIL_ENV,
+        });
+        expect(result.stdout).toContain(`Developer on events: ${GIT_EMAIL_LABEL}`);
+        expect(existsSync(gh.marker)).toBe(false);
+      } finally {
+        gh.cleanup();
+      }
+    });
+
+    it("names the token id events carry, not the developer name the token line shows", () => {
+      mkdirSync(join(home, ".pheebs"), { recursive: true });
+      writeFileSync(
+        join(home, ".pheebs", ".token"),
+        JSON.stringify({ token: "pheebs_e2e", id: "tok-e2e", developer: "octocat" }),
+      );
+      const result = runIn(cwd, home, ["doctor", "--codex"]);
+      expect(result.stdout).toContain("Pheebs token: octocat");
+      expect(result.stdout).toContain("Developer on events: tok-e2e");
+    });
+  });
+});
+
 // spawnSync rather than the execFileSync helper above: the scope assertions below are about
 // warnings, which land on stderr even when the command succeeds.
 function runIn(
@@ -153,15 +219,8 @@ function runIn(
   args: string[],
   { path, extraEnv }: { path?: string; extraEnv?: NodeJS.ProcessEnv } = {},
 ): RunResult {
-  seedDeveloperHandle(home);
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, USERPROFILE: home, ...extraEnv };
-  if (path !== undefined) {
-    // Windows spells it `Path`; drop every spelling so the child sees only the one set here.
-    for (const key of Object.keys(env)) {
-      if (key.toUpperCase() === "PATH") delete env[key];
-    }
-    env.PATH = path;
-  }
+  if (path !== undefined) withPath(env, path);
   const result = spawnSync(process.execPath, [cliPath, ...args], { encoding: "utf-8", cwd, env });
   return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", status: result.status ?? 1 };
 }
@@ -470,6 +529,20 @@ describe("installs outside the current directory", () => {
       const env = JSON.parse(readFileSync(settingsOf(repo), "utf-8")).env ?? {};
       expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBeUndefined();
       expect(env.OTEL_EXPORTER_OTLP_HEADERS).toBeUndefined();
+    }
+  });
+
+  it("clearing the token strips the exporter config from every repo", () => {
+    run(home, "config", "set", "base-url", "https://example.invalid");
+    run(home, "config", "set", "token", "pheebs_test_token");
+    run(repoA, "init");
+    run(repoB, "init");
+    expect(readFileSync(settingsOf(repoA), "utf-8")).toContain("pheebs_test_token");
+
+    run(home, "config", "unset", "token");
+
+    for (const repo of [repoA, repoB]) {
+      expect(readFileSync(settingsOf(repo), "utf-8")).not.toContain("pheebs_test_token");
     }
   });
 

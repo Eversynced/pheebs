@@ -1,44 +1,23 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { readJsonFile } from "./pheebs-store.js";
+import { getStoredTokenId } from "./token.js";
 
-const CACHE_PATH = join(homedir(), ".pheebs", ".developer-handle");
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+// Keyed by session rather than machine-wide: `git config` answers per repo, and a session stays
+// in one, so a session never picks up another repo's email.
+const SESSION_CACHE_PATH = join(homedir(), ".pheebs", ".developer-handles.json");
 
-function readCache(): string | undefined {
+// Enough for every session a developer plausibly has open at once.
+const MAX_CACHED_SESSIONS = 32;
+
+function hashedGitEmail(): string {
   try {
-    if (!existsSync(CACHE_PATH)) return undefined;
-    const raw = readFileSync(CACHE_PATH, "utf-8").trim();
-    const newline = raw.indexOf("\n");
-    if (newline === -1) return undefined;
-    const ts = Number(raw.slice(0, newline));
-    if (Date.now() - ts > CACHE_TTL_MS) return undefined;
-    const handle = raw.slice(newline + 1);
-    return handle || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function writeCache(handle: string): void {
-  try {
-    mkdirSync(dirname(CACHE_PATH), { recursive: true });
-    writeFileSync(CACHE_PATH, `${Date.now()}\n${handle}`);
-  } catch {}
-}
-
-function resolve(): string {
-  try {
-    const handle = execSync("gh api /user --jq .login", { stdio: ["pipe", "pipe", "ignore"] })
-      .toString()
-      .trim();
-    if (handle) return handle;
-  } catch {}
-
-  try {
-    const email = execSync("git config user.email", { stdio: ["pipe", "pipe", "ignore"] })
+    const email = execFileSync("git", ["config", "user.email"], {
+      stdio: ["pipe", "pipe", "ignore"],
+    })
       .toString()
       .trim();
     if (email) {
@@ -50,11 +29,32 @@ function resolve(): string {
   return "unknown";
 }
 
-export function getDeveloperHandle(): string {
-  const cached = readCache();
-  if (cached) return cached;
+// The token id first, because it is the identity the backend stamps on ingest, so local logs
+// line up with stored rows. A hashed git email keeps a local-only install, which has no token,
+// on a stable label without recording the address. That label is spawned once per session,
+// not on every tool call.
+export function getDeveloperHandle(sessionId?: string): string {
+  const tokenId = getStoredTokenId();
+  if (tokenId) return tokenId;
+  if (!sessionId) return hashedGitEmail();
 
-  const handle = resolve();
-  if (handle !== "unknown") writeCache(handle);
+  const cache = readJsonFile<Record<string, unknown>>(SESSION_CACHE_PATH) ?? {};
+  const cached = cache[sessionId];
+  if (typeof cached === "string") return cached;
+
+  const handle = hashedGitEmail();
+  if (handle === "unknown") return handle;
+  try {
+    const kept = Object.entries(cache)
+      .filter(([id]) => id !== sessionId)
+      .slice(-(MAX_CACHED_SESSIONS - 1));
+    // Not owner-only like the token: it holds what every log line already carries, and the
+    // ACL on Windows would cost two more spawns than the git call this saves.
+    mkdirSync(dirname(SESSION_CACHE_PATH), { recursive: true });
+    writeFileSync(
+      SESSION_CACHE_PATH,
+      JSON.stringify(Object.fromEntries([...kept, [sessionId, handle]])),
+    );
+  } catch {}
   return handle;
 }

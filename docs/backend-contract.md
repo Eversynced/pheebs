@@ -75,11 +75,18 @@ One more asymmetry worth knowing: the client does **not** read `allowed` on this
 branches on `reason === "revoked"` and on the presence of `id`. A rejection must therefore **omit
 `id`**, or the token is stored as valid and its identity used on every event.
 
-`prompt_collection` is the consent gate for the next route. It is cached locally at token-set time
-and **never refreshed automatically** — nothing on the hook path revalidates it. So revoking
-consent server-side does not reach a machine until its developer re-runs `pheebs config set token`.
-**Enforce consent again on every `/classify-prompt` call; that is the only gate that actually
-revokes.**
+`prompt_collection` is the consent gate for the next route. It is cached locally at token-set time.
+A session start revalidates the token at most every 12 hours, bounded at 2 seconds, and that
+refresh **only narrows**: a revoke reaches the machine within the TTL, but a grant waits until the
+developer re-runs `pheebs config set token`. A machine that never starts a session, or never reaches
+the backend, keeps the cached value. **Enforce consent again on every `/classify-prompt` call; that
+is the only gate that actually revokes.**
+
+The same revalidation resolves the `id` of a token stored while the backend was unreachable, and
+deletes a revoked token from the machine along with the exporter config that carries it, so expect
+`/validate-token` calls from hooks, not only from `pheebs config set token`. Only `revoked` deletes the token. A 2xx without an `id` drops the cached
+identity and consent; a non-2xx answer keeps them, since a proxy sends those as often as the
+backend does, and is retried after an hour.
 
 ## `/classify-prompt`
 

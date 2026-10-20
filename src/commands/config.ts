@@ -158,6 +158,8 @@ function runUnset(key: string | undefined): void {
   switch (key) {
     case "token": {
       const removed = clearStoredToken();
+      // Without this the agent keeps exporting with the token just cleared.
+      resyncOtelConfigs();
       console.log(removed ? "pheebs: token cleared." : "pheebs: no token was set.");
       return;
     }
