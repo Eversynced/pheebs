@@ -1,12 +1,13 @@
 # Backend contract
 
 Pheebs is backend-agnostic: the client holds a base URL and a per-developer token, nothing else.
-Anything that answers the four required routes is a Pheebs backend. Two more are optional and
-read by `pheebs insights`: `/insights`, the engineer's own report, and `/insights/team`, the same
-model across a team for a manager.
+Anything that answers the four required routes is a Pheebs backend. Three more are optional:
+`/ingest/batch`, which takes queued events in bulk, and two read by `pheebs insights`:
+`/insights`, the engineer's own report, and `/insights/team`, the same model across a team for a
+manager.
 
 [`openapi.yaml`](../openapi.yaml) at the repo root is the normative schema, and
-[`examples/backend-node/`](../examples/backend-node/) is a working implementation in ~150 lines
+[`examples/backend-node/`](../examples/backend-node/) is a working implementation
 with no dependencies. This document covers what a schema cannot express: why each route behaves
 the way it does, and the failure semantics a correct implementation has to honor.
 
@@ -16,7 +17,8 @@ Read it before implementing, because three of these are easy to get backwards.
 
 | Route | Auth | Blocking? |
 |---|---|---|
-| `POST /ingest` | `Bearer <token>` | No — fire-and-forget |
+| `POST /ingest` | `Bearer <token>` | No, sent from a background process. The fallback when `/ingest/batch` is not served |
+| `POST /ingest/batch` | `Bearer <token>` | No, sent from a background process. Optional |
 | `POST /validate-token` | none | Yes, at token-set time |
 | `POST /classify-prompt` | `Bearer <token>` | Yes, ~2.5s budget |
 | `POST /otel/v1/{traces,metrics,logs}` | `Bearer <token>` | No |
@@ -36,16 +38,53 @@ rather than pinning a column per field.
 from the token. A backend that trusts a client-supplied `developer` is letting any token claim any
 identity — so ignore that field if it ever appears.
 
-**Only two status codes mean anything to the client:**
+**Only these statuses change what the client does:**
 
 - `401` / `403` — the token was rejected. The client drops a marker that `pheebs doctor` surfaces
-  to tell the developer to re-set their token.
-- `422` — unprocessable; the client writes a line to stderr.
+  to tell the developer to re-set their token, and the event stays queued.
+- `429` and a redirect: the client keeps the event and tries again later. It never follows a
+  redirect, because that would send events to a host the developer did not configure.
 
-Everything else, **including 5xx**, is swallowed (a connection-level failure prints one stderr
-line and is otherwise ignored). The client does not retry and does not queue:
-the local JSONL is the durable copy, and a hook must never block the agent. Do not design around
-client-side retry, because there isn't any.
+Everything else, **including 422 and 5xx**, is final for that event, with one exception: the
+first event sent here after a 404 or 405 from `/ingest/batch` stays queued until this route gives
+a verdict on it, since until then the client cannot tell a missing route from a passing fault. The client sends from a
+detached background process, so nothing is printed; `pheebs doctor` shows the last problem. The
+client never retries a send that may have reached `/ingest`, because nothing on this route
+promises it can tell a resend from a new event. It resends only an event the backend cannot have
+stored: a connection that never opened, a 429, a redirect, or a rejected token.
+This route is what the client falls back to when `/ingest/batch` is not served.
+
+Clients written against contract 1.4.0 send `event_id` on every envelope, a UUIDv7 that stays the
+same across resends; older clients omit it. Store it as a unique key if you can; a backend that
+ignores it keeps it as an extra field.
+
+## `/ingest/batch` (optional)
+
+`{ "events": [envelope, ...], "droppedSinceLastSend": n }`, at most 500 events. The client writes
+each event to a queue on disk and a short-lived background process sends the queue here, so no
+hook waits on the network to deliver an event.
+
+**This route must be idempotent on `event_id`.** The client retries a batch on 408, 425, 429, 499,
+any 5xx and a network error, and a crash between your commit and its acknowledgement always
+resends. Storing an id you already hold must be a no-op. Accepting duplicates and deduplicating at
+query time is not equivalent: every count over the events table would silently inflate.
+
+Answer `200 {"accepted", "duplicates", "rejected": [{"index", "reason"}]}`; a 2xx without a
+numeric `accepted` is not taken as delivery, and the batch is retried. Validate each
+envelope before storing it, and report one that fails in `rejected`: the client drops it and never
+retries it. A failure that is not about one envelope, such as a storage error, is a 5xx, and the
+client retries the whole batch. A partial store followed by a 5xx is safe, because the retry's
+already-stored ids land as duplicates.
+
+Stamp identity from the token as on `/ingest`. A batch is one token, so it never mixes identities.
+
+`droppedSinceLastSend` counts events the client dropped from its queue unsent because a cap was
+hit. It is a count, never the events; log it to see client-side loss.
+
+Not serving the route is conformant. On a 404 or 405 the client tries the first event on `/ingest`,
+and only once it gets a verdict there falls back to one `/ingest` request per event, never resending one
+that may have arrived (see [`/ingest`](#ingest)), and asks again a day later. `413` halves its batch
+size; a single event still too large is dropped, and `pheebs doctor` reports it.
 
 ## `/validate-token`
 
@@ -419,8 +458,9 @@ shape of the answer.
 ## Building one
 
 Start from [`examples/backend-node/server.js`](../examples/backend-node/server.js) — it implements
-all four required routes, answers `/insights` with `enabled: false`, leaves `/insights/team`
-unimplemented so it falls through to a `404`, appends to JSONL, and runs with `node server.js`. Point a client at it:
+all four required routes, serves the optional `/ingest/batch` idempotently on `event_id`, answers
+`/insights` with `enabled: false`, leaves `/insights/team` unimplemented so it falls through to a
+`404`, appends to JSONL, and runs with `node server.js`. Point a client at it:
 
 ```bash
 pheebs config set base-url http://localhost:8787

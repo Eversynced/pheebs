@@ -9,7 +9,8 @@ info:
     Four routes are required: `/ingest`, `/validate-token`, `/classify-prompt` and `/otel`.
     `/insights` is optional, and `pheebs insights` reads it. Not serving it leaves a backend
     conformant; the command says so and exits non-zero, which is a report it cannot produce
-    rather than a fault in the backend.
+    rather than a fault in the backend. `/ingest/batch` is optional too: a client that gets a
+    404 or 405 from it sends one event per `/ingest` request instead.
 
     Read `docs/backend-contract.md` alongside this file: it carries the failure semantics
     that a schema cannot express, and three of them are easy to get backwards.
@@ -36,9 +37,14 @@ paths:
     post:
       summary: Accept one event envelope
       description: |
-        Fire-and-forget. The client never retries and never queues — the local JSONL is the
-        durable copy and a hook must not block the agent. Only 401/403 and 422 mean anything
-        to the client; every other status, including 5xx, is swallowed.
+        The fallback for a backend without `/ingest/batch`, sent from the client's background
+        process. Nothing here promises idempotency, so the client never resends an event that
+        may have arrived: 401/403, 429 and a redirect keep the event queued, a connection that
+        never opened is retried, and every other status, including 422 and 5xx, is final.
+
+        Clients written against this version send `event_id` on every envelope. A backend
+        that stores it as a unique key gets the same deduplication `/ingest/batch` requires;
+        one that does not stores it as an extra field.
 
         The client strips `developer` and `logPath` before sending. Identity is stamped
         server-side from the token; a client-supplied `developer` must be ignored.
@@ -51,6 +57,10 @@ paths:
       responses:
         "202":
           description: Accepted. The body is ignored by the client.
+        "400":
+          description: |
+            The body is not JSON. Final for the event: the client drops it, and `pheebs doctor`
+            reports the drop.
         "401":
           description: |
             Token rejected. The client writes `~/.pheebs/.last-transport-error`, which
@@ -63,10 +73,64 @@ paths:
             pinned rather than left to the framework.
         "422":
           description: |
-            Unprocessable envelope. The client writes one line to stderr and moves on.
+            Unprocessable envelope. Final for the event: the client drops it, and `pheebs doctor`
+            reports the drop.
         "500":
           description: |
-            Swallowed by the client. Not retried — do not design around client-side retry.
+            Final for the event, since the backend may have stored it: the client drops it, and
+            `pheebs doctor` reports the drop. The exception is the first event after a 404 or
+            405 from `/ingest/batch`, which stays queued (see `docs/backend-contract.md`).
+
+  /ingest/batch:
+    post:
+      summary: Accept up to 500 event envelopes in one request (optional)
+      description: |
+        The client queues events on disk and sends them here in batches, from a background
+        process rather than the hook. It **retries** a batch on 408, 425, 429, 499, any 5xx and
+        a network error, so this route **must be idempotent on `event_id`**: storing an
+        event whose id is already stored must be a no-op, not a second row. A crash between your
+        commit and the client's acknowledgement always produces a resend.
+
+        Identity is stamped from the token, exactly as on `/ingest`, and a batch never mixes
+        identities. Validate each envelope before storing: an invalid one is reported in
+        `rejected` and dropped by the client, never retried. A failure that is not about one
+        envelope answers 5xx, and the whole batch is retried.
+
+        A backend that does not serve this route answers 404 or 405. Once a single `/ingest`
+        send gets a verdict, the client falls back to one `/ingest` per event, never resending
+        an event that may have arrived, for a day before it asks again.
+      operationId: ingestBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventBatch" }
+      responses:
+        "200":
+          description: |
+            Processed. Every event in the batch was stored, already stored, or rejected. A 2xx
+            whose body lacks a numeric `accepted` is not taken as delivery: the client retries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventBatchResult" }
+        "400":
+          description: The body is not JSON, or has no `events` array. The client drops the batch.
+        "401":
+          description: Token rejected. Handled as on `/ingest`; the client keeps the queue.
+        "403":
+          description: Token rejected. Handled identically to 401.
+        "404":
+          description: Not served. The client falls back to `/ingest`.
+        "405":
+          description: Any method but `POST`, carrying `Allow: POST`. Treated like 404.
+        "413":
+          description: |
+            The batch is too large. The client halves its batch size and retries; a single
+            event still too large is dropped, and `pheebs doctor` reports it.
+        "429":
+          description: Rate limited. Retried, honouring `Retry-After`.
+        "500":
+          description: Retried with backoff. Safe only because the route is idempotent.
 
   /validate-token:
     post:
@@ -336,6 +400,13 @@ components:
       required: [timestamp, source, event, codebase, ai_tool, session_id, version]
       additionalProperties: true
       properties:
+        event_id:
+          type: string
+          format: uuid
+          description: |
+            Client-generated (a UUIDv7) and stable across resends of the same event, so it is
+            the deduplication key. Required by `/ingest/batch`; clients written against an
+            earlier contract omit it.
         timestamp:
           type: string
           format: date-time
@@ -346,6 +417,7 @@ components:
           type: string
           enum:
             - session_started
+            - instructions_loaded
             - model_switched
             - prompt_submitted
             - command_expanded
@@ -556,6 +628,50 @@ components:
         last_modified_bucket:
           type: string
           enum: [today, this_week, this_month, this_quarter, older]
+
+    EventBatch:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            allOf:
+              - $ref: "#/components/schemas/EventEnvelope"
+              - required: [event_id]
+        droppedSinceLastSend:
+          type: integer
+          minimum: 0
+          description: |
+            How many events the client dropped from its queue, unsent, since its last
+            acknowledged batch: its disk cap or age cap was hit. A count, never the events. Log
+            it; the client still holds every dropped event in its local log.
+
+    EventBatchResult:
+      type: object
+      required: [accepted, duplicates, rejected]
+      properties:
+        accepted:
+          type: integer
+          description: Events stored by this request.
+        duplicates:
+          type: integer
+          description: Events whose `event_id` was already stored.
+        rejected:
+          type: array
+          description: Envelopes that failed validation. The client drops them.
+          items:
+            type: object
+            required: [index]
+            properties:
+              index:
+                type: integer
+                description: Position in the request's `events` array.
+              reason:
+                type: string
+                examples: [missing_field, invalid_event_id, invalid_timestamp]
 
     ValidateResult:
       type: object

@@ -1,7 +1,8 @@
 // A complete Pheebs backend in one file, with no dependencies. It implements the four required
 // routes in ../../openapi.yaml so you can point a real client at something and watch events land,
-// plus the optional /insights, whose sections all answer `enabled: false` because computing them
-// needs data this server does not keep. The other optional route, /insights/team, is left
+// plus two optional ones: /ingest/batch, which the client's background sender uses, and
+// /insights, whose sections all answer `enabled: false` because computing them needs data this
+// server does not keep. The other optional route, /insights/team, is left
 // unimplemented, which the contract expresses as a 404.
 //
 //   node examples/backend-node/server.js
@@ -13,7 +14,7 @@
 // reader lifts into a real backend — an unguarded lookup or an unhandled rejection copied into
 // production is worse than no example at all.
 
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,6 +53,24 @@ const REQUIRED_ENVELOPE_FIELDS = [
   "version",
 ];
 
+const MAX_BATCH = 500;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// The ids already stored, per identity. The client resends a batch it never saw acknowledged, so
+// storing an id twice would count one event twice. Keyed by identity too, because the client picks
+// the id: one token must not be able to claim another's ids, or probe whether they exist. Seeded
+// from the file so a restart does not forget them.
+const storedIds = new Set();
+const idKey = (identityId, eventId) => `${identityId}\n${eventId}`;
+try {
+  for (const line of readFileSync(EVENTS_FILE, "utf8").split("\n")) {
+    try {
+      const row = JSON.parse(line);
+      if (typeof row.event_id === "string") storedIds.add(idKey(row.developer, row.event_id));
+    } catch {}
+  }
+} catch {}
+
 function identityFor(token) {
   return typeof token === "string" ? TOKENS.get(token) : undefined;
 }
@@ -79,10 +98,11 @@ function readBody(req) {
     req.on("data", (chunk) => {
       raw += chunk;
       if (raw.length > 1_000_000) {
-        // Destroy, don't just reject: without this the stream keeps filling `raw` after the
-        // error, so the advertised cap bounds nothing.
-        req.destroy();
-        reject(new Error("body too large"));
+        // Stop reading, don't just reject: without this the stream keeps filling `raw` after the
+        // error, so the advertised cap bounds nothing. The caller answers 413 and then closes.
+        req.removeAllListeners("data");
+        req.pause();
+        reject(Object.assign(new Error("body too large"), { tooLarge: true }));
       }
     });
     req.on("end", () => {
@@ -115,6 +135,10 @@ function ingest(req, res, body) {
     return json(res, 422, { error: "missing required fields", missing });
   }
 
+  if (typeof body.event_id === "string" && storedIds.has(idKey(identity.id, body.event_id))) {
+    return json(res, 202, { ok: true, duplicate: true });
+  }
+
   // Identity is stamped here, from the token. The client strips `developer` before sending; if
   // it ever arrives anyway it is ignored, because trusting it would let any token claim any
   // identity.
@@ -128,8 +152,66 @@ function ingest(req, res, body) {
     return json(res, 500, { error: "could not store event" });
   }
 
+  if (typeof row.event_id === "string") storedIds.add(idKey(identity.id, row.event_id));
   console.log(`ingest  ${safe(row.event)} ${safe(row.ai_tool)} ${safe(row.codebase)}`);
   return json(res, 202, { ok: true });
+}
+
+// Idempotent on event_id, because the client retries a batch it never saw acknowledged. Each
+// envelope is judged on its own: a bad one is reported and the rest are still stored.
+function ingestBatch(req, res, body) {
+  const identity = identityFor(bearer(req));
+  if (!identity) return json(res, 401, { error: "unknown token" });
+
+  if (!Array.isArray(body.events) || body.events.length === 0) {
+    return json(res, 400, { error: "events must be a non-empty array" });
+  }
+  if (body.events.length > MAX_BATCH) {
+    return json(res, 413, { error: `at most ${MAX_BATCH} events per batch` });
+  }
+
+  const receivedAt = new Date().toISOString();
+  const rows = [];
+  const inBatch = new Set();
+  const rejected = [];
+  let duplicates = 0;
+  body.events.forEach((envelope, index) => {
+    if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope)) {
+      rejected.push({ index, reason: "not_an_object" });
+    } else if (REQUIRED_ENVELOPE_FIELDS.some((f) => envelope[f] === undefined)) {
+      rejected.push({ index, reason: "missing_field" });
+    } else if (typeof envelope.event_id !== "string" || !UUID.test(envelope.event_id)) {
+      rejected.push({ index, reason: "invalid_event_id" });
+    } else if (
+      storedIds.has(idKey(identity.id, envelope.event_id)) ||
+      inBatch.has(envelope.event_id)
+    ) {
+      duplicates += 1;
+    } else {
+      inBatch.add(envelope.event_id);
+      const { developer: _ignored, ...event } = envelope;
+      rows.push({ ...event, developer: identity.id, received_at: receivedAt });
+    }
+  });
+
+  if (rows.length > 0) {
+    try {
+      appendFileSync(EVENTS_FILE, rows.map((r) => `${JSON.stringify(r)}\n`).join(""));
+    } catch (err) {
+      // Nothing was acknowledged, so the client retries the whole batch, and the ids it stored
+      // before failing (none, for a single append) land as duplicates.
+      console.error(`ingest  batch write failed: ${safe(err.message)}`);
+      return json(res, 500, { error: "could not store events" });
+    }
+    for (const row of rows) storedIds.add(idKey(identity.id, row.event_id));
+  }
+
+  const dropped = Number(body.droppedSinceLastSend);
+  console.log(
+    `ingest  batch of ${body.events.length}: ${rows.length} stored, ${duplicates} duplicate, ` +
+      `${rejected.length} rejected${dropped > 0 ? `, client dropped ${dropped}` : ""}`,
+  );
+  return json(res, 200, { accepted: rows.length, duplicates, rejected });
 }
 
 function validateToken(_req, res, body) {
@@ -255,10 +337,17 @@ async function handle(req, res) {
   try {
     body = await readBody(req);
   } catch (err) {
-    return json(res, 422, { error: String(err.message) });
+    // On the ingest routes an oversized body gets 413, which the batch sender answers by sending
+    // less, and any other unusable body 400, which the client treats as final. An oversized body's
+    // connection is closed rather than drained.
+    const ingest = url.pathname === "/ingest" || url.pathname === "/ingest/batch";
+    if (err.tooLarge) res.on("finish", () => req.destroy());
+    const status = err.tooLarge && ingest ? 413 : ingest ? 400 : 422;
+    return json(res, status, { error: String(err.message) }, err.tooLarge ? { connection: "close" } : {});
   }
 
   if (url.pathname === "/ingest") return ingest(req, res, body);
+  if (url.pathname === "/ingest/batch") return ingestBatch(req, res, body);
   if (url.pathname === "/validate-token") return validateToken(req, res, body);
   if (url.pathname === "/classify-prompt") return classifyPrompt(req, res, body);
 
