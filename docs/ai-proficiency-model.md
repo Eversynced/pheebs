@@ -312,7 +312,8 @@ accepting everything the output says — in both cases the default went unquesti
 
 ## Engineer view
 
-One panel: current rates, the trend per signal, a wholesale-accept lens, and a model-fit lens.
+One panel: current rates, the trend per signal, a wholesale-accept lens, a model-fit lens, and
+repair attribution.
 
 **Rates.** The five signals over the trailing window, next to the team median.
 
@@ -323,6 +324,11 @@ deployment shows a 4-week trend.
 shipped unchallenged.
 
 **Model fit, split.** The fit decision over the engineer's complete sessions.
+
+**Repair attribution.** Why the repair-heavy sessions needed their repairs: little context up
+front, a model below the work, or hard open-ended work. A session that matches none of the three
+gets no reading rather than a default one. It is correlational, so one session says little and a
+pattern over weeks says something. It carries no dollar figure and no instruction.
 
 Example:
 
@@ -359,6 +365,13 @@ under-powered     ░░░░░░░░░░░    2 ·  3%
 Savings opportunity: $125 of $392 list-price spend · 32%
 (API list-price equivalent, estimated upper bound)
 
+Repair-heavy sessions: 6, read as
+
+Little context up front    3
+Model below the work       1
+Hard, open-ended work      1
+No reading                 1
+
 Pam verifies more than the team and her iteration skews healthily
 to refinement, with both trends improving. Her open question is on
 the input side: two thirds of her sessions ran above the class the
@@ -369,7 +382,7 @@ task is the judgement to practice next.
 
 ## Team view
 
-The team reads four ways.
+The team reads five ways.
 
 ### Signals by engineer
 
@@ -470,4 +483,24 @@ work, as sized        ████████▓▓▓▓▓▒▒▒▒▒▒�
 
 The gap between the two bars is the opportunity. Half the frontier
 sessions were sized cross_cutting or below.
+```
+
+### Repair attribution
+
+**Goal:** tell a context habit from a model habit. The engineer's readings summed across the
+team. A team whose repair-heavy sessions mostly read as little context up front has a Layer 1
+fix to ship, in context files and specs; one whose sessions mostly read as a model below the work
+has a default to revisit. It names nobody.
+
+Example:
+
+```
+Team Dunder Mifflin, trailing 30 days
+
+Repair-heavy sessions: 17, read as
+
+Little context up front    6
+Model below the work       3
+Hard, open-ended work      2
+No reading                 6
 ```

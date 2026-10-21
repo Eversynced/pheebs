@@ -301,7 +301,9 @@ The contract carries the fields the five judgement signals need:
 `prompt_intent`, `classifier_version`, `requests_verification` and `task_scope` on a classified
 prompt, and the `judgement_signals` section of `/insights`. Their shapes are in
 [`openapi.yaml`](../openapi.yaml), with the failure semantics in
-[`backend-contract.md`](./backend-contract.md). Implementing them is the backend's job.
+[`backend-contract.md`](./backend-contract.md). Implementing them is the backend's job. The same
+section carries repair attribution, which reads repair-heavy sessions over the same facts and is
+not a sixth signal; see [How repair attribution is read](#how-repair-attribution-is-read).
 
 | Signal | Needs | Status |
 | :-- | :-- | :-- |
@@ -425,3 +427,29 @@ it ran matched the recommendation), **over-provisioned** (it ran above), or **un
 
 **An audit, not a router.** Nothing about this signal changes which model runs. Pheebs does
 not intercept prompts, does not route them, and does not switch models on anyone's behalf.
+
+### How repair attribution is read
+
+**A reading per repair-heavy session.** A session full of `repair` prompts has three candidate
+causes, and the prompt labels alone cannot separate them. The session can, by joining two facts
+already held: the share of its labeled prompts that are `context` or `direction`, and its
+model-fit decision.
+
+| Context and direction share | Model-fit decision | Reading |
+| :-- | :-- | :-- |
+| Low | Fit or over-provisioned | Little context up front |
+| Normal | Under-powered | Model below the work |
+| Normal | Fit or over-provisioned, mostly `open_ended` scope | Hard, open-ended work |
+
+A repair-heavy session outside every row gets no reading rather than a default one. That covers
+a session with no model-fit decision to compare against, and one with little context on an
+under-powered model, where either could be the cause.
+
+| Reading | Needs | Status |
+| :-- | :-- | :-- |
+| Repair attribution | `prompt_intent` and `task_scope` on classified prompts, and the session's model-fit decision | Contract-only. This repo captures the facts and renders the counts; a backend computes the readings. |
+
+**The thresholds are the backend's, and provisional.** What makes a session repair-heavy, and how
+low a context share counts as low, are set during calibration and live in the backend, never in
+the contract or the client. It is correlational: one session says little, a pattern over weeks
+says something.
