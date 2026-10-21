@@ -48,9 +48,11 @@ change.
    never enters an event, and never crosses the network. Nothing else may join
    it: a path that came from a payload is still read-and-discard.
 2. **Hooks never break or slow the user's session.** Remote failures degrade
-   silently, never throw into the hook. All hook entries are registered with
-   `"async": true`. The local JSONL log is the durable copy; the network send is
-   fire-and-forget.
+   silently, never throw into the hook. Only Claude Code registers hooks with
+   `"async": true`; Cursor and Codex wait for the hook process to exit, so any
+   network call a hook makes is bounded by a timeout. Ingest leaves the hook
+   path entirely: the hook queues the event and a detached flusher sends it.
+   The local JSONL log is the durable copy.
 3. **Contract changes require a version bump and a doc update.** A change to
    `openapi.yaml` or to the event envelope lands together with
    [`docs/backend-contract.md`](./docs/backend-contract.md) and a version bump.
@@ -103,6 +105,7 @@ pheebs insights [--days N|--json]  # The caller's own report from the backend /i
 pheebs insights --team [--days N|--json]  # A manager's team report from /insights/team
 pheebs insights --local [--days N|--json] # Repertoire and verification coverage from the local log, no request; the default with no backend
 pheebs config list|set|unset       # base-url | auto-update | classify | token
+pheebs flush                       # Send the queued events now (hooks start it with --linger)
 ```
 
 Biome (`biome.json`) lints and formats; Vitest (`vitest.config.ts`) runs
@@ -130,7 +133,10 @@ so run `npm run build` before the CLI tests mean anything.
 | `src/backend-config.ts` | `~/.pheebs/config.json`. `hasBackend()` is the gate every network path checks. |
 | `src/installs.ts` | `~/.pheebs/installs.json`, the paths `init` wrote. Project-local is the default scope, so the exporter config lives in a file per repo and nothing else knows where those are. Local only, never part of an event. |
 | `src/git-exclude.ts` | Keeps a token-bearing project config out of git via `.git/info/exclude`, never `.gitignore`: ignoring a file is the developer's own decision about a tracked repo. Reports `excluded` / `ignored` / `tracked` / `no-repo` / `unprotected`, each confirmed with git rather than inferred, because the caller turns the answer into a promise that the token is not committed. |
-| `src/transport.ts`, `src/transports/http.ts` | The one seam for backend calls. Fire-and-forget ingest, bounded blocking classify. |
+| `src/transport.ts`, `src/transports/http.ts` | The one seam for backend calls. Ingest queues to the outbox and starts a detached flusher, never touching the network on the hook path; classify is a bounded blocking call. |
+| `src/outbox.ts` | `~/.pheebs/outbox/`, the send queue: one file per event renamed into place, capped, scoped to the backend and token it was captured for, with a single-flusher lock. Holds only the stripped envelope. |
+| `src/flusher.ts` | `pheebs flush`. Batches to `/ingest/batch` with backoff on 429, 5xx, proxy timeouts and network errors; falls back to one `/ingest` per event on a backend without the batch route, never resending one that may have arrived. |
+| `src/event-id.ts` | The UUIDv7 `event_id` every event carries, so a backend can store a resend once. |
 | `src/token.ts` | Token at `~/.pheebs/.token` (owner-only: 0600, an ACL on Windows), validation, cached identity, `prompt_collection` and `role`. A session start revalidates the token at most every 12 hours, bounded at 2 seconds: it runs after the event is written, resolves the id of a token stored offline, deletes a revoked one (and resyncs OTel), retries an unanswered check after an hour, refreshes the role, and only ever narrows `prompt_collection`, so a consent grant still waits for `config set token`. The cached role only decides whether `--help` mentions `--team`; the backend decides who is answered. |
 | `src/classify.ts` | Prompt classification, consent-gated, degrades to `prompt_intent: "unclassified"` sending no text. |
 | `src/insights.ts` | `fetchInsights(days)` and `fetchTeamInsights(days)`, the two `GET`s in the contract. Redirects are manual, because a followed one would draw a report from a host the developer never configured, and the body is capped at 4 MB, because the 10s abort does not bound a fast link. Every failure returns a printable message. |

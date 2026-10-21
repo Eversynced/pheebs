@@ -52,10 +52,21 @@ Present on every event:
 | `ai_tool` | `claude_code` \| `cursor` \| `codex` |
 | `session_id` | the agent's own session identifier |
 | `version` | the Pheebs version that wrote the row |
+| `event_id` | a random, time-ordered id for this one event, so a backend can store a resend once |
 
 `developer` is only ever the local label. When a backend is configured, the server stamps identity
 from your token and ignores the client-supplied value — the client strips `developer` before
 sending ([`src/transports/http.ts`](./src/transports/http.ts)).
+
+### The send queue
+
+With a backend and a token set, each event is also written to `~/.pheebs/outbox/` until it is
+sent, and a short-lived background process, `pheebs flush`, sends the queue in batches. The queue
+holds exactly what the network receives, the envelope with `developer` stripped, and nothing the
+local log does not already hold. It is owner-only on macOS and Linux (files 0600, directory
+0700); on Windows it inherits your profile folder's permissions. Sent events are deleted, the
+queue is discarded if you point Pheebs at a different backend or token, or unset either, and
+`pheebs uninstall` removes it.
 
 ## What is never recorded
 

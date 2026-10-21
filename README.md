@@ -199,7 +199,11 @@ pheebs doctor --codex    # checks Codex config
 pheebs doctor --global   # checks user-level config instead of project-local
 ```
 
-Reports whether all expected hook entries are registered correctly.
+Reports whether all expected hook entries are registered correctly. With a backend and a token set, it also
+shows the send queue: how many events are waiting, how long the oldest has waited, and the last
+problem sending them. Events normally leave within a minute; if they pile up, fix what doctor
+reports, then run `pheebs flush` to send them at once. A fix that changes `base-url` or the token
+discards what was queued for the old one; the local log still has those events.
 
 ### 4. Just use your tool
 
@@ -304,7 +308,7 @@ When a hook fires, Pheebs:
 3. Runs a tool-specific extractor for relevant fields
 4. Figures out who you are (your token's id, or a hashed git email without a token) and what repo you're in (`org/repo` from git remote)
 5. Writes a JSONL line to a local log file
-6. Sends it to the Pheebs backend (`POST <endpoint>/ingest`, authenticated with your token) — the backend stamps your identity from the token and stores it. If no token is set, the send is skipped and only the local log is kept.
+6. Queues it for the Pheebs backend, and a background `pheebs flush` sends the queue in batches (`POST <endpoint>/ingest/batch`, authenticated with your token). The backend stamps your identity from the token and stores it. No hook waits on the network to deliver an event. If no token is set, nothing is queued and only the local log is kept.
 
 A log entry looks like this:
 
@@ -382,6 +386,7 @@ pheebs init [--global] [--cursor|--codex] [--no-otel]
 pheebs doctor [--global|--project] [--cursor|--codex]
 pheebs config <list | get <key> | set <key> <value> | unset <key>>
 pheebs insights [--days <n>] [--json] [--team | --local]
+pheebs flush
 pheebs hook <event_name> [--trigger-type <type>]
 pheebs hook-cursor <event_name>
 pheebs hook-codex <event_name>
@@ -399,7 +404,8 @@ pheebs hook-codex <event_name>
 | `insights --local` | Render Repertoire and verification coverage from the local log with no request (what `insights` does when no backend is set) |
 | `init --codex` | Configure Codex hooks |
 | `init --no-otel` | Skip OpenTelemetry configuration |
-| `doctor` | Verify hooks, the endpoint, and your token status |
+| `doctor` | Verify hooks, the endpoint, your token status, and the send queue |
+| `flush` | Send queued events to the backend now, instead of waiting for the background sender |
 | `config list` | Show all settings and their source |
 | `config set <key> <value>` | Set `base-url`, `auto-update`, `classify`, or `token` |
 | `config unset <key>` | Reset a setting to its default (clears the token) |
