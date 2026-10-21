@@ -15,6 +15,14 @@ import {
   isPheebsEntry,
   TOOL_LABELS,
 } from "../hooks/definitions.js";
+import {
+  listPending,
+  MAX_PAUSE_MS,
+  readState,
+  scopeDir,
+  scopeKey,
+  UNSUPPORTED_RECHECK_MS,
+} from "../outbox.js";
 import { readStoredToken } from "../token.js";
 import { TRANSPORT_ERROR_PATH } from "../transports/http.js";
 import { PHEEBS_VERSION } from "../version.js";
@@ -313,6 +321,42 @@ function checkBackend(): boolean {
   return true;
 }
 
+function ago(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return "under a minute";
+  if (minutes < 120) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h`;
+}
+
+// Delivery happens in a detached process that prints nothing, so this is the only place a
+// developer can see that events are piling up, and why.
+export function outboxStatusLines(dir: string, now = Date.now()): string[] {
+  const pending = listPending(dir);
+  const state = readState(dir);
+  const lines = [
+    pending.length === 0
+      ? "Queued events: none"
+      : `Queued events: ${pending.length} (oldest ${ago(now - pending[0].queuedAt)} ago)`,
+  ];
+  // Stamps further out than any pause the flusher sets predate a clock that went backwards, and
+  // the flusher ignores them; printing them would report a wait that is not happening.
+  if (
+    state.nextAttemptAt &&
+    state.nextAttemptAt > now &&
+    state.nextAttemptAt - now <= MAX_PAUSE_MS
+  ) {
+    lines.push(`Next send attempt: in ${ago(state.nextAttemptAt - now)}`);
+  }
+  if (state.lastError) lines.push(`Last send problem: ${state.lastError}`);
+  const until = state.batchUnsupportedUntil ?? 0;
+  if (until > now && until - now <= UNSUPPORTED_RECHECK_MS) {
+    lines.push(
+      `Backend batching: not supported, sending one event per request until ${new Date(until).toISOString()}`,
+    );
+  }
+  return lines;
+}
+
 function reportStatus(): void {
   const logDir = resolveLogPath();
   const lines: string[] = [`Log directory: ${logDir}`];
@@ -334,6 +378,11 @@ function reportStatus(): void {
     } else {
       lines.push("Last event: none");
     }
+  }
+
+  const stored = readStoredToken();
+  if (hasBackend() && stored) {
+    lines.push(...outboxStatusLines(scopeDir(scopeKey(baseUrl(), stored.token))));
   }
 
   note(lines.join("\n"), "Status");

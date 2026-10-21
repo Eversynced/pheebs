@@ -9,6 +9,7 @@ import {
   writeConfig,
 } from "../backend-config.js";
 import { resyncOtelConfigs } from "../otel-resync.js";
+import { removeOutbox } from "../outbox.js";
 import { clearStoredToken, readStoredToken, setToken, tokenLast4 } from "../token.js";
 
 const USAGE = `pheebs config <command>
@@ -147,6 +148,12 @@ async function runSet(key: string | undefined, value: string | undefined): Promi
   process.exit(1);
 }
 
+function discardQueue(): void {
+  try {
+    removeOutbox();
+  } catch {}
+}
+
 function unsetConfigKey(field: keyof BackendConfig): void {
   const cfg = readConfig();
   if (!cfg) return; // nothing stored yet — defaults already apply; don't create an empty file
@@ -160,11 +167,15 @@ function runUnset(key: string | undefined): void {
       const removed = clearStoredToken();
       // Without this the agent keeps exporting with the token just cleared.
       resyncOtelConfigs();
+      // With no token no flusher runs to send or expire the queue, so it goes now rather than
+      // wait on disk to be sent if the same token is ever set again.
+      discardQueue();
       console.log(removed ? "pheebs: token cleared." : "pheebs: no token was set.");
       return;
     }
     case "base-url":
       unsetConfigKey("baseUrl");
+      discardQueue();
       // Without this the agent keeps exporting telemetry to the endpoint just removed.
       resyncOtelConfigs();
       break;

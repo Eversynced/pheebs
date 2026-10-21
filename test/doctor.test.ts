@@ -3,8 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { doctorCodex, doctorJsonConfig } from "../src/commands/doctor.js";
+import { doctorCodex, doctorJsonConfig, outboxStatusLines } from "../src/commands/doctor.js";
 import { AI_TOOLS, buildHooksConfig } from "../src/hooks/definitions.js";
+import { enqueue, updateState } from "../src/outbox.js";
 
 let tmp: string;
 
@@ -84,5 +85,50 @@ describe("doctorCodex", () => {
     writeFileSync(path, stringifyToml({ hooks: {} }));
     const result = doctorCodex(path);
     expect(result.issues).toContain("SessionStart: missing entirely");
+  });
+});
+
+describe("outboxStatusLines", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pheebs-doctor-outbox-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("says plainly when nothing is queued", () => {
+    expect(outboxStatusLines(dir)).toEqual(["Queued events: none"]);
+  });
+
+  it("leaves out stamps further ahead than the flusher ever waits", () => {
+    const now = 1_800_000_000_000;
+    updateState(
+      { nextAttemptAt: now + 400 * 60 * 60 * 1000, batchUnsupportedUntil: now + 9e9 },
+      dir,
+    );
+    expect(outboxStatusLines(dir, now)).toEqual(["Queued events: none"]);
+  });
+
+  it("reports how much is waiting, how long, and why", () => {
+    const now = 1_800_000_000_000;
+    enqueue({ event_id: "a" }, dir, now - 3 * 60 * 60 * 1000);
+    enqueue({ event_id: "b" }, dir, now - 60_000);
+    updateState(
+      {
+        nextAttemptAt: now + 5 * 60_000,
+        lastError: "backend answered 503",
+        batchUnsupportedUntil: now + 1,
+      },
+      dir,
+    );
+    expect(outboxStatusLines(dir, now)).toEqual([
+      "Queued events: 2 (oldest 3h ago)",
+      "Next send attempt: in 5m",
+      "Last send problem: backend answered 503",
+      `Backend batching: not supported, sending one event per request until ${new Date(now + 1).toISOString()}`,
+    ]);
   });
 });
