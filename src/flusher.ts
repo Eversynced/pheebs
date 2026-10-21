@@ -8,6 +8,7 @@ import {
   MAX_PAUSE_MS,
   type Pending,
   readState,
+  remainingMs,
   removePending,
   scopeDir,
   scopeKey,
@@ -59,7 +60,6 @@ export interface FlushContext {
   // the configured one changes while the flusher runs.
   batchUrl: string;
   singleUrl: string;
-  /** The queue for that backend and token, and only that one. */
   dir: string;
   lock?: Pick<Lock, "refresh">;
   /** False once the developer has pointed Pheebs elsewhere, and sending must stop. */
@@ -113,7 +113,6 @@ function readEvents(batch: Pending[]): { sendable: Pending[]; events: unknown[];
   return { sendable, events, corrupt: removePending(corrupt) ? corrupt.length : 0 };
 }
 
-/** Full jitter over a capped exponential, unless the server named its own wait. */
 export function backoffMs(
   attempts: number,
   retryAfter: string | null,
@@ -202,6 +201,17 @@ function pauseFor(dir: string, now: number, lastError: string): FlushOutcome {
   return "stop";
 }
 
+function refused(dir: string, now: number, status: number): FlushOutcome | undefined {
+  if (status === 401 || status === 403) {
+    writeMarker(status);
+    return pauseFor(dir, now, `token rejected (${status})`);
+  }
+  if (isRedirect(status)) {
+    return pauseFor(dir, now, `backend redirected (${status}); set base-url to its address`);
+  }
+  return undefined;
+}
+
 // The fallback for a backend without /ingest/batch: one /ingest per event. An event is kept only
 // when the backend cannot have stored it (a connection that never opened, a 429, a rejected token,
 // a redirect); anything else gets one try, because resending would duplicate rows on a backend
@@ -224,11 +234,8 @@ async function sendSingly(
   // would keep waiting it out; an accepted send also clears a problem an earlier run left, so
   // doctor stops reporting it. Recorded even when the run stops partway.
   const settle = () => {
-    if (!answered && !lastError) return;
-    updateState(
-      answered ? { attempts: 0, nextAttemptAt: undefined, lastError } : { lastError },
-      dir,
-    );
+    if (answered) updateState({ attempts: 0, nextAttemptAt: undefined, lastError }, dir);
+    else if (lastError) updateState({ lastError }, dir);
   };
   for (const [index, event] of events.entries()) {
     // Each send can take the full timeout, so the lock and the destination are checked per event:
@@ -253,17 +260,8 @@ async function sendSingly(
       lastError = "event dropped, its send failed after it may have arrived";
       continue;
     }
-    if (res.status === 401 || res.status === 403) {
-      writeMarker(res.status);
-      return pauseFor(dir, now(), `token rejected (${res.status})`);
-    }
-    if (isRedirect(res.status)) {
-      return pauseFor(
-        dir,
-        now(),
-        `backend redirected (${res.status}); set base-url to its address`,
-      );
-    }
+    const refusal = refused(dir, now(), res.status);
+    if (refusal) return refusal;
     if (res.status === 429) {
       return retryLater(dir, now(), random, res.headers.get("retry-after"), "backend answered 429");
     }
@@ -306,8 +304,7 @@ export async function flushOnce(ctx: FlushContext): Promise<FlushOutcome> {
 
   // A size a 413 taught is kept for a day: the backend's limit does not change between batches,
   // and forgetting it after each success would mean another run of 413s for every batch.
-  const learnedUntil = state.maxBatchUntil ?? 0;
-  const learned = now < learnedUntil && learnedUntil - now <= UNSUPPORTED_RECHECK_MS;
+  const learned = remainingMs(state.maxBatchUntil, UNSUPPORTED_RECHECK_MS, now) > 0;
   const batch = takeBatch(pending, (learned && state.maxBatch) || MAX_BATCH_EVENTS);
   const { sendable, events, corrupt } = readEvents(batch);
   if (sendable.length === 0) {
@@ -318,9 +315,7 @@ export async function flushOnce(ctx: FlushContext): Promise<FlushOutcome> {
       : retryLater(dir, now, random, null, "queued events could not be read");
   }
 
-  // A stamp further out than the recheck interval was written before the clock went backwards.
-  const until = state.batchUnsupportedUntil ?? 0;
-  if (now < until && until - now <= UNSUPPORTED_RECHECK_MS) {
+  if (remainingMs(state.batchUnsupportedUntil, UNSUPPORTED_RECHECK_MS, now) > 0) {
     return sendSingly(ctx, sendable, events);
   }
 
@@ -361,13 +356,8 @@ export async function flushOnce(ctx: FlushContext): Promise<FlushOutcome> {
   }
 
   const { status } = res;
-  if (status === 401 || status === 403) {
-    writeMarker(status);
-    return pauseFor(dir, now, `token rejected (${status})`);
-  }
-  if (isRedirect(status)) {
-    return pauseFor(dir, now, `backend redirected (${status}); set base-url to its address`);
-  }
+  const refusal = refused(dir, now, status);
+  if (refusal) return refusal;
   if (status === 404 || status === 405) {
     return sendSingly(ctx, sendable, events, true);
   }
@@ -427,10 +417,9 @@ async function drain(ctx: FlushContext, lock: Lock, linger: boolean) {
     // already due, as the hook does: honouring one would hold the queue until the clock caught up.
     const now = Date.now();
     const queuedAt = pending[0].queuedAt;
-    const next = readState(dir).nextAttemptAt ?? 0;
     const wait = Math.max(
       linger && queuedAt <= now ? queuedAt + LINGER_MS - now : 0,
-      honourBackoff && next - now <= MAX_PAUSE_MS ? next - now : 0,
+      honourBackoff ? remainingMs(readState(dir).nextAttemptAt, MAX_PAUSE_MS, now) : 0,
       0,
     );
     if (wait > LINGER_MS) return false;
@@ -492,7 +481,6 @@ export async function runFlush({ linger = false }: { linger?: boolean } = {}): P
   }
 }
 
-// What a bare `pheebs flush` prints, so the developer who asked can see whether it worked.
 function summary(dir: string): string {
   const pending = listPending(dir).length;
   if (pending === 0) return "the send queue is empty";

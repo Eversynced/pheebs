@@ -19,6 +19,7 @@ import {
   listPending,
   MAX_PAUSE_MS,
   readState,
+  remainingMs,
   scopeDir,
   scopeKey,
   UNSUPPORTED_RECHECK_MS,
@@ -338,18 +339,11 @@ export function outboxStatusLines(dir: string, now = Date.now()): string[] {
       ? "Queued events: none"
       : `Queued events: ${pending.length} (oldest ${ago(now - pending[0].queuedAt)} ago)`,
   ];
-  // Stamps further out than any pause the flusher sets predate a clock that went backwards, and
-  // the flusher ignores them; printing them would report a wait that is not happening.
-  if (
-    state.nextAttemptAt &&
-    state.nextAttemptAt > now &&
-    state.nextAttemptAt - now <= MAX_PAUSE_MS
-  ) {
-    lines.push(`Next send attempt: in ${ago(state.nextAttemptAt - now)}`);
-  }
+  const pause = remainingMs(state.nextAttemptAt, MAX_PAUSE_MS, now);
+  if (pause > 0) lines.push(`Next send attempt: in ${ago(pause)}`);
   if (state.lastError) lines.push(`Last send problem: ${state.lastError}`);
   const until = state.batchUnsupportedUntil ?? 0;
-  if (until > now && until - now <= UNSUPPORTED_RECHECK_MS) {
+  if (remainingMs(until, UNSUPPORTED_RECHECK_MS, now) > 0) {
     lines.push(
       `Backend batching: not supported, sending one event per request until ${new Date(until).toISOString()}`,
     );

@@ -24,7 +24,7 @@ import { readJsonFile } from "./pheebs-store.js";
 // Each event is one file, written under tmp/ and renamed into new/: a rename is atomic, so the
 // sender never reads half an event, and concurrent hooks never interleave the way appends to one
 // shared file can.
-export const OUTBOX_ROOT = join(homedir(), ".pheebs", "outbox");
+const OUTBOX_ROOT = join(homedir(), ".pheebs", "outbox");
 
 const LIMITS = {
   maxEvents: 10_000,
@@ -41,6 +41,13 @@ export const MAX_PAUSE_MS = 60 * 60 * 1000;
 
 // How long a backend found not to batch is sent one event per request before it is asked again.
 export const UNSUPPORTED_RECHECK_MS = 24 * 60 * 60 * 1000;
+
+// Time left until a stamp, or 0 once it has passed. A stamp further out than `maxMs` was written
+// before the clock went backwards, and honouring it would hold the queue until the clock caught up.
+export function remainingMs(until: number | undefined, maxMs: number, now = Date.now()): number {
+  const left = (until ?? 0) - now;
+  return left > 0 && left <= maxMs ? left : 0;
+}
 
 // A writer killed between write and rename leaves its file behind in tmp/.
 const ORPHAN_TMP_MS = 60 * 1000;
@@ -166,7 +173,6 @@ export function enqueue(payload: Record<string, unknown>, dir: string, now = Dat
   renameSync(staged, join(newDir(dir), name));
 }
 
-/** Queued events, oldest first. */
 export function listPending(dir: string): Pending[] {
   let names: string[];
   try {

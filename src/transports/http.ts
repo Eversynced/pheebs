@@ -4,7 +4,15 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { baseUrl, classifyPromptUrl, hasBackend } from "../backend-config.js";
 import type { LogEntry } from "../logger.js";
-import { enqueue, isFlusherLive, MAX_PAUSE_MS, readState, scopeDir, scopeKey } from "../outbox.js";
+import {
+  enqueue,
+  isFlusherLive,
+  MAX_PAUSE_MS,
+  readState,
+  remainingMs,
+  scopeDir,
+  scopeKey,
+} from "../outbox.js";
 import { readStoredToken } from "../token.js";
 import type { ClassifyResult, RemoteTransport } from "../transport.js";
 
@@ -69,10 +77,9 @@ export class HttpTransport implements RemoteTransport {
       // Old scopes' queues are removed by the flusher, off the hook path: a backlog of thousands of
       // files is not something Cursor or Codex should wait on.
       enqueue(payload, dir);
-      // A pause further out than any we set was stamped before the clock went backwards.
-      const now = Date.now();
-      const next = readState(dir).nextAttemptAt ?? 0;
-      if (!isFlusherLive(dir) && (now >= next || next - now > MAX_PAUSE_MS)) startFlusher();
+      if (!isFlusherLive(dir) && remainingMs(readState(dir).nextAttemptAt, MAX_PAUSE_MS) === 0) {
+        startFlusher();
+      }
     } catch {
       // Belt-and-suspenders: send() must never throw into the hook (e.g. an unserializable
       // payload or an unwritable home). The event is already in the local JSONL log.
