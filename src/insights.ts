@@ -14,7 +14,10 @@ export type InsightsFetch =
   | { ok: false; error: string };
 
 // Undefined once the response goes past the cap, with the rest of it left unread.
-async function readCapped(res: Response): Promise<string | undefined> {
+export async function readCapped(
+  res: Response,
+  maxBytes = MAX_BODY_BYTES,
+): Promise<string | undefined> {
   if (!res.body) return res.text();
 
   const reader = res.body.getReader();
@@ -24,7 +27,7 @@ async function readCapped(res: Response): Promise<string | undefined> {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
-    if (total > MAX_BODY_BYTES) {
+    if (total > maxBytes) {
       await reader.cancel();
       return undefined;
     }

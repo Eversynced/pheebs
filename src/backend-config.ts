@@ -77,7 +77,8 @@ export function ensureConfig(): void {
   } catch {}
 }
 
-export const ingestUrl = (): string => `${baseUrl()}/ingest`;
+export const ingestUrl = (base = baseUrl()): string => `${base}/ingest`;
+export const ingestBatchUrl = (base = baseUrl()): string => `${base}/ingest/batch`;
 export const validateUrl = (): string => `${baseUrl()}/validate-token`;
 export const otelBaseUrl = (): string => `${baseUrl()}/otel`;
 export const classifyPromptUrl = (): string => `${baseUrl()}/classify-prompt`;

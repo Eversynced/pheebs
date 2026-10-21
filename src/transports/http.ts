@@ -1,8 +1,10 @@
+import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { classifyPromptUrl, hasBackend, ingestUrl } from "../backend-config.js";
+import { baseUrl, classifyPromptUrl, hasBackend } from "../backend-config.js";
 import type { LogEntry } from "../logger.js";
+import { enqueue, isFlusherLive, MAX_PAUSE_MS, readState, scopeDir, scopeKey } from "../outbox.js";
 import { readStoredToken } from "../token.js";
 import type { ClassifyResult, RemoteTransport } from "../transport.js";
 
@@ -17,17 +19,37 @@ export const TRANSPORT_ERROR_PATH = join(homedir(), ".pheebs", ".last-transport-
 // the server stamps identity from the token — a client-supplied developer is ignored.
 const OMIT_KEYS = new Set(["logPath", "developer"]);
 
-function writeMarker(status: number): void {
+export function writeMarker(status: number): void {
   try {
     mkdirSync(dirname(TRANSPORT_ERROR_PATH), { recursive: true });
     writeFileSync(TRANSPORT_ERROR_PATH, `${new Date().toISOString()} token rejected (${status})\n`);
   } catch {}
 }
 
+// Re-invokes the running CLI rather than `pheebs` from PATH, which a hook environment may lack.
+// Detached, unref'd and with no inherited stdio, so the hook exits at once and the agent never
+// waits on the network; the child outlives the hook (see the 2026-10-20 ledger entry).
+function startFlusher(): void {
+  const cliEntry = process.argv[1];
+  if (!cliEntry) return;
+  const child = spawn(process.execPath, [cliEntry, "flush", "--linger"], {
+    detached: true,
+    // Not the hook's directory, the developer's repo: Windows will not delete or rename a folder a
+    // running process sits in, and the flusher can outlive the session by a minute.
+    cwd: homedir(),
+    stdio: "ignore",
+    // A detached child gets its own console on Windows, which would flash a window over the editor.
+    windowsHide: true,
+  });
+  // A spawn that fails asynchronously must not crash the hook process.
+  child.on("error", () => {});
+  child.unref();
+}
+
 /**
- * Fire-and-forget POST of one event envelope to the backend `/ingest` route, authenticated
- * with the stored pheebs token. The envelope is sent generically — the server splits it into
- * columns vs. extras. Never throws or blocks the hook: the local JSONL log is the durable copy.
+ * Queue one event envelope for the backend and make sure a flusher is on its way. The envelope is
+ * sent generically: the server splits it into columns vs. extras. Nothing here touches the
+ * network, and nothing throws into the hook, because the local JSONL log is the durable copy.
  */
 export class HttpTransport implements RemoteTransport {
   send(entry: LogEntry): void {
@@ -42,29 +64,18 @@ export class HttpTransport implements RemoteTransport {
         if (!OMIT_KEYS.has(key)) payload[key] = value;
       }
 
-      fetch(ingestUrl(), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${stored.token}`,
-        },
-        body: JSON.stringify(payload),
-      })
-        .then((res) => {
-          // 401/403 is the one status worth surfacing (a stale token). Everything else —
-          // success, other 4xx, 5xx — is swallowed: the local log is the durable copy.
-          if (res.status === 401 || res.status === 403) {
-            writeMarker(res.status);
-          } else if (res.status === 422) {
-            process.stderr.write("pheebs: event rejected as unprocessable (422)\n");
-          }
-        })
-        .catch((err: unknown) => {
-          process.stderr.write(`pheebs: remote send failed: ${err}\n`);
-        });
+      const scope = scopeKey(baseUrl(), stored.token);
+      const dir = scopeDir(scope);
+      // Old scopes' queues are removed by the flusher, off the hook path: a backlog of thousands of
+      // files is not something Cursor or Codex should wait on.
+      enqueue(payload, dir);
+      // A pause further out than any we set was stamped before the clock went backwards.
+      const now = Date.now();
+      const next = readState(dir).nextAttemptAt ?? 0;
+      if (!isFlusherLive(dir) && (now >= next || next - now > MAX_PAUSE_MS)) startFlusher();
     } catch {
       // Belt-and-suspenders: send() must never throw into the hook (e.g. an unserializable
-      // payload). The event is already in the local JSONL log.
+      // payload or an unwritable home). The event is already in the local JSONL log.
     }
   }
 
@@ -85,6 +96,8 @@ export class HttpTransport implements RemoteTransport {
         method: "POST",
         // The signal owns its own timer, so nothing is left to clear on the way out of a hook.
         signal: AbortSignal.timeout(CLASSIFY_TIMEOUT_MS),
+        // A followed redirect would carry the prompt to a host the developer never configured.
+        redirect: "manual",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${stored.token}`,
