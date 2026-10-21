@@ -924,3 +924,66 @@ describe("renderInsights — the model-fit split", () => {
     expect(out).not.toContain("e+");
   });
 });
+
+describe("renderInsights: a report built from the local log", () => {
+  const payload = {
+    local: true,
+    days: 30,
+    sections: { judgement_signals: { enabled: false, reason: "needs_backend" } },
+  };
+
+  it("opens by saying it is local, so nobody mistakes it for the backend's", () => {
+    const out = renderInsights(normalize(payload, { local: true }), WIDE);
+    expect(out[0]).toBe("Local report, from this machine's log. No backend was asked.");
+    expect(render(payload, WIDE)[0]).toBe("Your last 30 days");
+  });
+
+  it("counts the sessions whose split-phase delivery the log cannot decide", () => {
+    const withGap = {
+      days: 30,
+      sections: { repertoire: { enabled: true, sessions: 4, unknown_model_sessions: 2 } },
+    };
+    const line = "Split-phase delivery: undecided in 2 session(s)";
+    expect(renderInsights(normalize(withGap, { local: true }), WIDE).join("\n")).toContain(line);
+    // Not in the contract, so a backend that sends it is not believed.
+    expect(render(withGap, WIDE).join("\n")).not.toContain("Split-phase");
+  });
+
+  it("gives judgement signals one line saying they need a backend", () => {
+    const out = renderInsights(normalize(payload, { local: true }), WIDE).join("\n");
+    expect(out).toContain("Judgement signals: needs a backend");
+    expect(out).not.toMatch(/0%/);
+  });
+});
+
+describe("renderInsights: judgement signals the local report cannot compute", () => {
+  const draw = (judgement_signals: unknown) =>
+    renderInsights(normalize({ sections: { judgement_signals } }, { local: true }), WIDE).join(
+      "\n",
+    );
+
+  it("names the missing signals once per reason, after the ones it computed", () => {
+    const out = draw({
+      enabled: true,
+      verification_coverage: { value: 0.75, unit: "share" },
+      unavailable: { pushback_rate: "needs_backend", model_fit: "needs_backend" },
+    });
+    expect(out).toContain("Verification coverage");
+    expect(out).toContain("75%");
+    expect(out).toContain("Pushback rate, Model-fit rate: needs a backend");
+    expect(out.indexOf("75%")).toBeLessThan(out.indexOf("Pushback rate"));
+    // One machine has no team to take a median of.
+    expect(out).not.toContain("Team median");
+  });
+
+  it("names the field the log lacks when verification coverage needs the classifier gate", () => {
+    const out = draw({
+      enabled: true,
+      unavailable: { verification_coverage: "needs_classifier_gate" },
+    });
+    expect(out).toContain("Verification coverage: needs a backend");
+    expect(out).toContain("classifier_version");
+    expect(out).not.toContain("produced no signals");
+    expect(out).not.toMatch(/0%/);
+  });
+});

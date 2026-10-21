@@ -5,7 +5,14 @@
 // What comes out is a structure the renderer can be simple and total over, and the renderer does
 // no guarding of its own.
 
-export type Reason = "no_consent" | "not_implemented" | "insufficient_data";
+// The last two are the client's own, for what the local report cannot compute. They are never read
+// from a backend, which is the one place they would be false.
+export type Reason =
+  | "no_consent"
+  | "not_implemented"
+  | "insufficient_data"
+  | "needs_backend"
+  | "needs_classifier_gate";
 
 export interface Competency {
   name: string;
@@ -22,6 +29,8 @@ export interface Repertoire {
   artifactBreadth?: number;
   auto?: number;
   manual?: number;
+  /** Local report only: sessions whose split-phase delivery the log cannot decide. */
+  unknownModelSessions?: number;
 }
 
 export interface Signal {
@@ -60,8 +69,14 @@ export interface Cost {
 export type Body =
   | { kind: "unavailable"; reason?: Reason }
   | { kind: "repertoire"; data: Repertoire }
-  | { kind: "signals"; data: Signal[]; fit?: Fit }
+  | { kind: "signals"; data: Signal[]; fit?: Fit; unavailable?: Unavailable[] }
   | { kind: "cost"; data: Cost };
+
+/** A signal the local report names as missing, and why. */
+export interface Unavailable {
+  label: string;
+  reason?: Reason;
+}
 
 export interface Section {
   label: string;
@@ -71,6 +86,8 @@ export interface Section {
 }
 
 export interface Report {
+  /** Built from this machine's log rather than answered by a backend. */
+  local: boolean;
   days?: number;
   sections: Section[];
   /** Sections this client version does not render, which is not the same as none at all. */
@@ -87,6 +104,7 @@ export const FALLBACK_BASIS =
   "no basis supplied by this backend, so this is not money already saved";
 
 const REASONS: Reason[] = ["no_consent", "not_implemented", "insufficient_data"];
+const LOCAL_REASONS: Reason[] = [...REASONS, "needs_backend", "needs_classifier_gate"];
 
 export const SIGNALS: [string, string][] = [
   ["verification_coverage", "Verification coverage"],
@@ -205,12 +223,15 @@ export function trendOf(value: unknown): { trend: number[]; unusable: boolean } 
   return { trend, unusable: false };
 }
 
-export function reasonOf(value: unknown): Reason | undefined {
+export function reasonOf(value: unknown, local = false): Reason | undefined {
   const name = text(value);
-  return REASONS.find((r) => r === name);
+  return (local ? LOCAL_REASONS : REASONS).find((r) => r === name);
 }
 
-function repertoireOf(section: Record<string, unknown>): { data: Repertoire; dropped: number } {
+function repertoireOf(
+  section: Record<string, unknown>,
+  local: boolean,
+): { data: Repertoire; dropped: number } {
   const { taken, dropped } = rows(section.competencies);
   const coverage = isRecord(section.coverage_index) ? section.coverage_index : undefined;
   const compaction = isRecord(section.compaction) ? section.compaction : undefined;
@@ -230,6 +251,7 @@ function repertoireOf(section: Record<string, unknown>): { data: Repertoire; dro
       artifactBreadth: count(section.artifact_breadth),
       auto: count(compaction?.auto),
       manual: count(compaction?.manual),
+      unknownModelSessions: local ? count(section.unknown_model_sessions) : undefined,
     },
   };
 }
@@ -250,6 +272,17 @@ function signalsOf(section: Record<string, unknown>): Signal[] {
       },
     ];
   });
+}
+
+// In contract order, and only for a signal not also reported: a value and a reason for its absence
+// cannot both be true.
+function unavailableOf(section: Record<string, unknown>): Unavailable[] {
+  const raw = isRecord(section.unavailable) ? section.unavailable : {};
+  return SIGNALS.flatMap(([key, name]) =>
+    Object.hasOwn(raw, key) && !isRecord(section[key])
+      ? [{ label: name, reason: reasonOf(raw[key], true) }]
+      : [],
+  );
 }
 
 /**
@@ -306,17 +339,23 @@ function costOf(section: Record<string, unknown>): { data: Cost; dropped: number
   };
 }
 
-function bodyOf(name: string, section: Record<string, unknown>): { body: Body; dropped: number } {
+function bodyOf(
+  name: string,
+  section: Record<string, unknown>,
+  local: boolean,
+): { body: Body; dropped: number } {
   // A section that does not say it is on is treated as off: the schema requires `enabled`, and
   // reading a missing one as "on" invents a report out of a malformed response.
   if (section.enabled !== true) {
-    return { body: { kind: "unavailable", reason: reasonOf(section.reason) }, dropped: 0 };
+    return { body: { kind: "unavailable", reason: reasonOf(section.reason, local) }, dropped: 0 };
   }
   if (name === "repertoire") {
-    const { data, dropped } = repertoireOf(section);
+    const { data, dropped } = repertoireOf(section, local);
     return { body: { kind: "repertoire", data }, dropped };
   }
-  return { body: { kind: "signals", data: signalsOf(section), fit: fitOf(section) }, dropped: 0 };
+  const body: Body = { kind: "signals", data: signalsOf(section), fit: fitOf(section) };
+  if (local) body.unavailable = unavailableOf(section);
+  return { body, dropped: 0 };
 }
 
 /**
@@ -338,8 +377,11 @@ function pricedSection(raw: unknown): Section | undefined {
   return { label: PRICED_LABEL, body: { kind: "cost", data }, dropped };
 }
 
-/** Total over any input: whatever arrives, a `Report` comes back. */
-export function normalize(payload: unknown): Report {
+/**
+ * Total over any input: whatever arrives, a `Report` comes back. `local` is the caller's to say,
+ * never the payload's, so a backend cannot label its own report as computed on this machine.
+ */
+export function normalize(payload: unknown, { local = false }: { local?: boolean } = {}): Report {
   const root = isRecord(payload) ? payload : {};
   const map = isRecord(root.sections) ? root.sections : {};
   const days = count(root.days);
@@ -347,7 +389,7 @@ export function normalize(payload: unknown): Report {
   const sections = SECTIONS.flatMap((name) => {
     const section = map[name];
     if (!isRecord(section)) return [];
-    const { body, dropped } = bodyOf(name, section);
+    const { body, dropped } = bodyOf(name, section, local);
     return [{ label: LABELS[name], body, dropped }];
   });
 
@@ -357,6 +399,7 @@ export function normalize(payload: unknown): Report {
   const recognized = SECTIONS.filter((name) => isRecord(map[name])).length;
 
   return {
+    local,
     days: days !== undefined && Number.isInteger(days) && days >= 1 ? days : undefined,
     sections,
     unrecognized: Object.keys(map).length - recognized,

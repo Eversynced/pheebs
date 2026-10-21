@@ -8,7 +8,15 @@
 
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
-import type { Cost, Fit, Repertoire, Report, Section, Signal } from "./insights-normalize.js";
+import type {
+  Cost,
+  Fit,
+  Repertoire,
+  Report,
+  Section,
+  Signal,
+  Unavailable,
+} from "./insights-normalize.js";
 
 export interface RenderOptions {
   width: number;
@@ -211,6 +219,10 @@ export const REASON_TEXT: Record<string, string> = {
   insufficient_data: "not enough sessions yet to say anything",
   no_consent: "off for your tenant, which has not enabled prompt collection",
   not_implemented: "this backend does not produce it",
+  needs_backend:
+    "needs a backend, which computes them from prompt labels and telemetry this machine does not keep",
+  needs_classifier_gate:
+    "needs a backend, because a prompt asking for a check counts only under a classifier version the backend has validated, and the log records `classifier_version` but not that verdict",
 };
 
 const STATE_LABELS: Record<string, string> = {
@@ -284,6 +296,11 @@ function renderRepertoire(data: Repertoire, opts: RenderOptions): string[] {
     data.manual === undefined ? "" : `${data.manual} manual`,
   ].filter(Boolean);
   if (compaction.length > 0) facts.push(`Compaction: ${compaction.join(", ")}`);
+  if (data.unknownModelSessions !== undefined) {
+    facts.push(
+      `Split-phase delivery: undecided in ${data.unknownModelSessions} session(s), whose model around a plan-to-execution change is not in the log`,
+    );
+  }
 
   if (facts.length > 0) {
     if (lines.length > 0) lines.push("");
@@ -340,19 +357,35 @@ export function renderTrends(
   );
 }
 
-function renderSignals(signals: Signal[], fit: Fit | undefined, opts: RenderOptions): string[] {
-  if (signals.length === 0) return wrap("This backend produced no signals.", opts.width);
+function renderSignals(
+  signals: Signal[],
+  fit: Fit | undefined,
+  opts: RenderOptions,
+  unavailable: Unavailable[] = [],
+  local = false,
+): string[] {
+  if (signals.length === 0 && unavailable.length === 0) {
+    return wrap("This backend produced no signals.", opts.width);
+  }
 
   // One label width across all three blocks, as the model doc draws them, so the eye can run down
   // a signal instead of re-finding it at a new indent in each.
   const labelWidth = signals.reduce((w, s) => Math.max(w, displayWidth(s.label)), 0);
 
-  const lines = renderTable(
-    signals.map((s) => [s.label, cell(s.value, s.unit), cell(s.teamMedian, s.unit)]),
-    ["left", "right", "right"],
-    opts,
-    { headers: ["Signal", "You", "Team median"], labelWidth },
-  );
+  // One machine's log has no team, so the local report has no median column to leave empty.
+  const lines = local
+    ? renderTable(
+        signals.map((s) => [s.label, cell(s.value, s.unit)]),
+        ["left", "right"],
+        opts,
+        { headers: ["Signal", "You"], labelWidth },
+      )
+    : renderTable(
+        signals.map((s) => [s.label, cell(s.value, s.unit), cell(s.teamMedian, s.unit)]),
+        ["left", "right", "right"],
+        opts,
+        { headers: ["Signal", "You", "Team median"], labelWidth },
+      );
 
   const trended = signals.filter((s) => s.trend.length >= 2);
   if (trended.length > 0) {
@@ -394,6 +427,18 @@ function renderSignals(signals: Signal[], fit: Fit | undefined, opts: RenderOpti
         opts,
       ),
     );
+  }
+
+  // One line per reason rather than per signal, so four signals missing for one cause read once.
+  const byReason = new Map<string, string[]>();
+  for (const { label, reason } of unavailable) {
+    const key = reason ?? "";
+    byReason.set(key, [...(byReason.get(key) ?? []), label]);
+  }
+  for (const [reason, labels] of byReason) {
+    if (lines.length > 0) lines.push("");
+    const why = reason ? REASON_TEXT[reason] : "not available";
+    lines.push(...wrap(`${labels.join(", ")}: ${why}`, opts.width));
   }
 
   return lines;
@@ -472,7 +517,7 @@ function renderCost(data: Cost, opts: RenderOptions): string[] {
   return lines;
 }
 
-function renderSection(section: Section, opts: RenderOptions): string[] {
+function renderSection(section: Section, opts: RenderOptions, local: boolean): string[] {
   const { body } = section;
   if (body.kind === "unavailable") {
     const reason = body.reason ? REASON_TEXT[body.reason] : "not available";
@@ -483,7 +528,7 @@ function renderSection(section: Section, opts: RenderOptions): string[] {
     body.kind === "repertoire"
       ? renderRepertoire(body.data, opts)
       : body.kind === "signals"
-        ? renderSignals(body.data, body.fit, opts)
+        ? renderSignals(body.data, body.fit, opts, body.unavailable, local)
         : renderCost(body.data, opts);
 
   const out = [...wrap(section.label, opts.width), "", ...lines];
@@ -499,11 +544,15 @@ export function renderInsights(report: Report, opts: RenderOptions): string[] {
     report.days === undefined
       ? "Your recent work"
       : `Your last ${report.days} day${report.days === 1 ? "" : "s"}`;
-  const lines: string[] = wrap(header, opts.width);
+  // First, so a report from the log is never read as the backend's.
+  const lines: string[] = report.local
+    ? [...wrap("Local report, from this machine's log. No backend was asked.", opts.width), ""]
+    : [];
+  lines.push(...wrap(header, opts.width));
 
   for (const section of report.sections) {
     lines.push("");
-    for (const line of renderSection(section, opts)) lines.push(line);
+    for (const line of renderSection(section, opts, report.local)) lines.push(line);
   }
 
   if (report.sections.length === 0) {

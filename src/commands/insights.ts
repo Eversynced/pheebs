@@ -1,4 +1,7 @@
+import { hasBackend } from "../backend-config.js";
+import { resolveLogPath } from "../config.js";
 import { fetchInsights, fetchTeamInsights } from "../insights.js";
+import { DEFAULT_DAYS, localInsights, readLogRows } from "../insights-local.js";
 import { escapeControlChars, normalize } from "../insights-normalize.js";
 import { type RenderOptions, renderInsights } from "../insights-render.js";
 import { normalizeTeam } from "../insights-team-normalize.js";
@@ -33,7 +36,7 @@ export function resolveRenderOptions(
 }
 
 export type InsightsArgs =
-  | { ok: true; days?: number; json: boolean; team?: true }
+  | { ok: true; days?: number; json: boolean; team?: true; local?: true }
   | { ok: false; error: string };
 
 // Both `--days 7` and `--days=7` are accepted: silently ignoring one form would report a window
@@ -42,6 +45,7 @@ export function parseInsightsArgs(args: string[]): InsightsArgs {
   let days: number | undefined;
   let json = false;
   let team = false;
+  let local = false;
 
   for (let at = 0; at < args.length; at++) {
     const arg = args[at];
@@ -51,6 +55,10 @@ export function parseInsightsArgs(args: string[]): InsightsArgs {
     }
     if (arg === "--team") {
       team = true;
+      continue;
+    }
+    if (arg === "--local") {
+      local = true;
       continue;
     }
     if (arg === "--days" || arg.startsWith("--days=")) {
@@ -70,7 +78,12 @@ export function parseInsightsArgs(args: string[]): InsightsArgs {
     return { ok: false, error: `unknown option "${arg}". Run \`pheebs --help\` for the list.` };
   }
 
-  return { ok: true, days, json, ...(team && { team }) };
+  // A team report is the backend's by definition: one machine's log holds one developer.
+  if (team && local) {
+    return { ok: false, error: "--local has no team report. Team reports come from a backend." };
+  }
+
+  return { ok: true, days, json, ...(team && { team }), ...(local && { local }) };
 }
 
 export async function runInsights(args: string[]): Promise<void> {
@@ -78,6 +91,12 @@ export async function runInsights(args: string[]): Promise<void> {
   if (!parsed.ok) {
     console.error(`pheebs: ${parsed.error}`);
     process.exit(1);
+  }
+
+  // Without a backend the log is the only source there is, so it is read rather than refused.
+  if (!parsed.team && (parsed.local || !hasBackend())) {
+    runLocal(parsed.days ?? DEFAULT_DAYS, parsed.json);
+    return;
   }
 
   const result = await (parsed.team ? fetchTeamInsights : fetchInsights)(parsed.days);
@@ -100,4 +119,17 @@ export async function runInsights(args: string[]): Promise<void> {
     ? renderTeamInsights(normalizeTeam(result.payload), opts)
     : renderInsights(normalize(result.payload), opts);
   console.log(lines.join("\n"));
+}
+
+// Reads the log and nothing else: no token, no endpoint, no request.
+function runLocal(days: number, json: boolean): void {
+  // The log was written on this machine, so its platform is the one the hooks ran on.
+  const windows = process.platform === "win32";
+  const payload = localInsights(readLogRows(resolveLogPath()), days, new Date(), windows);
+  if (json) {
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    return;
+  }
+  const opts = resolveRenderOptions(process.env, process.platform, process.stdout.columns);
+  console.log(renderInsights(normalize(payload, { local: true }), opts).join("\n"));
 }

@@ -101,6 +101,7 @@ pheebs doctor [--global|--project] [--cursor|--codex]  # Verify hooks (both scop
 pheebs scan [--cursor|--codex]     # Scan repo for AI-config artifacts
 pheebs insights [--days N|--json]  # The caller's own report from the backend /insights
 pheebs insights --team [--days N|--json]  # A manager's team report from /insights/team
+pheebs insights --local [--days N|--json] # Repertoire and verification coverage from the local log, no request; the default with no backend
 pheebs config list|set|unset       # base-url | auto-update | classify | token
 ```
 
@@ -136,7 +137,8 @@ so run `npm run build` before the CLI tests mean anything.
 | `src/insights-normalize.ts` | The single boundary against an untrusted `/insights` response: shape guards, range checks, own-property lookups, control, ANSI and bidi stripping, bounded rows and string lengths. Also escapes the raw body for `--json`. |
 | `src/insights-render.ts` | The report as pure functions over a normalized `Report`, guarding nothing itself. Sparklines, gauges and aligned tables per [`docs/ai-proficiency-model.md`](./docs/ai-proficiency-model.md). An unavailable section prints one reason line, never a zero; a trend under two points gets no chart; block glyphs fall back to ASCII. Emits no colour, so the output is identical piped, in CI, and to a reader who cannot distinguish red from green. |
 | `src/insights-team-normalize.ts`, `src/insights-team-render.ts` | The same two halves for `/insights/team`, reusing the engineer report's primitives. Availability is per view, so a view that is off prints its reason; counts print beside the denominator the report states; the heatmap and the engineer table withhold opted-out developers by count, never by name. |
-| `src/commands/insights.ts` | `pheebs insights [--days N] [--json] [--team]`. Argument parsing (both `--days` spellings) and render options (terminal width, falling back to 80 off a TTY). Computes nothing: the backend produces the numbers. |
+| `src/commands/insights.ts` | `pheebs insights [--days N] [--json] [--team \| --local]`. Argument parsing (both `--days` spellings) and render options (terminal width, falling back to 80 off a TTY). Computes nothing itself: the backend produces the numbers, or the local log does when there is no backend or `--local` is given. |
+| `src/insights-local.ts`, `src/repertoire.ts`, `src/verification.ts` | The report without a backend: the log read from disk, the `repertoire` section computed under the registry's practice definitions and the model's window and placement rules, and verification coverage, in the contract's shape so normalize and render draw it unchanged. Split-phase delivery reads the session's model timeline and counts a change whose model it cannot resolve as undecided, never as a miss. Verification coverage is withheld when a session could be verified only by a classifier-labeled request, since the log does not record which classifier versions a backend accepts. The other four judgement signals need a backend. |
 | `src/config.ts` | Codebase id resolution: env override, git remote `org/repo`, then `local/<folder-name>`. Directory name only, never a full path. |
 | `src/developer-id.ts` | The local `developer` label: the stored token id, falling back to a hashed git email, cached per session in `~/.pheebs/.developer-handles.json` so `git` is not spawned on every event. Resolved without a network call. |
 

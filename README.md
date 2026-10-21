@@ -211,6 +211,7 @@ Pheebs fires in the background during your sessions. Nothing changes about how y
 pheebs insights            # your recent work, in the terminal (window is the backend's, usually 30 days)
 pheebs insights --days 7   # a narrower window
 pheebs insights --json     # the raw payload, for scripting
+pheebs insights --local    # from this machine's log only, even with a backend set
 ```
 
 Your own data only: which practices you actually use, what happens to AI output before it ships,
@@ -218,7 +219,9 @@ and what your model choices cost. No peer comparison and no leaderboard. The one
 median, which answers "is this normal here" without naming anyone.
 
 It reads the optional `GET /insights` route, so what you see depends on what your backend
-computes. A section it cannot produce says so in one line and gives the reason, rather than
+computes. With no backend set, or with `--local`, it reads your local log instead, makes no
+request, and reports the Repertoire section and verification coverage, the one judgement signal
+the log can carry; the report says it is local before anything else. A section it cannot produce says so in one line and gives the reason, rather than
 reporting a zero that reads like a measurement.
 
 Managers can read the same model across their tenant:
@@ -378,7 +381,7 @@ Local logs are daily files, one per codebase:
 pheebs init [--global] [--cursor|--codex] [--no-otel]
 pheebs doctor [--global|--project] [--cursor|--codex]
 pheebs config <list | get <key> | set <key> <value> | unset <key>>
-pheebs insights [--days <n>] [--json] [--team]
+pheebs insights [--days <n>] [--json] [--team | --local]
 pheebs hook <event_name> [--trigger-type <type>]
 pheebs hook-cursor <event_name>
 pheebs hook-codex <event_name>
@@ -389,10 +392,11 @@ pheebs hook-codex <event_name>
 | `init` | Register hooks (and OTel config) for the current repo, configure the endpoint, and set your token |
 | `init --global` | Write to user-level config instead of project-local |
 | `init --cursor` | Configure Cursor hooks |
-| `insights` | Render your own report from the backend's `/insights` |
+| `insights` | Render your own report from the backend's `/insights`, or from the local log when no backend is set |
 | `insights --days <n>` | Narrow the window, 1 to 365 (default: whatever the backend uses) |
-| `insights --json` | Print the raw `/insights` payload, for scripting |
+| `insights --json` | Print the raw `/insights` payload, or the local report marked `"local": true`, for scripting |
 | `insights --team` | Render the team report from `/insights/team` (manager tokens only; combines with `--days` and `--json`) |
+| `insights --local` | Render Repertoire and verification coverage from the local log with no request (what `insights` does when no backend is set) |
 | `init --codex` | Configure Codex hooks |
 | `init --no-otel` | Skip OpenTelemetry configuration |
 | `doctor` | Verify hooks, the endpoint, and your token status |

@@ -106,3 +106,30 @@ describe("parseInsightsArgs: --team", () => {
     });
   });
 });
+
+describe("parseInsightsArgs: --local", () => {
+  it("is off unless asked for", () => {
+    expect(parseInsightsArgs([])).not.toHaveProperty("local");
+  });
+
+  it("reads --local alongside a window and --json", () => {
+    expect(parseInsightsArgs(["--local", "--days=7", "--json"])).toEqual({
+      ok: true,
+      days: 7,
+      json: true,
+      local: true,
+    });
+  });
+
+  it("refuses a team report from the local log, which holds one developer", () => {
+    for (const args of [
+      ["--team", "--local"],
+      ["--local", "--team"],
+    ]) {
+      expect(parseInsightsArgs(args)).toEqual({
+        ok: false,
+        error: "--local has no team report. Team reports come from a backend.",
+      });
+    }
+  });
+});

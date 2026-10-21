@@ -428,3 +428,50 @@ describe("normalize — the model-fit split", () => {
     expect(labels).toContain("Model-fit rate");
   });
 });
+
+describe("normalize: a report built from the local log", () => {
+  const local = { local: true, sections: { judgement_signals: { reason: "needs_backend" } } };
+
+  it("is local only when the caller says so, never because the payload claims it", () => {
+    expect(normalize(local).local).toBe(false);
+    expect(normalize(local, { local: true }).local).toBe(true);
+  });
+
+  // Read from a backend it would be false: the backend is the thing the reader is told is missing.
+  it("reads the needs-a-backend reason from the local report only", () => {
+    const reasonIn = (report: ReturnType<typeof normalize>) => {
+      const body = report.sections[0].body;
+      return body.kind === "unavailable" ? body.reason : "available";
+    };
+    expect(reasonIn(normalize(local))).toBeUndefined();
+    expect(reasonIn(normalize(local, { local: true }))).toBe("needs_backend");
+  });
+});
+
+describe("normalize: signals the local report names as missing", () => {
+  const section = {
+    enabled: true,
+    verification_coverage: { value: 0.5, unit: "share" },
+    unavailable: {
+      verification_coverage: "needs_classifier_gate",
+      model_fit: "needs_backend",
+      pushback_rate: "needs_backend",
+    },
+  };
+  const unavailable = (local: boolean) => {
+    const body = normalize({ sections: { judgement_signals: section } }, { local }).sections[0]
+      .body;
+    return body.kind === "signals" ? body.unavailable : "not signals";
+  };
+
+  it("reads them in contract order, and never beside a value for the same signal", () => {
+    expect(unavailable(true)).toEqual([
+      { label: "Pushback rate", reason: "needs_backend" },
+      { label: "Model-fit rate", reason: "needs_backend" },
+    ]);
+  });
+
+  it("takes none from a backend, which reports a missing signal by omitting it", () => {
+    expect(unavailable(false)).toBeUndefined();
+  });
+});
