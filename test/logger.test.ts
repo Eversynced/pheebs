@@ -62,6 +62,22 @@ describe("appendLogEntry", () => {
     expect(JSON.parse(lines[1]).event).toBe("turn_ended");
   });
 
+  it("stamps each line with its own event id, and keeps one already set", () => {
+    const config = { codebaseId: "org/repo", logPath: tmp };
+    appendLogEntry(entry(), config);
+    appendLogEntry(entry(), config);
+    appendLogEntry(entry({ event_id: "0190f3a0-0000-7000-8000-000000000000" }), config);
+
+    const file = readdirSync(tmp)[0];
+    const ids = readFileSync(join(tmp, file), "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l).event_id);
+    expect(ids[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(ids[1]).not.toBe(ids[0]);
+    expect(ids[2]).toBe("0190f3a0-0000-7000-8000-000000000000");
+  });
+
   it("backfills a missing timestamp", () => {
     appendLogEntry(entry({ timestamp: "" }), { codebaseId: "org/repo", logPath: tmp });
     const file = readdirSync(tmp)[0];
