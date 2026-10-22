@@ -987,3 +987,74 @@ describe("renderInsights: judgement signals the local report cannot compute", ()
     expect(out).not.toMatch(/0%/);
   });
 });
+
+describe("renderInsights: repair attribution", () => {
+  const draw = (repair_attribution: unknown) =>
+    render(
+      {
+        days: 30,
+        sections: {
+          judgement_signals: {
+            enabled: true,
+            pushback_rate: { value: 0.1, unit: "share" },
+            repair_attribution,
+          },
+        },
+      },
+      WIDE,
+    ).join("\n");
+
+  const split = { context: 2, model: 0, task_difficulty: 1 };
+
+  it("names the denominator and every reading, the empty ones included", () => {
+    const out = draw({ sessions: 7, split });
+    expect(out).toContain("Repair-heavy sessions: 7, read as");
+    expect(out).toMatch(/Little context up front\s+2/);
+    expect(out).toMatch(/Model below the work\s+0/);
+    expect(out).toMatch(/Hard, open-ended work\s+1/);
+  });
+
+  it("prints the sessions with no reading, so the readings are not taken for all of them", () => {
+    expect(draw({ sessions: 7, split })).toMatch(/No reading\s+4/);
+    expect(draw({ sessions: 3, split })).toMatch(/No reading\s+0/);
+  });
+
+  it("says it is a correlation, with no dollar figure", () => {
+    const out = draw({ sessions: 7, split });
+    expect(out).toContain("provisional thresholds");
+    expect(out).not.toContain("$");
+  });
+
+  it("drops the denominator and the no-reading row when the readings exceed it", () => {
+    const out = draw({ sessions: 2, split });
+    expect(out).toContain("Repair-heavy sessions, read as");
+    expect(out).not.toContain("No reading");
+  });
+
+  it("drops the no-reading row when the denominator is absent", () => {
+    const out = draw({ split });
+    expect(out).toContain("Repair-heavy sessions, read as");
+    expect(out).not.toContain("No reading");
+  });
+
+  it("draws nothing when the backend sends no block", () => {
+    expect(draw(undefined)).not.toContain("Repair-heavy");
+  });
+
+  it("still draws on a section that carries no rates", () => {
+    const out = render(
+      {
+        sections: {
+          judgement_signals: { enabled: true, repair_attribution: { sessions: 7, split } },
+        },
+      },
+      WIDE,
+    ).join("\n");
+    expect(out).toContain("Repair-heavy sessions: 7, read as");
+  });
+
+  it("refuses a denominator no real window reaches rather than printing exponential notation", () => {
+    const out = draw({ sessions: 1e21, split: { context: 1e21, model: 0, task_difficulty: 0 } });
+    expect(out).not.toContain("e+");
+  });
+});

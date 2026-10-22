@@ -394,3 +394,39 @@ describe("renderTeamInsights: lists that cannot be trusted", () => {
     expect(out).toContain("Coverage: not reported");
   });
 });
+
+describe("renderTeamInsights: repair attribution", () => {
+  const draw = (repair_attribution: unknown) =>
+    render({ sections: { judgement_signals: { enabled: true, repair_attribution } } });
+
+  it("draws the readings under the view's title", () => {
+    const out = draw({
+      enabled: true,
+      sessions: 7,
+      split: { context: 0, model: 2, task_difficulty: 1 },
+    });
+    expect(out).toContain("Repair attribution");
+    expect(out).toContain("Repair-heavy sessions: 7, read as");
+    expect(out).toMatch(/Model below the work\s+2/);
+  });
+
+  it("states a team with no repair-heavy session as a finding, not a table of zeros", () => {
+    const out = draw({
+      enabled: true,
+      sessions: 0,
+      split: { context: 0, model: 0, task_difficulty: 0 },
+    });
+    expect(out).toContain("Repair-heavy sessions: none in the window");
+    expect(out).not.toContain("Little context up front");
+  });
+
+  it("prints the reason of a view that is off", () => {
+    const out = draw({ enabled: false, reason: "insufficient_data" });
+    expect(out).toContain("Repair attribution: not enough sessions yet to say anything");
+  });
+
+  it("says the backend produced nothing usable for an unusable split", () => {
+    const out = draw({ enabled: true, sessions: 7, split: { model: 2 } });
+    expect(out).toContain("This backend produced no fields for it.");
+  });
+});

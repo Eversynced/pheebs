@@ -281,3 +281,39 @@ describe("normalizeTeam: untrusted text", () => {
     expect(serialized).toContain("Acme");
   });
 });
+
+describe("normalizeTeam: repair attribution", () => {
+  const withView = (repair_attribution: unknown) =>
+    normalizeTeam({ sections: { judgement_signals: { enabled: true, repair_attribution } } });
+  const split = { context: 0, model: 2, task_difficulty: 1 };
+
+  it("reads the same block the engineer's report carries", () => {
+    const body = view(
+      withView({ enabled: true, sessions: 7, split }),
+      "Judgement signals",
+      "Repair attribution",
+    );
+    expect(body).toEqual({
+      kind: "repair",
+      data: { sessions: 7, context: 0, model: 2, taskDifficulty: 1 },
+    });
+  });
+
+  it("keeps the reason of a view that is off", () => {
+    const body = view(
+      withView({ enabled: false, reason: "insufficient_data" }),
+      "Judgement signals",
+      "Repair attribution",
+    );
+    expect(body).toEqual({ kind: "unavailable", reason: "insufficient_data" });
+  });
+
+  it("holds an unusable split as unusable rather than as zeros", () => {
+    const body = view(
+      withView({ enabled: true, sessions: 7, split: { model: 2 } }),
+      "Judgement signals",
+      "Repair attribution",
+    );
+    expect(body).toEqual({ kind: "repair", data: undefined });
+  });
+});

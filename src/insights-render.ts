@@ -9,6 +9,7 @@
 import stringWidth from "string-width";
 import wrapAnsi from "wrap-ansi";
 import type {
+  Attribution,
   Cost,
   Fit,
   Repertoire,
@@ -357,14 +358,51 @@ export function renderTrends(
   );
 }
 
+/**
+ * Repair-heavy sessions by reading, shared by both reports. Phrased as what the session looked like
+ * rather than what to do about it, and with no dollar figure: a reading is a correlation over
+ * provisional cutoffs, and an instruction would present it as a diagnosis.
+ */
+export function renderAttribution(data: Attribution, opts: RenderOptions): string[] {
+  const read = data.context + data.model + data.taskDifficulty;
+  // The denominator is claimed only when the readings fit inside it: they may fall short of it, but
+  // never pass it. The shortfall gets its own row, so the readings are not taken for every session.
+  const total = data.sessions !== undefined && data.sessions >= read ? data.sessions : undefined;
+  if (total === 0) return wrap("Repair-heavy sessions: none in the window", opts.width);
+  const heading =
+    total !== undefined
+      ? `Repair-heavy sessions: ${formatCount(total)}, read as`
+      : "Repair-heavy sessions, read as";
+  return [
+    ...wrap(heading, opts.width),
+    ...renderTable(
+      [
+        ["  Little context up front", formatCount(data.context)],
+        ["  Model below the work", formatCount(data.model)],
+        ["  Hard, open-ended work", formatCount(data.taskDifficulty)],
+        ...(total !== undefined ? [["  No reading", formatCount(total - read)]] : []),
+      ],
+      ["left", "right"],
+      opts,
+    ),
+    "",
+    ...wrap(
+      "A correlation over provisional thresholds: one session says little, a pattern over weeks says more.",
+      opts.width,
+    ),
+  ];
+}
+
 function renderSignals(
   signals: Signal[],
   fit: Fit | undefined,
+  attribution: Attribution | undefined,
   opts: RenderOptions,
   unavailable: Unavailable[] = [],
   local = false,
 ): string[] {
-  if (signals.length === 0 && unavailable.length === 0) {
+  // The attribution stands on its own facts, so a section without rates still shows it.
+  if (signals.length === 0 && unavailable.length === 0 && attribution === undefined) {
     return wrap("This backend produced no signals.", opts.width);
   }
 
@@ -427,6 +465,11 @@ function renderSignals(
         opts,
       ),
     );
+  }
+
+  if (attribution !== undefined) {
+    if (lines.length > 0) lines.push("");
+    lines.push(...renderAttribution(attribution, opts));
   }
 
   // One line per reason rather than per signal, so four signals missing for one cause read once.
@@ -528,7 +571,7 @@ function renderSection(section: Section, opts: RenderOptions, local: boolean): s
     body.kind === "repertoire"
       ? renderRepertoire(body.data, opts)
       : body.kind === "signals"
-        ? renderSignals(body.data, body.fit, opts, body.unavailable, local)
+        ? renderSignals(body.data, body.fit, body.attribution, opts, body.unavailable, local)
         : renderCost(body.data, opts);
 
   const out = [...wrap(section.label, opts.width), "", ...lines];

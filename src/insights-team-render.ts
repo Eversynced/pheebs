@@ -7,6 +7,7 @@
 // facts. And a count is printed beside the denominator it is out of whenever the report states
 // one, since the contract sends parts rather than percentages.
 
+import type { Attribution } from "./insights-normalize.js";
 import {
   cell,
   displayWidth,
@@ -14,6 +15,7 @@ import {
   formatUsd,
   REASON_TEXT,
   type RenderOptions,
+  renderAttribution,
   renderTable,
   renderTrends,
   wrap,
@@ -396,6 +398,10 @@ function renderDollars(data: Dollars, opts: RenderOptions): string[] {
   return lines;
 }
 
+function renderRepair(data: Attribution | undefined, opts: RenderOptions): string[] {
+  return data === undefined ? wrap(NO_FIELDS, opts.width) : renderAttribution(data, opts);
+}
+
 const INDENT = 2;
 
 function indented(lines: string[], by: number): string[] {
@@ -428,7 +434,9 @@ function renderView(view: View, engineers: number | undefined, opts: RenderOptio
               ? renderMovement(body.data, inner)
               : body.kind === "wholesale"
                 ? renderWholesale(body.data, inner)
-                : renderDollars(body.data, inner);
+                : body.kind === "repair"
+                  ? renderRepair(body.data, inner)
+                  : renderDollars(body.data, inner);
 
   const out = [...indented(wrap(view.title, title.width), INDENT), ...indented(lines, 2 * INDENT)];
   if (view.dropped > 0) {
