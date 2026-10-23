@@ -1,4 +1,4 @@
-import { homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LogEntry } from "../src/logger.js";
 import { getTransport } from "../src/transport.js";
@@ -173,7 +173,7 @@ describe("HttpTransport", () => {
     ];
     expect(exe).toBe(process.execPath);
     expect(args).toEqual([process.argv[1], "flush", "--linger"]);
-    expect(options).toMatchObject({ detached: true, stdio: "ignore", cwd: homedir() });
+    expect(options).toMatchObject({ detached: true, stdio: "ignore", cwd: tmpdir() });
   });
 
   it("leaves a live flusher to pick the event up", () => {

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { baseUrl, classifyPromptUrl, hasBackend } from "../backend-config.js";
 import type { LogEntry } from "../logger.js";
@@ -44,7 +44,7 @@ function startFlusher(): void {
     detached: true,
     // Not the hook's directory, the developer's repo: Windows will not delete or rename a folder a
     // running process sits in, and the flusher can outlive the session by a minute.
-    cwd: homedir(),
+    cwd: tmpdir(),
     stdio: "ignore",
     // A detached child gets its own console on Windows, which would flash a window over the editor.
     windowsHide: true,
