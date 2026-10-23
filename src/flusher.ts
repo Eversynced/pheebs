@@ -6,6 +6,7 @@ import {
   type Lock,
   listPending,
   MAX_PAUSE_MS,
+  type OutboxState,
   type Pending,
   readState,
   remainingMs,
@@ -182,6 +183,31 @@ function retryLater(
   return "retry";
 }
 
+// A batch whose send failed after the request went out may be stored. The batch route recognises
+// a resend and /ingest does not, so these events are marked to keep them off the single path.
+function markInDoubt(dir: string, batch: Pending[]): void {
+  const state = readState(dir);
+  const last = batch[batch.length - 1].name;
+  // A marker that sorts before this batch's head belongs to events that already left the queue by
+  // some other road, so it must not lend its spent window to this new episode.
+  const finished = state.inDoubtThrough !== undefined && state.inDoubtThrough < batch[0].name;
+  updateState(
+    {
+      inDoubtThrough:
+        !finished && state.inDoubtThrough !== undefined && state.inDoubtThrough > last
+          ? state.inDoubtThrough
+          : last,
+      inDoubtSince: finished ? undefined : state.inDoubtSince,
+    },
+    dir,
+  );
+}
+
+// Names sort by arrival, so a batch taken from the head that reaches the marker holds every event
+// still in doubt.
+const coversDoubt = (state: OutboxState, batch: Pending[]) =>
+  state.inDoubtThrough !== undefined && batch[batch.length - 1].name >= state.inDoubtThrough;
+
 // A file that was sent but could not be deleted, often one a virus scanner holds for a moment,
 // would be sent again at once. Waiting turns that into a rare duplicate instead of a tight loop.
 function stuck(dir: string, now: number, random: () => number): FlushOutcome {
@@ -325,12 +351,16 @@ export async function flushOnce(ctx: FlushContext): Promise<FlushOutcome> {
   try {
     res = await post(ctx, ctx.batchUrl, { events, droppedSinceLastSend: reportedDrops });
   } catch (err) {
+    if (!neverSent(err)) markInDoubt(dir, sendable);
     return retryLater(dir, now, random, null, `network: ${(err as Error).name ?? "error"}`);
   }
 
   if (res.ok) {
     const rejected = await rejectedCount(res);
     if (rejected === undefined) {
+      // The request went out and was answered, so the batch may be stored even though the answer
+      // could not be read: a reset or timeout mid-body, or a body past the cap.
+      markInDoubt(dir, sendable);
       return retryLater(
         dir,
         now,
@@ -350,6 +380,9 @@ export async function flushOnce(ctx: FlushContext): Promise<FlushOutcome> {
           (readState(dir).droppedSinceLastSend ?? 0) - reportedDrops,
         ),
         lastError: rejected > 0 ? `${rejected} events rejected by the backend` : undefined,
+        ...(coversDoubt(state, sendable)
+          ? { inDoubtThrough: undefined, inDoubtSince: undefined }
+          : {}),
       },
       dir,
     );
@@ -360,7 +393,36 @@ export async function flushOnce(ctx: FlushContext): Promise<FlushOutcome> {
   const refusal = refused(dir, now, status);
   if (refusal) return refusal;
   if (status === 404 || status === 405) {
-    return sendSingly(ctx, sendable, events, true);
+    const through = state.inDoubtThrough;
+    const inDoubt = through === undefined ? [] : sendable.filter((item) => item.name <= through);
+    if (inDoubt.length === 0) return sendSingly(ctx, sendable, events, true);
+    // A deploy can answer 404 for a while, and the batch route takes these events again safely.
+    // The window starts at the first 404 seen with events in doubt, so it bounds how long the
+    // route has been gone, and once it has passed the route is taken as removed and the events are
+    // dropped rather than resent to /ingest, the same one try a single send gets. A start stamped
+    // in the future predates a clock that went backwards and counts as long past.
+    const since = state.inDoubtSince;
+    if (since === undefined) updateState({ inDoubtSince: now }, dir);
+    if (since === undefined || remainingMs(since + MAX_PAUSE_MS, MAX_PAUSE_MS, now) > 0) {
+      return retryLater(
+        dir,
+        now,
+        random,
+        null,
+        `batch route answered ${status} after a send that may have arrived`,
+      );
+    }
+    if (!removePending(inDoubt)) return stuck(dir, now, random);
+    updateState(
+      {
+        lastError: `${inDoubt.length} events dropped, their batch may have arrived before the batch route went away`,
+        ...(coversDoubt(state, sendable)
+          ? { inDoubtThrough: undefined, inDoubtSince: undefined }
+          : {}),
+      },
+      dir,
+    );
+    return "sent";
   }
   if (status === 413) {
     if (sendable.length === 1) {
@@ -380,6 +442,8 @@ export async function flushOnce(ctx: FlushContext): Promise<FlushOutcome> {
     return "sent";
   }
   if (isTransient(status)) {
+    // A 429 turned the batch away; the other transient answers can come after it was stored.
+    if (status !== 429) markInDoubt(dir, sendable);
     return retryLater(
       dir,
       now,

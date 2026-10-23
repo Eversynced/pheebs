@@ -350,6 +350,152 @@ describe("a backend without /ingest/batch", () => {
     expect(readState(dir).batchUnsupportedUntil).toBe(NOW + 24 * 60 * 60 * 1000);
   });
 
+  it("never sends a batch that may have arrived to /ingest when the batch route then answers 404", async () => {
+    queue(2);
+    let batchCalls = 0;
+    fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        new Response(null, {
+          status: url.endsWith("/batch") ? (batchCalls++ === 0 ? 502 : 404) : 202,
+        }),
+      ),
+    );
+    expect(await flushOnce(ctx())).toBe("retry");
+    expect(await flushOnce(ctx())).toBe("retry");
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.test/ingest/batch",
+      "https://api.test/ingest/batch",
+    ]);
+    expect(listPending(dir)).toHaveLength(2);
+    expect(readState(dir)).not.toHaveProperty("batchUnsupportedUntil");
+  });
+
+  it("drops a batch that may have arrived once the batch route stays gone, and probes with the rest", async () => {
+    queue(2);
+    fetchMock = vi.fn(() => Promise.reject(new TypeError("fetch failed")));
+    expect(await flushOnce(ctx())).toBe("retry");
+
+    fetchMock = vi.fn((url: string) =>
+      Promise.resolve(new Response(null, { status: url.endsWith("/batch") ? 404 : 202 })),
+    );
+    expect(await flushOnce(ctx({ now: NOW }))).toBe("retry");
+    const later = NOW + 60 * 60 * 1000 + 1;
+    expect(await flushOnce(ctx({ now: later }))).toBe("sent");
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.test/ingest/batch",
+      "https://api.test/ingest/batch",
+    ]);
+    expect(listPending(dir)).toEqual([]);
+    expect(readState(dir).lastError).toContain("may have arrived");
+
+    enqueue({ event_id: "id-new", event: "turn_ended" }, dir, later);
+    expect(await flushOnce(ctx({ now: later }))).toBe("sent");
+    expect(sentBodies().at(-1)).toEqual({ event_id: "id-new", event: "turn_ended" });
+    expect(readState(dir).batchUnsupportedUntil).toBeGreaterThan(later);
+  });
+
+  describe("a batch that may have arrived", () => {
+    const HOUR = 60 * 60 * 1000;
+    const refused = () =>
+      Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } });
+    const unreadable = () =>
+      new Response(
+        new ReadableStream({
+          start: (c) =>
+            c.error(Object.assign(new Error("reset"), { cause: { code: "ECONNRESET" } })),
+        }),
+        { status: 200 },
+      );
+
+    // One step per batch call, in order; /ingest answers 202 and is counted.
+    function script(...steps: Array<number | (() => Response) | Error>): () => number {
+      let batchCalls = 0;
+      let singles = 0;
+      fetchMock = vi.fn((url: string) => {
+        if (!url.endsWith("/batch")) {
+          singles++;
+          return Promise.resolve(new Response(null, { status: 202 }));
+        }
+        const step = steps[batchCalls++];
+        if (step instanceof Error) return Promise.reject(step);
+        if (typeof step === "function") return Promise.resolve(step());
+        return Promise.resolve(new Response(null, { status: step }));
+      });
+      return () => singles;
+    }
+
+    it("is not sent to /ingest when the answer to it could not be read and the batch route then answers 404", async () => {
+      queue(2);
+      const singles = script(unreadable, 404);
+      expect(await flushOnce(ctx())).toBe("retry");
+      expect(await flushOnce(ctx())).toBe("retry");
+      expect(singles()).toBe(0);
+      expect(listPending(dir)).toHaveLength(2);
+    });
+
+    it("gets its hour on the batch route counted from the first 404, not from the outage", async () => {
+      queue(2);
+      const singles = script(502, 502, 404, 404);
+      expect(await flushOnce(ctx())).toBe("retry");
+      expect(await flushOnce(ctx({ now: NOW + 2 * HOUR }))).toBe("retry");
+      expect(await flushOnce(ctx({ now: NOW + 2 * HOUR + 1000 }))).toBe("retry");
+      expect(listPending(dir)).toHaveLength(2);
+      expect(await flushOnce(ctx({ now: NOW + 3 * HOUR + 2000 }))).toBe("sent");
+      expect(listPending(dir)).toEqual([]);
+      expect(singles()).toBe(0);
+    });
+
+    it("does not lend its spent window to a later batch once the first one left another way", async () => {
+      queue(2);
+      const singles = script(502, 404, 422, 502, 404);
+      expect(await flushOnce(ctx())).toBe("retry");
+      expect(await flushOnce(ctx({ now: NOW + 30_000 }))).toBe("retry");
+      expect(await flushOnce(ctx({ now: NOW + 60_000 }))).toBe("sent");
+      expect(listPending(dir)).toEqual([]);
+
+      const later = NOW + 24 * HOUR;
+      enqueue({ event_id: "id-a", event: "turn_ended" }, dir, later - 1000);
+      enqueue({ event_id: "id-b", event: "turn_ended" }, dir, later - 999);
+      expect(await flushOnce(ctx({ now: later }))).toBe("retry");
+      expect(await flushOnce(ctx({ now: later + 60_000 }))).toBe("retry");
+      expect(listPending(dir)).toHaveLength(2);
+      expect(singles()).toBe(0);
+    });
+
+    it("holds a later episode on the batch route after an earlier one ended in a 2xx result", async () => {
+      queue(1);
+      const accepted = () =>
+        new Response(JSON.stringify({ accepted: 1, duplicates: 0, rejected: [] }), { status: 200 });
+      const singles = script(502, accepted, 502, 404);
+      expect(await flushOnce(ctx())).toBe("retry");
+      expect(await flushOnce(ctx({ now: NOW + 1000 }))).toBe("sent");
+      expect(readState(dir)).not.toHaveProperty("inDoubtThrough");
+
+      enqueue({ event_id: "id-late", event: "turn_ended" }, dir, NOW + 2 * HOUR);
+      expect(await flushOnce(ctx({ now: NOW + 3 * HOUR }))).toBe("retry");
+      expect(await flushOnce(ctx({ now: NOW + 3 * HOUR + 1000 }))).toBe("retry");
+      expect(listPending(dir)).toHaveLength(1);
+      expect(singles()).toBe(0);
+    });
+
+    it("is still probed on /ingest after a 429, which turned the batch away", async () => {
+      queue(2);
+      const singles = script(429, 404);
+      expect(await flushOnce(ctx())).toBe("retry");
+      expect(await flushOnce(ctx({ now: NOW + 60 * 60_000 }))).toBe("sent");
+      expect(singles()).toBe(2);
+    });
+
+    it("is still probed on /ingest after a refused connection, which sent nothing", async () => {
+      queue(2);
+      const singles = script(refused(), 404);
+      expect(await flushOnce(ctx())).toBe("retry");
+      expect(await flushOnce(ctx({ now: NOW + 60 * 60_000 }))).toBe("sent");
+      expect(singles()).toBe(2);
+    });
+  });
+
   it("skips the batch route while the fallback is cached", async () => {
     queue(1);
     updateState({ batchUnsupportedUntil: NOW + 1000 }, dir);

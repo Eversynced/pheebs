@@ -59,6 +59,14 @@ export interface OutboxState {
   droppedSinceLastSend?: number;
   maxBatch?: number;
   maxBatchUntil?: number;
+  // The last queued name sent in a batch whose send failed after it may have arrived, and when
+  // the batch route first answered 404 or 405 for it. Events up to it may go to the batch route
+  // again, never to /ingest. Names sort by arrival only while the clock moves forward, so after a
+  // step back every never-sent event named before the marker counts as in doubt too, until the
+  // clock catches up: accepted, since it costs those events after an hour of 404s and needs no
+  // more state.
+  inDoubtThrough?: string;
+  inDoubtSince?: number;
   lastError?: string;
 }
 
