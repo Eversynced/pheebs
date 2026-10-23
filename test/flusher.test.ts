@@ -101,6 +101,18 @@ describe("flushOnce", () => {
     expect(readState(dir).lastError).toContain("without a batch result");
   });
 
+  it("reads a batch result with long rejection reasons for every event", async () => {
+    queue(500);
+    const rejected = Array.from({ length: 500 }, (_, index) => ({
+      index,
+      reason: "r".repeat(140),
+    }));
+    answer(200, { accepted: 0, duplicates: 0, rejected });
+    expect(await flushOnce(ctx())).toBe("sent");
+    expect(listPending(dir)).toEqual([]);
+    expect(readState(dir).lastError).toBe("500 events rejected by the backend");
+  });
+
   it("reports the drop count once, then clears it", async () => {
     queue(1);
     updateState({ droppedSinceLastSend: 7 }, dir);

@@ -32,9 +32,10 @@ const MAX_BATCH_EVENTS = 500;
 const MAX_BATCH_BYTES = 512 * 1024;
 const SEND_TIMEOUT_MS = 10_000;
 const BACKOFF_BASE_MS = 5_000;
-// Only `accepted` and `rejected` are read from a batch answer, so a body past this is not worth
-// reading.
-const MAX_ANSWER_BYTES = 64 * 1024;
+// A body past this is taken as not a batch result and the batch is retried, so it has to hold the
+// largest answer a conforming backend sends: one rejection per event, each with a reason the
+// contract does not bound. 8 KiB a reason for a full batch is far past any real one.
+const MAX_ANSWER_BYTES = 4 * 1024 * 1024;
 
 // Failures that happen before a request leaves the machine, so the backend cannot have stored it:
 // no route, no address, no connection, or a TLS handshake that failed before any body was sent.
