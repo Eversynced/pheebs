@@ -1,14 +1,31 @@
+import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LogEntry } from "../src/logger.js";
 import { getTransport } from "../src/transport.js";
 import { DebugTransport } from "../src/transports/debug.js";
-import { HttpTransport, TRANSPORT_ERROR_PATH } from "../src/transports/http.js";
+import { HttpTransport } from "../src/transports/http.js";
 
 const readFileSyncMock = vi.fn();
 const writeFileSyncMock = vi.fn();
 const mkdirSyncMock = vi.fn();
 const chmodSyncMock = vi.fn();
 const existsSyncMock = vi.fn();
+
+const enqueueMock = vi.fn();
+const isFlusherLiveMock = vi.fn(() => false);
+const readStateMock = vi.fn(() => ({}) as { nextAttemptAt?: number });
+const spawnMock = vi.fn(() => ({ on: vi.fn(), unref: vi.fn() }));
+
+vi.mock("../src/outbox.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/outbox.js")>()),
+  enqueue: (...a: unknown[]) => enqueueMock(...a),
+  isFlusherLive: () => isFlusherLiveMock(),
+  readState: () => readStateMock(),
+}));
+
+vi.mock("node:child_process", () => ({
+  spawn: (...a: unknown[]) => spawnMock(...a),
+}));
 
 vi.mock("node:fs", () => ({
   readFileSync: (...a: unknown[]) => readFileSyncMock(...a),
@@ -99,58 +116,95 @@ describe("getTransport", () => {
 });
 
 describe("HttpTransport", () => {
-  it("sends nothing when no backend is configured, even with a token stored", async () => {
+  beforeEach(() => {
+    for (const m of [enqueueMock, spawnMock]) m.mockClear();
+    isFlusherLiveMock.mockReturnValue(false);
+    readStateMock.mockReturnValue({});
+  });
+
+  it("queues nothing when no backend is configured, even with a token stored", () => {
     withoutBackend("pheebs_tok");
-    stubFetchStatus(200);
     new HttpTransport().send(entry());
-    expect(fetch).not.toHaveBeenCalled();
+    expect(enqueueMock).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
-  it("POSTs the envelope to /ingest with a Bearer token, omitting developer and logPath", async () => {
-    withToken("pheebs_secret");
-    new HttpTransport().send(entry({ tool_name: "Bash", logPath: "/tmp/x" } as Partial<LogEntry>));
-
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
-    const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(String(url)).toBe("https://api.test/ingest");
-    expect(init.method).toBe("POST");
-    expect(init.headers.Authorization).toBe("Bearer pheebs_secret");
-    const body = JSON.parse(init.body);
-    expect(body.event).toBe("tool_use_completed");
-    expect(body.tool_name).toBe("Bash");
-    expect(body).not.toHaveProperty("developer");
-    expect(body).not.toHaveProperty("logPath");
-  });
-
-  it("skips the remote send entirely when no token is stored", () => {
+  it("queues nothing when no token is stored", () => {
     withoutToken();
     new HttpTransport().send(entry());
+    expect(enqueueMock).not.toHaveBeenCalled();
+  });
+
+  it("queues the envelope without developer or logPath, and never touches the network", () => {
+    withToken("pheebs_secret");
+    new HttpTransport().send(
+      entry({ tool_name: "Bash", logPath: "/tmp/x", event_id: "id-1" } as Partial<LogEntry>),
+    );
+
     expect(fetch).not.toHaveBeenCalled();
+    expect(enqueueMock).toHaveBeenCalledOnce();
+    const [payload] = enqueueMock.mock.calls[0] as [Record<string, unknown>];
+    expect(payload).toMatchObject({
+      event: "tool_use_completed",
+      tool_name: "Bash",
+      event_id: "id-1",
+    });
+    expect(payload).not.toHaveProperty("developer");
+    expect(payload).not.toHaveProperty("logPath");
   });
 
-  it("writes the transport-error marker on a 401", async () => {
-    withToken("pheebs_x");
-    stubFetchStatus(401);
+  it("scopes the queue to the backend and token without exposing the token", () => {
+    withToken("pheebs_secret");
     new HttpTransport().send(entry());
-    await vi.waitFor(() => expect(writeFileSyncMock).toHaveBeenCalled());
-    expect(String(writeFileSyncMock.mock.calls[0][0])).toBe(TRANSPORT_ERROR_PATH);
+    const [, queueDir] = enqueueMock.mock.calls[0] as [unknown, string];
+    const scope = queueDir.split(/[\\/]/).pop() ?? "";
+    expect(scope).toMatch(/^[0-9a-f]{16}$/);
+    expect(scope).not.toContain("pheebs_secret");
   });
 
-  it("warns on a 422 without writing a marker or throwing", async () => {
+  it("starts a detached flusher that re-invokes this CLI", () => {
     withToken("pheebs_x");
-    stubFetchStatus(422);
-    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     new HttpTransport().send(entry());
-    await vi.waitFor(() => expect(stderr).toHaveBeenCalled());
-    expect(writeFileSyncMock).not.toHaveBeenCalled();
-    stderr.mockRestore();
+    expect(spawnMock).toHaveBeenCalledOnce();
+    const [exe, args, options] = spawnMock.mock.calls[0] as unknown as [
+      string,
+      string[],
+      Record<string, unknown>,
+    ];
+    expect(exe).toBe(process.execPath);
+    expect(args).toEqual([process.argv[1], "flush", "--linger"]);
+    expect(options).toMatchObject({ detached: true, stdio: "ignore", cwd: tmpdir() });
   });
 
-  it("writes no marker on success", async () => {
+  it("leaves a live flusher to pick the event up", () => {
     withToken("pheebs_x");
+    isFlusherLiveMock.mockReturnValue(true);
     new HttpTransport().send(entry());
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
-    expect(writeFileSyncMock).not.toHaveBeenCalled();
+    expect(enqueueMock).toHaveBeenCalledOnce();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("holds off starting a flusher while a backoff is pending", () => {
+    withToken("pheebs_x");
+    readStateMock.mockReturnValue({ nextAttemptAt: Date.now() + 60_000 });
+    new HttpTransport().send(entry());
+    expect(enqueueMock).toHaveBeenCalledOnce();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores a pause further out than any the flusher sets, as a clock that went backwards", () => {
+    withToken("pheebs_x");
+    readStateMock.mockReturnValue({ nextAttemptAt: Date.now() + 24 * 60 * 60 * 1000 });
+    new HttpTransport().send(entry());
+    expect(spawnMock).toHaveBeenCalledOnce();
+  });
+
+  it("never throws into the hook when the queue cannot be written", () => {
+    withToken("pheebs_x");
+    enqueueMock.mockImplementationOnce(() => {
+      throw new Error("EACCES");
+    });
+    expect(() => new HttpTransport().send(entry())).not.toThrow();
   });
 });
 

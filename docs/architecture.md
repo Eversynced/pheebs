@@ -10,15 +10,35 @@ flowchart TD
     B --> C["Handler<br/>validate event, read stdin,<br/>run per-tool extractor"]
     C --> D["Event envelope<br/>(the schema below)"]
     D --> E["Local JSONL log<br/>~/.pheebs/events.jsonl"]
-    D -->|token set| F["POST /ingest<br/>your backend"]
+    D -->|token set| Q["Send queue<br/>~/.pheebs/outbox/"]
+    Q --> R["pheebs flush<br/>detached, one at a time"]
+    R --> F["POST /ingest/batch<br/>your backend"]
     A -.->|native OTLP, Claude Code and Codex| G["POST /otel proxy<br/>your backend"]
     F --> H["Your storage"]
     G --> I["Your OTel destination"]
     H --> J["Layer 2<br/>classifiers, cost analysis, dashboards"]
 ```
 
-Local logging always happens. The `/ingest` send is skipped entirely when no
+Local logging always happens. The send is skipped entirely when no
 endpoint and token are configured, which is the default: Pheebs ships local-only.
+
+## Delivery
+
+No hook waits on the network to deliver an event. It writes the envelope to the send queue, one
+file per event, and starts a detached `pheebs flush` unless one is already running or a backoff
+is pending, then exits.
+Cursor and Codex wait for the hook process, so this is what keeps a slow or unreachable backend
+from stalling them ([`src/transports/http.ts`](../src/transports/http.ts)). Prompt
+classification is the one call a hook still makes, bounded at 2.5 seconds.
+
+The flusher lets the oldest event wait up to a minute, so one request carries a burst of hooks,
+then sends batches to `POST /ingest/batch` until the queue is empty, falling back to `/ingest`
+on a backend that does not batch ([`src/flusher.ts`](../src/flusher.ts)). What it retries, and
+what a backend owes a resend, is in [`backend-contract.md`](./backend-contract.md).
+
+Each backend and token gets its own queue, and pointing Pheebs elsewhere discards the old one
+rather than send it to a backend the events were never meant for
+([`src/outbox.ts`](../src/outbox.ts)). The local log keeps every event either way.
 
 ## The client's job, and where it stops
 
@@ -50,13 +70,15 @@ Every event, from every tool, has the same base shape:
   "codebase": "Eversynced/pheebs",
   "ai_tool": "claude_code",
   "session_id": "abc123",
+  "event_id": "0192a8f0-4c1e-7d3a-9b2f-6e5d4c3b2a10",
   "trigger_type": "auto"
 }
 ```
 
 The typed fields are `timestamp, source, event, developer, codebase, ai_tool,
-session_id, version`. Everything tool-specific or event-specific rides alongside
-them as extras: `tool_intent`, `vcs_action`, `command_name`, `lines_changed`,
+session_id, version, event_id`. `event_id` is a UUIDv7 minted for each event and kept
+across resends, so a backend can store a retried batch once. Everything tool-specific or
+event-specific rides alongside them as extras: `tool_intent`, `vcs_action`, `command_name`, `lines_changed`,
 `agent_type`, and so on. `ai_tool` says which agent produced the event.
 
 `developer` is stripped by the client before the send. The backend stamps

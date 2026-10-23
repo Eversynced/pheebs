@@ -9,6 +9,7 @@ import {
 } from "../hooks/definitions.js";
 import { forgetInstalls, listInstalls } from "../installs.js";
 import { syncClaudeOtelEnv, syncCodexOtel } from "../otel.js";
+import { removeOutbox } from "../outbox.js";
 import { resolveSettingsPath } from "./path.js";
 
 /** Returns whether the file was dealt with. A malformed one is left alone and reported, so
@@ -141,4 +142,12 @@ export async function runUninstall(): Promise<void> {
   }
 
   forgetInstalls(cleared);
+
+  // Events still queued for the backend go with the hooks: nothing would send them now. The local
+  // log keeps its copy.
+  try {
+    removeOutbox();
+  } catch {
+    console.warn("pheebs: could not remove the send queue in ~/.pheebs/outbox, skipping");
+  }
 }
