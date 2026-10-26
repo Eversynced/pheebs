@@ -1,0 +1,641 @@
+{
+  "cases": [
+    {
+      "name": "no session inside the window: the day before it opens and a manual scan do not count",
+      "today": "2026-10-21T12:00:00.000Z",
+      "events": [
+        {
+          "timestamp": "2026-09-23T23:59:59.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "before",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-10-20T10:00:00.000Z",
+          "source": "hook",
+          "event": "artifact_found",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "scan",
+          "version": "1.4.0",
+          "artifact_type": "context_file"
+        }
+      ],
+      "expected": {
+        "enabled": false,
+        "reason": "insufficient_data"
+      }
+    },
+    {
+      "name": "one active week: counts are reported, placement is withheld",
+      "today": "2026-10-21T12:00:00.000Z",
+      "events": [
+        {
+          "timestamp": "2026-08-03T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "pre",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-10-19T09:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "w1",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-10-19T09:01:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "w1",
+          "version": "1.4.0",
+          "command_name": "review"
+        },
+        {
+          "timestamp": "2026-10-19T09:02:00.000Z",
+          "source": "hook",
+          "event": "subagent_spawned",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "w1",
+          "version": "1.4.0",
+          "agent_type": "reviewer"
+        },
+        {
+          "timestamp": "2026-10-20T09:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "w2",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-10-20T09:01:00.000Z",
+          "source": "hook",
+          "event": "context_compacted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "w2",
+          "version": "1.4.0",
+          "trigger_type": "auto"
+        },
+        {
+          "timestamp": "2026-10-20T09:02:00.000Z",
+          "source": "hook",
+          "event": "context_compacted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "w2",
+          "version": "1.4.0",
+          "trigger_type": "manual"
+        }
+      ],
+      "expected": {
+        "enabled": true,
+        "sessions": 2,
+        "active_weeks": 1,
+        "artifact_breadth": 1,
+        "compaction": {
+          "auto": 1,
+          "manual": 1
+        },
+        "competencies": [
+          {
+            "name": "Models",
+            "state": "insufficient_data"
+          },
+          {
+            "name": "Artifacts",
+            "state": "insufficient_data"
+          },
+          {
+            "name": "MCP",
+            "state": "insufficient_data"
+          },
+          {
+            "name": "Evals",
+            "state": "insufficient_data"
+          },
+          {
+            "name": "Context management",
+            "state": "insufficient_data"
+          },
+          {
+            "name": "Orchestration",
+            "state": "insufficient_data"
+          }
+        ]
+      }
+    },
+    {
+      "name": "window edges: the first window day counts, the day before does not, and a version first seen on the cutoff day is judged",
+      "today": "2026-10-21T12:00:00.000Z",
+      "events": [
+        {
+          "timestamp": "2026-09-23T23:59:59.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "edge-out",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-09-23T23:59:59.500Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "edge-out",
+          "version": "1.4.0",
+          "command_name": "deploy"
+        },
+        {
+          "timestamp": "2026-09-23T23:59:59.900Z",
+          "source": "hook",
+          "event": "subagent_spawned",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "edge-out",
+          "version": "1.4.0",
+          "agent_type": "planner"
+        },
+        {
+          "timestamp": "2026-09-24T00:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "edge-in",
+          "version": "1.4.0",
+          "model": "claude-opus-5"
+        },
+        {
+          "timestamp": "2026-09-24T00:00:01.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "edge-in",
+          "version": "1.4.0",
+          "command_name": "review"
+        },
+        {
+          "timestamp": "2026-10-21T11:59:59.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "today",
+          "version": "1.4.0",
+          "model": "claude-sonnet-5-20260101"
+        }
+      ],
+      "expected": {
+        "enabled": true,
+        "sessions": 2,
+        "active_weeks": 2,
+        "coverage_index": {
+          "recurring": 0,
+          "applicable": 22
+        },
+        "artifact_breadth": 1,
+        "compaction": {
+          "auto": 0,
+          "manual": 0
+        },
+        "competencies": [
+          {
+            "name": "Models",
+            "state": "adopted",
+            "recurring_share": 0
+          },
+          {
+            "name": "Artifacts",
+            "state": "adopted",
+            "recurring_share": 0
+          },
+          {
+            "name": "MCP",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Evals",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Context management",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Orchestration",
+            "state": "unobserved",
+            "recurring_share": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "two harnesses: recurring over the last four active weeks, patterns, and a ship whose test ran before the window",
+      "today": "2026-10-21T12:00:00.000Z",
+      "events": [
+        {
+          "timestamp": "2026-08-03T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "cc-pre",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-08-03T11:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "cx-pre",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-09-23T22:00:00.000Z",
+          "source": "hook",
+          "event": "tool_use_completed",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "span",
+          "version": "1.4.0",
+          "tool_intent": "test_run"
+        },
+        {
+          "timestamp": "2026-09-24T01:00:00.000Z",
+          "source": "hook",
+          "event": "tool_use_completed",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "span",
+          "version": "1.4.0",
+          "tool_intent": "vcs",
+          "vcs_action": "commit"
+        },
+        {
+          "timestamp": "2026-09-29T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "cc-a",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-09-29T10:01:00.000Z",
+          "source": "hook",
+          "event": "subagent_spawned",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "cc-a",
+          "version": "1.4.0",
+          "agent_type": "Explore"
+        },
+        {
+          "timestamp": "2026-10-06T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "cc-b",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-10-06T10:01:00.000Z",
+          "source": "hook",
+          "event": "subagent_spawned",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "cc-b",
+          "version": "1.4.0",
+          "agent_type": "reviewer",
+          "role": "review"
+        },
+        {
+          "timestamp": "2026-10-13T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "cc-c",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-10-13T10:01:00.000Z",
+          "source": "hook",
+          "event": "subagent_spawned",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "cc-c",
+          "version": "1.4.0",
+          "agent_type": "planner"
+        },
+        {
+          "timestamp": "2026-10-13T10:02:00.000Z",
+          "source": "hook",
+          "event": "context_compacted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "cc-c",
+          "version": "1.4.0",
+          "trigger_type": "manual"
+        },
+        {
+          "timestamp": "2026-10-20T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "cx-d",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-10-20T10:01:00.000Z",
+          "source": "hook",
+          "event": "context_compacted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "cx-d",
+          "version": "1.4.0",
+          "trigger_type": "auto"
+        },
+        {
+          "timestamp": "2026-10-20T10:02:00.000Z",
+          "source": "hook",
+          "event": "compaction_completed",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "cx-d",
+          "version": "1.4.0",
+          "trigger_type": "auto"
+        },
+        {
+          "timestamp": "2026-10-20T10:03:00.000Z",
+          "source": "hook",
+          "event": "tool_use_failed",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "cx-d",
+          "version": "1.4.0",
+          "tool_intent": "test_run"
+        },
+        {
+          "timestamp": "2026-10-20T10:04:00.000Z",
+          "source": "hook",
+          "event": "tool_use_completed",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "cx-d",
+          "version": "1.4.0",
+          "tool_intent": "edit"
+        },
+        {
+          "timestamp": "2026-10-20T10:05:00.000Z",
+          "source": "hook",
+          "event": "tool_use_completed",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "cx-d",
+          "version": "1.4.0",
+          "tool_intent": "test_run"
+        }
+      ],
+      "expected": {
+        "enabled": true,
+        "sessions": 5,
+        "active_weeks": 5,
+        "coverage_index": {
+          "recurring": 1,
+          "applicable": 23
+        },
+        "artifact_breadth": 0,
+        "compaction": {
+          "auto": 1,
+          "manual": 1
+        },
+        "competencies": [
+          {
+            "name": "Models",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Artifacts",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "MCP",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Evals",
+            "state": "adopted",
+            "recurring_share": 0
+          },
+          {
+            "name": "Context management",
+            "state": "adopted",
+            "recurring_share": 0
+          },
+          {
+            "name": "Orchestration",
+            "state": "recurring",
+            "recurring_share": 0.2
+          }
+        ]
+      }
+    },
+    {
+      "name": "Codex only, upgraded inside the window: practices that need the new version wait, n/a ones leave the index",
+      "today": "2026-10-21T12:00:00.000Z",
+      "events": [
+        {
+          "timestamp": "2026-08-03T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "pre",
+          "version": "0.12.0",
+          "model": "gpt-5-codex"
+        },
+        {
+          "timestamp": "2026-10-06T09:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "u1",
+          "version": "0.15.0",
+          "model": "gpt-5-codex"
+        },
+        {
+          "timestamp": "2026-10-06T09:01:00.000Z",
+          "source": "hook",
+          "event": "tool_use_completed",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "u1",
+          "version": "0.15.0",
+          "tool_intent": "test_run"
+        },
+        {
+          "timestamp": "2026-10-06T09:02:00.000Z",
+          "source": "hook",
+          "event": "tool_use_completed",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "u1",
+          "version": "0.15.0",
+          "tool_name": "mcp__linear__list_issues",
+          "mcp_server_name": "linear"
+        },
+        {
+          "timestamp": "2026-10-13T09:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "u2",
+          "version": "0.15.0",
+          "start_source": "resume"
+        },
+        {
+          "timestamp": "2026-10-13T09:01:00.000Z",
+          "source": "hook",
+          "event": "tool_use_completed",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "u2",
+          "version": "0.15.0",
+          "tool_intent": "test_run"
+        },
+        {
+          "timestamp": "2026-10-20T09:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "u3",
+          "version": "0.15.0"
+        },
+        {
+          "timestamp": "2026-10-20T09:01:00.000Z",
+          "source": "hook",
+          "event": "tool_use_completed",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "codex",
+          "session_id": "u3",
+          "version": "0.15.0",
+          "tool_intent": "test_run"
+        }
+      ],
+      "expected": {
+        "enabled": true,
+        "sessions": 3,
+        "active_weeks": 3,
+        "coverage_index": {
+          "recurring": 1,
+          "applicable": 8
+        },
+        "artifact_breadth": 0,
+        "compaction": {
+          "auto": 0,
+          "manual": 0
+        },
+        "competencies": [
+          {
+            "name": "Models",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Artifacts",
+            "state": "insufficient_data"
+          },
+          {
+            "name": "MCP",
+            "state": "insufficient_data"
+          },
+          {
+            "name": "Evals",
+            "state": "recurring",
+            "recurring_share": 0.3333333333333333
+          },
+          {
+            "name": "Context management",
+            "state": "adopted",
+            "recurring_share": 0
+          },
+          {
+            "name": "Orchestration",
+            "state": "unobserved",
+            "recurring_share": 0
+          }
+        ]
+      }
+    }
+  ]
+}
