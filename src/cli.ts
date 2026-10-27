@@ -27,6 +27,7 @@ Commands:
   config <cmd>          Get/set settings — endpoint, token, auto-update, classify
   insights              Report on your own work, from the backend or else the local log
   scan                  Scan repo for AI-config artifacts
+  flush                 Send queued events to the backend now
   update                Update pheebs to the latest npm release
   uninstall             Remove pheebs hooks + OTel
 
@@ -69,6 +70,12 @@ if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
   const tool = HOOK_COMMANDS[args[0]];
   const { handleHookEvent } = await import("./hooks/handler.js");
   await handleHookEvent(tool, args[1], args.slice(2));
+  // Cursor and Codex wait for this process. A classify request that timed out has already been
+  // answered for, but its pending connect would hold the event loop, and so the agent, open.
+  // Output written to a pipe is asynchronous on macOS, so it is flushed before the exit.
+  await new Promise<void>((resolve) => process.stderr.write("", () => resolve()));
+  await new Promise<void>((resolve) => process.stdout.write("", () => resolve()));
+  process.exit(process.exitCode ?? 0);
 } else if (args[0] === "init") {
   const interactive =
     Boolean(process.stdin.isTTY) &&
@@ -106,6 +113,11 @@ if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
   const tool = resolveTool();
   const { runScanInteractive } = await import("./scanner.js");
   await runScanInteractive(tool);
+} else if (args[0] === "flush") {
+  const { runFlush } = await import("./flusher.js");
+  const linger = args.includes("--linger");
+  const outcome = await runFlush({ linger });
+  if (!linger) console.log(`pheebs: ${outcome}`);
 } else if (args[0] === "update") {
   const { runUpdate } = await import("./commands/update.js");
   await runUpdate();

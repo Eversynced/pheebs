@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import type { PheebsConfig } from "./config.js";
+import { newEventId } from "./event-id.js";
 import type { AiTool } from "./hooks/definitions.js";
 import { getTransport } from "./transport.js";
 
@@ -25,6 +26,8 @@ export function appendLogEntry(entry: LogEntry, config: PheebsConfig): void {
   mkdirSync(path.dirname(fullPath), { recursive: true });
 
   if (!entry.timestamp) entry.timestamp = date;
+  // The same id goes to the log and the backend, so a resent event is recognised as one event.
+  if (!entry.event_id) entry.event_id = newEventId();
 
   appendFileSync(fullPath, `${JSON.stringify(entry)}\n`);
 

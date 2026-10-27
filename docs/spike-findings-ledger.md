@@ -45,6 +45,15 @@ privacy line.
 
 ## Findings
 
+### 2026-10-20: A detached, unref'd child spawned by a hook outlives the hook and the agent on Linux, on all three tools [Status: CONFIRMED (Linux, headless CLIs) / UNVERIFIED (macOS, Windows, Cursor GUI, Codex TUI)]
+
+- **Tool(s):** claude_code, cursor, codex
+- **Hook / event:** Claude Code `UserPromptSubmit`, `Stop`; Cursor `sessionStart`, `afterShellExecution`, `sessionEnd`; Codex `UserPromptSubmit`, `Stop`
+- **Claim (doc/assumption):** a hook can hand slow work to a child spawned with `detached: true`, `stdio: "ignore"` and `unref()`, as `src/auto-update.ts` does, and the child finishes after the hook exits. No vendor doc states it, and nothing here had verified it for any tool. It matters most on Cursor (hooks run synchronously under a timeout) and Codex (no async flag), where the agent waits for the hook process.
+- **Finding:** the child survived in every case driven. Across 15 hook firings, 15 children started, waited 20 s, POSTed one envelope to the reference backend and got 202. Three paths were covered: normal agent exit; the hook itself killed at its own timeout (a 12 s sleep against a 5 s timeout, 4 hooks killed before they could exit); and SIGINT, then SIGTERM, to the agent's whole process group mid-run (Cursor exited 130, Codex 1). The child leads its own session, so a process-group signal never reaches it. When its parent dies it is re-parented to the user's service manager and completes. Separately, under headless `cursor-agent -p` neither `beforeSubmitPrompt` nor `stop` fired, consistent with the CLI-versus-GUI method note above, so Cursor's timeout path was driven through `afterShellExecution`.
+- **Method:** Linux 7.0, Node 24.21. Claude Code 2.1.304 (`claude -p`), Cursor CLI 2026.09.10-fd3934a (`cursor-agent -p --trust --force`), Codex 0.154.0 (`codex exec`), each run under `setsid` so its process group could be signalled. Hooks were registered project-local for Claude Code and Cursor, and in an isolated `CODEX_HOME` for Codex (auth symlinked, `trusted_hash` computed with the formula in the 2026-09-09 entry). The child POSTed to `examples/backend-node` on localhost. `PHEEBS_DEBUG=1` kept any installed pheebs hook off the network. Only pids, process-group and session ids, timestamps and HTTP statuses were recorded; no payload content was read.
+- **Impact:** none to schema. A delivery design can move the network send off the hook's path into a detached child on Linux. macOS, Windows (a hook runner that puts the hook in a kill-on-close job object would take the child with it), the Cursor GUI and the Codex TUI are not covered by this entry. A teardown that kills a whole cgroup, such as stopping the terminal's systemd scope, also kills the child.
+
 ### 2026-10-05 — Hook stdin can start with a UTF-8 BOM when a Windows PowerShell pipe delivers it; Claude Code's own runner sends none [Status: CONFIRMED (PowerShell pipe with UTF-8 `$OutputEncoding`, Claude Code runner) / UNVERIFIED (Cursor and Codex runners on Windows)]
 
 - **Tool(s):** claude_code; cursor and codex not checked
