@@ -636,6 +636,496 @@
           }
         ]
       }
+    },
+    {
+      "name": "split-phase delivery is judged only from client 1.0.0, so a 0.9.5 client leaves it out of the index",
+      "today": "2026-10-21T12:00:00.000Z",
+      "events": [
+        {
+          "timestamp": "2026-08-03T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "pre",
+          "version": "0.9.5"
+        },
+        {
+          "timestamp": "2026-10-06T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s0",
+          "version": "0.9.5"
+        },
+        {
+          "timestamp": "2026-10-13T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s1",
+          "version": "0.9.5"
+        },
+        {
+          "timestamp": "2026-10-20T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s2",
+          "version": "0.9.5"
+        }
+      ],
+      "expected": {
+        "enabled": true,
+        "sessions": 3,
+        "active_weeks": 3,
+        "coverage_index": {
+          "recurring": 0,
+          "applicable": 15
+        },
+        "artifact_breadth": 0,
+        "compaction": {
+          "auto": 0,
+          "manual": 0
+        },
+        "competencies": [
+          {
+            "name": "Models",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Artifacts",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "MCP",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Evals",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Context management",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Orchestration",
+            "state": "unobserved",
+            "recurring_share": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "split-phase delivery: a plan on one model, a deliberate switch, then execution on another, three weeks running",
+      "today": "2026-10-21T12:00:00.000Z",
+      "events": [
+        {
+          "timestamp": "2026-08-03T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "pre",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-10-06T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s0",
+          "version": "1.4.0",
+          "model": "claude-opus-5"
+        },
+        {
+          "timestamp": "2026-10-06T10:01:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s0",
+          "version": "1.4.0",
+          "permission_mode": "plan"
+        },
+        {
+          "timestamp": "2026-10-06T10:02:00.000Z",
+          "source": "hook",
+          "event": "model_switched",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s0",
+          "version": "1.4.0",
+          "from_model": "claude-opus-5",
+          "to_model": "claude-sonnet-5",
+          "switch_source": "command"
+        },
+        {
+          "timestamp": "2026-10-06T10:03:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s0",
+          "version": "1.4.0",
+          "permission_mode": "default"
+        },
+        {
+          "timestamp": "2026-10-13T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s1",
+          "version": "1.4.0",
+          "model": "claude-opus-5"
+        },
+        {
+          "timestamp": "2026-10-13T10:01:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s1",
+          "version": "1.4.0",
+          "permission_mode": "plan"
+        },
+        {
+          "timestamp": "2026-10-13T10:02:00.000Z",
+          "source": "hook",
+          "event": "model_switched",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s1",
+          "version": "1.4.0",
+          "from_model": "claude-opus-5",
+          "to_model": "claude-sonnet-5",
+          "switch_source": "command"
+        },
+        {
+          "timestamp": "2026-10-13T10:03:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s1",
+          "version": "1.4.0",
+          "permission_mode": "default"
+        },
+        {
+          "timestamp": "2026-10-20T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s2",
+          "version": "1.4.0",
+          "model": "claude-opus-5"
+        },
+        {
+          "timestamp": "2026-10-20T10:01:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s2",
+          "version": "1.4.0",
+          "permission_mode": "plan"
+        },
+        {
+          "timestamp": "2026-10-20T10:02:00.000Z",
+          "source": "hook",
+          "event": "model_switched",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s2",
+          "version": "1.4.0",
+          "from_model": "claude-opus-5",
+          "to_model": "claude-sonnet-5",
+          "switch_source": "command"
+        },
+        {
+          "timestamp": "2026-10-20T10:03:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s2",
+          "version": "1.4.0",
+          "permission_mode": "default"
+        }
+      ],
+      "expected": {
+        "enabled": true,
+        "sessions": 3,
+        "active_weeks": 3,
+        "coverage_index": {
+          "recurring": 3,
+          "applicable": 22
+        },
+        "artifact_breadth": 0,
+        "compaction": {
+          "auto": 0,
+          "manual": 0
+        },
+        "competencies": [
+          {
+            "name": "Models",
+            "state": "unobserved",
+            "recurring_share": 0.5
+          },
+          {
+            "name": "Artifacts",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "MCP",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Evals",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Context management",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Orchestration",
+            "state": "unobserved",
+            "recurring_share": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "split-phase delivery: a plan on a model nothing names reads Unobserved",
+      "known_divergence": true,
+      "today": "2026-10-21T12:00:00.000Z",
+      "events": [
+        {
+          "timestamp": "2026-08-03T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "pre",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-10-06T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s0",
+          "version": "1.4.0",
+          "start_source": "resume"
+        },
+        {
+          "timestamp": "2026-10-06T10:01:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s0",
+          "version": "1.4.0",
+          "permission_mode": "plan"
+        },
+        {
+          "timestamp": "2026-10-06T10:02:00.000Z",
+          "source": "hook",
+          "event": "model_switched",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s0",
+          "version": "1.4.0",
+          "to_model": "claude-sonnet-5",
+          "switch_source": "picker"
+        },
+        {
+          "timestamp": "2026-10-06T10:03:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s0",
+          "version": "1.4.0",
+          "permission_mode": "default"
+        },
+        {
+          "timestamp": "2026-10-13T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s1",
+          "version": "1.4.0",
+          "start_source": "resume"
+        },
+        {
+          "timestamp": "2026-10-13T10:01:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s1",
+          "version": "1.4.0",
+          "permission_mode": "plan"
+        },
+        {
+          "timestamp": "2026-10-13T10:02:00.000Z",
+          "source": "hook",
+          "event": "model_switched",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s1",
+          "version": "1.4.0",
+          "to_model": "claude-sonnet-5",
+          "switch_source": "picker"
+        },
+        {
+          "timestamp": "2026-10-13T10:03:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s1",
+          "version": "1.4.0",
+          "permission_mode": "default"
+        },
+        {
+          "timestamp": "2026-10-20T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s2",
+          "version": "1.4.0",
+          "start_source": "resume"
+        },
+        {
+          "timestamp": "2026-10-20T10:01:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s2",
+          "version": "1.4.0",
+          "permission_mode": "plan"
+        },
+        {
+          "timestamp": "2026-10-20T10:02:00.000Z",
+          "source": "hook",
+          "event": "model_switched",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s2",
+          "version": "1.4.0",
+          "to_model": "claude-sonnet-5",
+          "switch_source": "picker"
+        },
+        {
+          "timestamp": "2026-10-20T10:03:00.000Z",
+          "source": "hook",
+          "event": "prompt_submitted",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "session_id": "s2",
+          "version": "1.4.0",
+          "permission_mode": "default"
+        }
+      ],
+      "expected": {
+        "enabled": true,
+        "sessions": 3,
+        "active_weeks": 3,
+        "coverage_index": {
+          "recurring": 3,
+          "applicable": 22
+        },
+        "artifact_breadth": 0,
+        "compaction": {
+          "auto": 0,
+          "manual": 0
+        },
+        "competencies": [
+          {
+            "name": "Models",
+            "state": "unobserved",
+            "recurring_share": 0.3333333333333333
+          },
+          {
+            "name": "Artifacts",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "MCP",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Evals",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Context management",
+            "state": "recurring",
+            "recurring_share": 0.5
+          },
+          {
+            "name": "Orchestration",
+            "state": "unobserved",
+            "recurring_share": 0
+          }
+        ]
+      }
     }
   ]
 }
