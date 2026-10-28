@@ -23,7 +23,7 @@ const CLAUDE_OTEL_BASE: Record<string, string> = {
 };
 
 // Every key pheebs manages, so removal is exact and never touches env the user set.
-const PHEEBS_OTEL_KEYS = [
+export const PHEEBS_OTEL_KEYS = [
   ...Object.keys(CLAUDE_OTEL_BASE),
   "OTEL_EXPORTER_OTLP_ENDPOINT",
   "OTEL_EXPORTER_OTLP_HEADERS",

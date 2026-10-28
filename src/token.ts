@@ -74,6 +74,22 @@ export function writeStoredToken(stored: StoredToken): void {
   writeJsonFile(TOKEN_PATH, stored);
 }
 
+/**
+ * Whether the opt-out lets this developer's prompts be classified locally. `unknown` blocks: a
+ * file read mid-write, or a token a backend has not answered for yet. `unchecked` is a token with
+ * no backend to ask, which nothing could settle, so it does not block.
+ */
+export type OptOutStatus = "opted_out" | "unknown" | "unchecked" | "clear";
+
+export function optOutStatus(): OptOutStatus {
+  const stored = readStoredToken();
+  // Present but unreadable, as in a read that lands mid-write, is not the same as no token.
+  if (!stored) return existsSync(TOKEN_PATH) ? "unknown" : "clear";
+  if (stored.opt_out) return "opted_out";
+  if (stored.opt_out === undefined) return hasBackend() ? "unknown" : "unchecked";
+  return "clear";
+}
+
 /** The token id used as the developer identity, if one has been resolved. */
 export function getStoredTokenId(): string | undefined {
   const id = readStoredToken()?.id;

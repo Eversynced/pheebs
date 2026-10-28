@@ -6,6 +6,11 @@ export const AI_TOOLS = {
 
 export type AiTool = (typeof AI_TOOLS)[keyof typeof AI_TOOLS];
 
+// Set on a local classifier's `claude -p`. Managed (policy) hooks still fire under
+// `disableAllHooks`, so a pheebs hook deployed that way runs inside the child; it reads this and
+// records nothing. Kept here, not beside the spawn, so every hook reads it without loading that.
+export const RECURSION_GUARD_ENV = "PHEEBS_LOCAL_CLASSIFIER";
+
 export const EVENTS = {
   SessionStarted: "session_started",
   InstructionsLoaded: "instructions_loaded",
