@@ -323,8 +323,11 @@ own; prices never enter the model. The full definition is under
 [How model fit is judged](#how-model-fit-is-judged) below.
 
 The one capture-side piece is prompt classification: the client sends the prompt to the backend
-`/classify-prompt` proxy when the tenant has consented, and stores the returned label. The prompt
-text is never persisted by the client.
+`/classify-prompt` proxy when the tenant has consented, and stores the returned label. Under
+`classify local` it labels Claude Code prompts itself, through the developer's own `claude -p`,
+without the backend and without `prompt_collection`; those labels carry a `classifier_version` that
+starts `claude-code:`, so a consumer can tell the two apart and gate each. The prompt text is never
+persisted by the client.
 
 ### How prompt intent is judged
 

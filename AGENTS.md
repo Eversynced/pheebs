@@ -39,7 +39,10 @@ change.
    integer, then must be discarded. The single exception is prompt
    classification, and it is gated on the tenant's stored `prompt_collection`
    consent, sends the prompt to the configured backend only, and stores the
-   returned label rather than the text.
+   returned label rather than the text. Its local mode (`classify local`) sends
+   the prompt nowhere but the developer's own Claude Code login, the account the
+   session already sent it to, so it skips `prompt_collection` but still honors
+   the developer's opt-out. It runs on Claude Code prompts only.
 
    Paths the client wrote to itself are not session content and are covered
    separately: `~/.pheebs/installs.json` records the agent config files `init`
@@ -131,8 +134,9 @@ so run `npm run build` before the CLI tests mean anything.
 | `src/installs.ts` | `~/.pheebs/installs.json`, the paths `init` wrote. Project-local is the default scope, so the exporter config lives in a file per repo and nothing else knows where those are. Local only, never part of an event. |
 | `src/git-exclude.ts` | Keeps a token-bearing project config out of git via `.git/info/exclude`, never `.gitignore`: ignoring a file is the developer's own decision about a tracked repo. Reports `excluded` / `ignored` / `tracked` / `no-repo` / `unprotected`, each confirmed with git rather than inferred, because the caller turns the answer into a promise that the token is not committed. |
 | `src/transport.ts`, `src/transports/http.ts` | The one seam for backend calls. Fire-and-forget ingest, bounded blocking classify. |
-| `src/token.ts` | Token at `~/.pheebs/.token` (owner-only: 0600, an ACL on Windows), validation, cached identity, `prompt_collection` and `role`. A session start revalidates the token at most every 12 hours, bounded at 2 seconds: it runs after the event is written, resolves the id of a token stored offline, deletes a revoked one (and resyncs OTel), retries an unanswered check after an hour, refreshes the role, and only ever narrows `prompt_collection`, so a consent grant still waits for `config set token`. The cached role only decides whether `--help` mentions `--team`; the backend decides who is answered. |
-| `src/classify.ts` | Prompt classification, consent-gated, degrades to `prompt_intent: "unclassified"` sending no text. |
+| `src/token.ts` | Token at `~/.pheebs/.token` (owner-only: 0600, an ACL on Windows), validation, cached identity, `prompt_collection`, `opt_out` and `role`. A session start revalidates the token at most every 12 hours, bounded at 2 seconds: it runs after the event is written, resolves the id of a token stored offline, deletes a revoked one (and resyncs OTel), retries an unanswered check after an hour, refreshes the role, and only ever narrows `prompt_collection` and `opt_out`, so a consent grant or an opt-in still waits for `config set token`. The cached role only decides whether `--help` mentions `--team`; the backend decides who is answered. |
+| `src/classify.ts` | Prompt classification, consent-gated, degrades to `prompt_intent: "unclassified"` sending no text. Picks the backend or the local classifier by `classify` mode. |
+| `src/classify-local.ts`, `src/codebook.ts` | `classify local`: a headless `claude -p` under the developer's own login, with hooks, settings, MCP, transcripts and telemetry switched off in the child, and a pinned model. The codebook is the backend's text copied byte for byte, its hash pinned to `CODEBOOK_VERSION`. |
 | `src/insights.ts` | `fetchInsights(days)` and `fetchTeamInsights(days)`, the two `GET`s in the contract. Redirects are manual, because a followed one would draw a report from a host the developer never configured, and the body is capped at 4 MB, because the 10s abort does not bound a fast link. Every failure returns a printable message. |
 | `src/insights-normalize.ts` | The single boundary against an untrusted `/insights` response: shape guards, range checks, own-property lookups, control, ANSI and bidi stripping, bounded rows and string lengths. Also escapes the raw body for `--json`. |
 | `src/insights-render.ts` | The report as pure functions over a normalized `Report`, guarding nothing itself. Sparklines, gauges and aligned tables per [`docs/ai-proficiency-model.md`](./docs/ai-proficiency-model.md). An unavailable section prints one reason line, never a zero; a trend under two points gets no chart; block glyphs fall back to ASCII. Emits no colour, so the output is identical piped, in CI, and to a reader who cannot distinguish red from green. |

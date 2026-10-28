@@ -45,6 +45,15 @@ privacy line.
 
 ## Findings
 
+### 2026-10-21: A headless `claude -p` launched from a hook inherits the session's telemetry switch and exports under the developer's identity unless its env is stripped [Status: CONFIRMED]
+
+- **Tool(s):** claude_code
+- **Hook / event:** `UserPromptSubmit` → `prompt_submitted`, with `classify local`
+- **Claim (doc/assumption):** a child `claude -p` with `--setting-sources ""` loads no settings, so it carries neither hooks nor the exporter config pheebs writes into settings `env`.
+- **Finding:** settings `env` reaches hook processes: `CLAUDE_CODE_ENABLE_TELEMETRY` and an arbitrary key were present in the hook's env, and `OTEL_*` keys were not. A child `claude -p` with `--setting-sources "" --settings '{"disableAllHooks":true}'` fired no project hook, but with `OTEL_*` and the telemetry switch in its process env it still exported to the configured OTLP endpoint. With those keys removed from the child env, the endpoint received nothing. `--bare` would skip hooks too, but it never reads the OAuth login, so it cannot use the developer's subscription.
+- **Method:** a project `.claude/settings.json` whose `UserPromptSubmit` hook dumped its env to a file; a local OTLP/HTTP receiver counting requests, run against a raw `claude -p` and against `pheebs hook prompt_submitted` with `classify local`, run from a shell inside a live Claude Code session so `CLAUDECODE=1` was inherited; the nested `claude -p` classified normally. Claude Code 2.1.304.
+- **Impact:** `src/classify-local.ts` strips every `OTEL_*` key and the pheebs-managed telemetry switches from the child env, and runs the child with hooks, settings, MCP and session persistence off.
+
 ### 2026-10-05 — Hook stdin can start with a UTF-8 BOM when a Windows PowerShell pipe delivers it; Claude Code's own runner sends none [Status: CONFIRMED (PowerShell pipe with UTF-8 `$OutputEncoding`, Claude Code runner) / UNVERIFIED (Cursor and Codex runners on Windows)]
 
 - **Tool(s):** claude_code; cursor and codex not checked
