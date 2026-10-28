@@ -18,7 +18,7 @@ const {
   DEFAULT_BASE_URL,
   autoUpdateEnabled,
   baseUrl,
-  classifyEnabled,
+  classifyMode,
   ensureConfig,
   ingestUrl,
   validateUrl,
@@ -77,17 +77,24 @@ describe("baseUrl", () => {
   });
 });
 
-describe("autoUpdateEnabled / classifyEnabled", () => {
+describe("autoUpdateEnabled / classifyMode", () => {
   it("auto-update is off unless explicitly enabled", () => {
     expect(autoUpdateEnabled()).toBe(false);
     withConfig({ autoUpdate: true });
     expect(autoUpdateEnabled()).toBe(true);
   });
 
-  it("classify defaults to on and is off only when explicitly set to false", () => {
-    expect(classifyEnabled()).toBe(true);
+  it("classify defaults to on, is off when set to false, and local only under classifyLocally", () => {
+    expect(classifyMode()).toBe("on");
     withConfig({ classify: false });
-    expect(classifyEnabled()).toBe(false);
+    expect(classifyMode()).toBe("off");
+    withConfig({ classify: false, classifyLocally: true });
+    expect(classifyMode()).toBe("local");
+    // What a client from before local mode leaves after its own `config set classify on`.
+    withConfig({ classify: true, classifyLocally: true });
+    expect(classifyMode()).toBe("on");
+    withConfig({ classifyLocally: true });
+    expect(classifyMode()).toBe("on");
   });
 });
 

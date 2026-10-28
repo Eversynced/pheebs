@@ -12,6 +12,11 @@ vi.mock("node:fs", () => ({
   unlinkSync: vi.fn(),
 }));
 
+const classifyLocallyMock = vi.fn();
+vi.mock("../src/classify-local.js", () => ({
+  classifyLocally: (...a: unknown[]) => classifyLocallyMock(...a),
+}));
+
 const { classifyPrompt } = await import("../src/classify.js");
 
 let storedToken: object | null = null;
@@ -40,6 +45,13 @@ beforeEach(() => {
     throw new Error("ENOENT");
   });
   stubFetch(new Response(JSON.stringify({ allowed: true, result: { label: "task" } })));
+  classifyLocallyMock.mockReset();
+  classifyLocallyMock.mockResolvedValue({
+    label: "repair",
+    requests_verification: false,
+    task_scope: "bounded",
+    classifier_version: "claude-code:claude-haiku-5-5@cb3",
+  });
 });
 
 afterEach(() => {
@@ -50,13 +62,13 @@ describe("classifyPrompt — off / no-op", () => {
   it("returns undefined and sends nothing when classify is disabled in config", async () => {
     cfg = { baseUrl: "https://api.test", classify: false };
     withStored({ token: "pheebs_x", prompt_collection: true });
-    expect(await classifyPrompt("build me a thing")).toBeUndefined();
+    expect(await classifyPrompt("build me a thing", "claude_code")).toBeUndefined();
     expect(fetch).not.toHaveBeenCalled();
   });
 
   it("returns undefined for an empty prompt", async () => {
     withStored({ token: "pheebs_x", prompt_collection: true });
-    expect(await classifyPrompt("")).toBeUndefined();
+    expect(await classifyPrompt("", "claude_code")).toBeUndefined();
     expect(fetch).not.toHaveBeenCalled();
   });
 });
@@ -64,13 +76,17 @@ describe("classifyPrompt — off / no-op", () => {
 describe("classifyPrompt — gated (unclassified, no prompt text sent)", () => {
   it("returns unclassified and sends nothing when no token is set", async () => {
     withStored(null);
-    expect(await classifyPrompt("build me a thing")).toEqual({ prompt_intent: "unclassified" });
+    expect(await classifyPrompt("build me a thing", "claude_code")).toEqual({
+      prompt_intent: "unclassified",
+    });
     expect(fetch).not.toHaveBeenCalled();
   });
 
   it("returns unclassified and sends nothing without tenant consent", async () => {
     withStored({ token: "pheebs_x" }); // no prompt_collection
-    expect(await classifyPrompt("build me a thing")).toEqual({ prompt_intent: "unclassified" });
+    expect(await classifyPrompt("build me a thing", "claude_code")).toEqual({
+      prompt_intent: "unclassified",
+    });
     expect(fetch).not.toHaveBeenCalled();
   });
 });
@@ -94,7 +110,7 @@ describe("classifyPrompt — consented", () => {
         }),
       ),
     );
-    const result = await classifyPrompt("the build is broken");
+    const result = await classifyPrompt("the build is broken", "claude_code");
     expect(result).toEqual({
       prompt_intent: "repair",
       requests_verification: true,
@@ -110,22 +126,28 @@ describe("classifyPrompt — consented", () => {
 
   it("omits requests_verification when the backend leaves it unset", async () => {
     stubFetch(new Response(JSON.stringify({ allowed: true, result: { label: "unclassified" } })));
-    expect(await classifyPrompt("hmm")).toEqual({ prompt_intent: "unclassified" });
+    expect(await classifyPrompt("hmm", "claude_code")).toEqual({ prompt_intent: "unclassified" });
   });
 
   it("returns unclassified when the backend gates the request (allowed:false)", async () => {
     stubFetch(new Response(JSON.stringify({ allowed: false, reason: "no_consent" })));
-    expect(await classifyPrompt("do the thing")).toEqual({ prompt_intent: "unclassified" });
+    expect(await classifyPrompt("do the thing", "claude_code")).toEqual({
+      prompt_intent: "unclassified",
+    });
   });
 
   it("returns unclassified on a non-2xx", async () => {
     stubFetch(new Response(null, { status: 503 }));
-    expect(await classifyPrompt("do the thing")).toEqual({ prompt_intent: "unclassified" });
+    expect(await classifyPrompt("do the thing", "claude_code")).toEqual({
+      prompt_intent: "unclassified",
+    });
   });
 
   it("returns unclassified on a network error", async () => {
     stubFetch(new Error("network down"));
-    expect(await classifyPrompt("do the thing")).toEqual({ prompt_intent: "unclassified" });
+    expect(await classifyPrompt("do the thing", "claude_code")).toEqual({
+      prompt_intent: "unclassified",
+    });
   });
 
   it("omits task_scope entirely when the backend does not size tasks", async () => {
@@ -134,7 +156,7 @@ describe("classifyPrompt — consented", () => {
         JSON.stringify({ allowed: true, result: { label: "task", classifier_version: "or@cb3" } }),
       ),
     );
-    const result = await classifyPrompt("build the thing");
+    const result = await classifyPrompt("build the thing", "claude_code");
     expect(result).not.toHaveProperty("task_scope");
   });
 
@@ -149,7 +171,85 @@ describe("classifyPrompt — consented", () => {
         }),
       ),
     );
-    const result = await classifyPrompt("build the thing");
+    const result = await classifyPrompt("build the thing", "claude_code");
     expect(result?.task_scope).toBe("epic");
+  });
+});
+
+describe("classifyPrompt: local", () => {
+  beforeEach(() => {
+    cfg = { classify: false, classifyLocally: true };
+  });
+
+  it("classifies on-machine without a backend, a token, or tenant consent", async () => {
+    withStored(null);
+    expect(await classifyPrompt("the build is broken", "claude_code")).toEqual({
+      prompt_intent: "repair",
+      requests_verification: false,
+      task_scope: "bounded",
+      classifier_version: "claude-code:claude-haiku-5-5@cb3",
+    });
+    expect(classifyLocallyMock).toHaveBeenCalledWith("the build is broken");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("never sends the prompt to the backend, even with one configured and consented", async () => {
+    cfg = { baseUrl: "https://api.test", classify: false, classifyLocally: true };
+    withStored({ token: "pheebs_x", prompt_collection: true, opt_out: false });
+    await classifyPrompt("the build is broken", "claude_code");
+    expect(classifyLocallyMock).toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("classifies with a token whose opt-out no backend can state", async () => {
+    withStored({ token: "pheebs_x" });
+    await classifyPrompt("the build is broken", "claude_code");
+    expect(classifyLocallyMock).toHaveBeenCalled();
+  });
+
+  it("does not classify when the token file is there but unreadable, as mid-write", async () => {
+    existsSyncMock.mockReturnValue(true);
+    expect(await classifyPrompt("the build is broken", "claude_code")).toEqual({
+      prompt_intent: "unclassified",
+    });
+    expect(classifyLocallyMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "cursor",
+    "codex",
+  ] as const)("returns unclassified on %s without classifying", async (tool) => {
+    expect(await classifyPrompt("the build is broken", tool)).toEqual({
+      prompt_intent: "unclassified",
+    });
+    expect(classifyLocallyMock).not.toHaveBeenCalled();
+  });
+
+  it("waits for a backend's answer before classifying a token whose opt-out is unknown", async () => {
+    cfg = { baseUrl: "https://api.test", classify: false, classifyLocally: true };
+    withStored({ token: "pheebs_x" });
+    expect(await classifyPrompt("the build is broken", "claude_code")).toEqual({
+      prompt_intent: "unclassified",
+    });
+    expect(classifyLocallyMock).not.toHaveBeenCalled();
+
+    withStored({ token: "pheebs_x", opt_out: false });
+    await classifyPrompt("the build is broken", "claude_code");
+    expect(classifyLocallyMock).toHaveBeenCalled();
+  });
+
+  it("returns unclassified for an opted-out developer without classifying", async () => {
+    withStored({ token: "pheebs_x", opt_out: true });
+    expect(await classifyPrompt("the build is broken", "claude_code")).toEqual({
+      prompt_intent: "unclassified",
+    });
+    expect(classifyLocallyMock).not.toHaveBeenCalled();
+  });
+
+  it("returns unclassified when the local run fails", async () => {
+    classifyLocallyMock.mockResolvedValue(undefined);
+    expect(await classifyPrompt("the build is broken", "claude_code")).toEqual({
+      prompt_intent: "unclassified",
+    });
   });
 });
