@@ -167,8 +167,7 @@ const PRACTICES: Record<string, Practice> = {
     fired: distinct("md5_modes"),
     cells: { claude_code: { since: "0.9.0" }, cursor: "n/a", codex: "n/a" },
   },
-  // The model half reads the session's model timeline, which the log holds; OpenTelemetry's
-  // tokens-by-model is another route to the same fact, not one this needs. Judged from the release
+  // The model half reads the session's model timeline, which the log holds. Judged from the release
   // that captures model switches: before it the model half cannot fire, and reading its absence as
   // Unobserved would be a claim drawn from our own gap.
   MD6: {
