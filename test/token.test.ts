@@ -214,7 +214,14 @@ describe("setToken", () => {
       developer: "octocat",
       tenant: "acme",
       prompt_collection: true,
+      opt_out: false,
     });
+  });
+
+  it("caches the opt-out on an opted-out token", async () => {
+    stubFetch(new Response(JSON.stringify({ id: "t", allowed: true, opt_out: true })));
+    expect((await setToken("pheebs_secret")).status).toBe("opted_out");
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).opt_out).toBe(true);
   });
 
   it("caches a known role and drops one it does not recognize", async () => {
@@ -296,6 +303,17 @@ describe("setToken", () => {
     });
   });
 
+  it("keeps a known opt-out when a new token is stored offline", async () => {
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock.mockReturnValue(JSON.stringify({ token: "pheebs_old", opt_out: true }));
+    stubFetch(new Error("network down"));
+    await setToken("pheebs_new");
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string)).toEqual({
+      token: "pheebs_new",
+      opt_out: true,
+    });
+  });
+
   it("keeps a cached role on an offline re-set of the same token", async () => {
     existsSyncMock.mockReturnValue(true);
     readFileSyncMock.mockReturnValue(
@@ -358,8 +376,143 @@ describe("revalidateStoredTokenIfStale", () => {
     }
   });
 
-  it("does nothing while the last validation is within the TTL", async () => {
+  it("lets an opt-out reach the machine but makes an opt-in wait", async () => {
+    for (const [cached, served, expected] of [
+      [undefined, true, true],
+      [false, true, true],
+      [true, false, true],
+      [undefined, undefined, false],
+    ] as const) {
+      writeFileSyncMock.mockReset();
+      storeReturns({
+        token: "pheebs_x",
+        id: "tok-1",
+        opt_out: cached,
+        last_validated_at: "2000-01-01T00:00:00.000Z",
+      });
+      stubFetch(new Response(JSON.stringify({ id: "tok-1", allowed: true, opt_out: served })));
+      await revalidateStoredTokenIfStale();
+      expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).opt_out).toBe(expected);
+    }
+  });
+
+  it("keeps an opt-out written to the file while the check was in flight", async () => {
+    const before = {
+      token: "pheebs_x",
+      id: "tok-1",
+      last_validated_at: "2000-01-01T00:00:00.000Z",
+    };
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock
+      .mockReturnValueOnce(JSON.stringify(before))
+      .mockReturnValue(JSON.stringify({ ...before, opt_out: true }));
+    stubFetch(new Response(JSON.stringify({ id: "tok-1", allowed: true })));
+    await revalidateStoredTokenIfStale();
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).opt_out).toBe(true);
+  });
+
+  it("revalidates inside the TTL a token whose opt-out was never cached", async () => {
     storeReturns({ token: "pheebs_x", id: "tok-1", last_validated_at: new Date().toISOString() });
+    stubFetch(new Response(JSON.stringify({ id: "tok-1", allowed: true })));
+    await revalidateStoredTokenIfStale();
+    // The backend sends `opt_out` only when set, so an answer without it is a settled false.
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).opt_out).toBe(false);
+  });
+
+  it("keeps the opt-out when the backend rejects the token", async () => {
+    storeReturns({
+      token: "pheebs_x",
+      id: "tok-1",
+      opt_out: true,
+      last_validated_at: "2000-01-01T00:00:00.000Z",
+    });
+    stubFetch(new Response(JSON.stringify({ allowed: false }), { status: 200 }));
+    await revalidateStoredTokenIfStale();
+    const written = JSON.parse(writeFileSyncMock.mock.calls[0][1] as string);
+    expect(written).not.toHaveProperty("id");
+    expect(written.opt_out).toBe(true);
+  });
+
+  it("keeps a rejected token's unknown opt-out unknown, and its TTL", async () => {
+    storeReturns({ token: "pheebs_x", id: "tok-1", last_validated_at: "2000-01-01T00:00:00.000Z" });
+    stubFetch(new Response(JSON.stringify({ allowed: false }), { status: 200 }));
+    await revalidateStoredTokenIfStale();
+    const written = JSON.parse(writeFileSyncMock.mock.calls[0][1] as string);
+    expect(written).not.toHaveProperty("opt_out");
+
+    // Now id-less, it waits out the TTL rather than asking at every session start.
+    writeFileSyncMock.mockReset();
+    storeReturns(written);
+    stubFetch(new Error("must not be called"));
+    await revalidateStoredTokenIfStale();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps an opt-out written during the wait when the backend rejects the token", async () => {
+    const before = {
+      token: "pheebs_x",
+      id: "tok-1",
+      last_validated_at: "2000-01-01T00:00:00.000Z",
+    };
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock
+      .mockReturnValueOnce(JSON.stringify(before))
+      .mockReturnValue(JSON.stringify({ ...before, opt_out: true }));
+    stubFetch(new Response(JSON.stringify({ allowed: false }), { status: 200 }));
+    await revalidateStoredTokenIfStale();
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).opt_out).toBe(true);
+  });
+
+  it("asks inside the TTL only when forced", async () => {
+    const settled = {
+      token: "pheebs_x",
+      id: "tok-1",
+      opt_out: false,
+      last_validated_at: new Date().toISOString(),
+      last_attempt_at: new Date().toISOString(),
+    };
+    storeReturns(settled);
+    stubFetch(new Response(JSON.stringify({ id: "tok-1", allowed: true, opt_out: true })));
+    await revalidateStoredTokenIfStale();
+    expect(fetch).not.toHaveBeenCalled();
+
+    await revalidateStoredTokenIfStale({ force: true });
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string).opt_out).toBe(true);
+  });
+
+  it("leaves the session-start retry free after a forced check gets no answer", async () => {
+    storeReturns({ token: "pheebs_x", id: "tok-1", last_validated_at: new Date().toISOString() });
+    stubFetch(new Error("offline"));
+    await revalidateStoredTokenIfStale({ force: true });
+    expect(writeFileSyncMock).not.toHaveBeenCalled();
+  });
+
+  it("revalidates inside the TTL when forced, still only narrowing consent", async () => {
+    storeReturns({
+      token: "pheebs_x",
+      id: "tok-1",
+      prompt_collection: false,
+      last_validated_at: new Date().toISOString(),
+    });
+    stubFetch(
+      new Response(
+        JSON.stringify({ id: "tok-1", allowed: true, prompt_collection: true, opt_out: true }),
+      ),
+    );
+    await revalidateStoredTokenIfStale({ force: true });
+    expect(JSON.parse(writeFileSyncMock.mock.calls[0][1] as string)).toMatchObject({
+      prompt_collection: false,
+      opt_out: true,
+    });
+  });
+
+  it("does nothing while the last validation is within the TTL", async () => {
+    storeReturns({
+      token: "pheebs_x",
+      id: "tok-1",
+      opt_out: false,
+      last_validated_at: new Date().toISOString(),
+    });
     stubFetch(new Error("must not be called"));
     await revalidateStoredTokenIfStale();
     expect(fetch).not.toHaveBeenCalled();
