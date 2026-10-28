@@ -17,8 +17,12 @@ Three facts up front, because they determine everything else:
      a session start checks npm for a newer release once a day
      ([`src/auto-update.ts`](./src/auto-update.ts)). Left alone, it never runs — `pheebs doctor`
      tells you when a newer version exists instead.
+   - **Local classification**: **off by default.** If you opt in with
+     `pheebs config set classify local`, each Claude Code prompt goes to Anthropic through your own
+     `claude -p` login, with or without a backend. See [Local mode](#local-mode).
 2. **One feature sends raw text off your machine, and only one:** prompt classification. It is
-   gated on consent, disableable, and described in full below. Everything else is derived
+   gated on consent (or, in local mode, sent only to your own Claude Code login), disableable, and
+   described in full below. Everything else is derived
    locally and sent as a short tag.
 3. **There is a second data channel, and it is not this file's JSONL.** If you let `pheebs init`
    configure OpenTelemetry, your *agent* exports its own traces, metrics, and logs through the
@@ -157,7 +161,7 @@ with your Pheebs token and the backend swaps in the real upstream credential.
 On `prompt_submitted`, Pheebs can send your prompt to a backend `/classify-prompt` route, which
 returns a single intent label. This is the only feature that sends raw text off your machine.
 
-**It requires all of:** classification enabled (default on), a backend endpoint configured, a
+**In the default mode it requires all of:** classification enabled (default on), a backend endpoint configured, a
 stored token, and that token's tenant carrying `prompt_collection` consent
 ([`src/classify.ts`](./src/classify.ts)). No prompt text is sent unless every one of them holds.
 
@@ -168,7 +172,7 @@ The two failure shapes differ, and the difference is checkable in your own log:
   `prompt_intent: "unclassified"`, and still no prompt text is sent.
 
 What is stored is the label — `prompt_intent`, plus optional `requests_verification`,
-`classifier_version` and `task_scope` (how large the backend judged the task, never which model
+`classifier_version` and `task_scope` (how large the classifier judged the task, never which model
 should do it). **The prompt text itself is never written to your log and never stored by
 Pheebs.**
 
@@ -180,6 +184,32 @@ pheebs config set classify off
 
 That is a client-side switch: with classification off, `classifyPrompt` returns before reading
 your token or contacting anything.
+
+### Local mode
+
+```bash
+pheebs config set classify local
+```
+
+The prompt goes to a headless `claude -p` on your machine, under your `/login` account. An
+`ANTHROPIC_API_KEY` in the environment is removed from the child, because headless Claude Code
+would use it even where you declined it. So the prompt reaches the account your session used unless
+the session itself authenticates some other way: an approved env key, or an `apiKeyHelper` in
+settings, which the child does not load. Pheebs's backend never receives it, so the
+tenant's `prompt_collection` consent is not required. Your opt-out still is: an opted-out token
+gets `prompt_intent: "unclassified"` and nothing is run ([`src/classify-local.ts`](./src/classify-local.ts)).
+
+- **Claude Code only.** Cursor and Codex prompts record `unclassified`, because sending them to
+  Anthropic would add a recipient those sessions never used.
+- **No second transcript, no telemetry.** The child runs with `--no-session-persistence`, and
+  hooks, settings, MCP servers and OpenTelemetry are switched off in it, so the classification
+  call is not exported as your own usage.
+- **Managed settings still apply.** Policy settings an organization deploys load in the child
+  too, so a managed hook or a managed telemetry `env` block runs there as it does in your session.
+- **Windows needs the native `claude.exe`.** An npm-installed `claude.cmd` cannot be started
+  without a shell, so every prompt records `unclassified`.
+- **The label still reaches your backend**, as `prompt_intent` on the event, with a
+  `classifier_version` that starts `claude-code:`.
 
 Be precise about what the guarantee is worth. With consent enabled, the honest sentence is not
 "prompt text never leaves the machine" — it is "prompt text leaves the machine, reaches the
