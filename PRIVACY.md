@@ -195,8 +195,9 @@ The prompt goes to a headless `claude -p` on your machine, under your `/login` a
 `ANTHROPIC_API_KEY` in the environment is removed from the child, because headless Claude Code
 would use it even where you declined it. So the prompt reaches the account your session used unless
 the session itself authenticates some other way: an approved env key, or an `apiKeyHelper` in
-settings, which the child does not load. Pheebs's backend never receives it, so the
-tenant's `prompt_collection` consent is not required. Your opt-out still is: an opted-out token
+settings, which the child does not load; `pheebs config set classify local` warns when it finds
+either. Pheebs's backend never receives it, so the tenant's `prompt_collection` consent is not
+required. Your opt-out still is: an opted-out token
 gets `prompt_intent: "unclassified"` and nothing is run ([`src/classify-local.ts`](./src/classify-local.ts)).
 
 - **Claude Code only.** Cursor and Codex prompts record `unclassified`, because sending them to

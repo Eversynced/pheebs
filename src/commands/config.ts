@@ -141,7 +141,7 @@ async function runSet(key: string | undefined, value: string | undefined): Promi
   if (key === "classify" && value === "local") {
     updateConfig(classifyModeFields("local"));
     // Imported here so other `config` commands never load the spawn path and the codebook.
-    const { canRunClaude } = await import("../classify-local.js");
+    const { alternateAuthSources, canRunClaude } = await import("../classify-local.js");
     // The opt-out gates local mode, and a token stored before it was cached carries none, so ask
     // the backend now rather than classify an opted-out developer until the revalidation TTL.
     // The narrowing revalidation, not setToken: switching modes must never widen consent.
@@ -153,6 +153,14 @@ async function runSet(key: string | undefined, value: string | undefined): Promi
     console.log("pheebs: classify set to local");
     if (!claudeRuns) {
       console.log("pheebs: could not run `claude` here, so prompts will record unclassified.");
+    }
+    const otherAuth = alternateAuthSources();
+    if (otherAuth.length > 0) {
+      const [verb, pronoun] = otherAuth.length === 1 ? ["is", "it"] : ["are", "them"];
+      const names = `${otherAuth.slice(0, -1).join(", ")}${otherAuth.length > 1 ? " and " : ""}${otherAuth.at(-1)}`;
+      console.log(
+        `pheebs: ${names} ${verb} set, but local classification ignores ${pronoun} and runs on the account stored by \`claude /login\`, which may not be the one your sessions use.`,
+      );
     }
     if (revoked) {
       console.log(

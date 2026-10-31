@@ -1,5 +1,7 @@
 import { EventEmitter } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,9 +10,8 @@ vi.mock("node:child_process", () => ({
   spawn: (...a: unknown[]) => spawnMock(...a),
 }));
 
-const { canRunClaude, classifyLocally, LOCAL_CLASSIFIER_VERSION } = await import(
-  "../src/classify-local.js"
-);
+const { alternateAuthSources, canRunClaude, classifyLocally, LOCAL_CLASSIFIER_VERSION } =
+  await import("../src/classify-local.js");
 const { CODEBOOK } = await import("../src/codebook.js");
 
 interface FakeChild extends EventEmitter {
@@ -47,6 +48,7 @@ const ENV_KEYS = [
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
   "PHEEBS_LOCAL_CLASSIFIER",
+  "CLAUDE_CONFIG_DIR",
   "KEEP_ME",
 ];
 
@@ -198,5 +200,55 @@ describe("classifyLocally", () => {
       throw new Error("EMFILE");
     });
     expect(await classifyLocally("x")).toBeUndefined();
+  });
+});
+
+describe("alternateAuthSources", () => {
+  let configDir: string;
+
+  beforeEach(() => {
+    configDir = mkdtempSync(join(tmpdir(), "pheebs-claude-config-"));
+    vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
+  });
+
+  afterEach(() => rmSync(configDir, { recursive: true, force: true }));
+
+  it("names each key and helper the child will not use, never their values", () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-company-secret");
+    vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "bearer-secret");
+    writeFileSync(
+      join(configDir, "settings.json"),
+      JSON.stringify({ apiKeyHelper: "/opt/secret-helper.sh" }),
+    );
+    const found = alternateAuthSources();
+    expect(found).toEqual(["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "apiKeyHelper"]);
+    expect(JSON.stringify(found)).not.toMatch(/secret/);
+  });
+
+  it("counts a key the user-level settings put in the session env", () => {
+    writeFileSync(
+      join(configDir, "settings.json"),
+      JSON.stringify({ env: { ANTHROPIC_API_KEY: "sk-company-secret" } }),
+    );
+    expect(alternateAuthSources()).toEqual(["ANTHROPIC_API_KEY"]);
+  });
+
+  it("finds nothing without keys, settings, or with settings it cannot parse", () => {
+    expect(alternateAuthSources()).toEqual([]);
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    writeFileSync(join(configDir, "settings.json"), "{ not json");
+    expect(alternateAuthSources()).toEqual([]);
+  });
+
+  it("reads ~/.claude when CLAUDE_CONFIG_DIR is unset", () => {
+    vi.stubEnv("CLAUDE_CONFIG_DIR", "");
+    vi.stubEnv("HOME", configDir);
+    vi.stubEnv("USERPROFILE", configDir);
+    mkdirSync(join(configDir, ".claude"));
+    writeFileSync(
+      join(configDir, ".claude", "settings.json"),
+      JSON.stringify({ apiKeyHelper: "x" }),
+    );
+    expect(alternateAuthSources()).toEqual(["apiKeyHelper"]);
   });
 });

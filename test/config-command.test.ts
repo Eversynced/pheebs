@@ -32,8 +32,10 @@ vi.mock("../src/otel-resync.js", () => ({
 }));
 
 const canRunClaudeMock = vi.fn();
+const alternateAuthSourcesMock = vi.fn();
 vi.mock("../src/classify-local.js", () => ({
   canRunClaude: () => canRunClaudeMock(),
+  alternateAuthSources: () => alternateAuthSourcesMock(),
 }));
 
 const { runConfig } = await import("../src/commands/config.js");
@@ -67,6 +69,8 @@ beforeEach(() => {
   optOutStatusMock.mockReturnValue("clear");
   canRunClaudeMock.mockReset();
   canRunClaudeMock.mockResolvedValue(true);
+  alternateAuthSourcesMock.mockReset();
+  alternateAuthSourcesMock.mockReturnValue([]);
   vi.spyOn(console, "log").mockImplementation((m?: unknown) => {
     logs.push(String(m));
   });
@@ -124,6 +128,30 @@ describe("config set", () => {
     canRunClaudeMock.mockResolvedValue(false);
     await runConfig(["set", "classify", "local"]);
     expect(logs.join("\n")).toContain("could not run `claude`");
+  });
+
+  it("warns that a key or helper the session may use is not the account local mode runs on", async () => {
+    alternateAuthSourcesMock.mockReturnValue(["ANTHROPIC_API_KEY", "apiKeyHelper"]);
+    await runConfig(["set", "classify", "local"]);
+    expect(logs.join("\n")).toContain("ANTHROPIC_API_KEY and apiKeyHelper");
+    expect(logs.join("\n")).toContain("/login");
+  });
+
+  it("lists three credentials as a sentence", async () => {
+    alternateAuthSourcesMock.mockReturnValue([
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_AUTH_TOKEN",
+      "apiKeyHelper",
+    ]);
+    await runConfig(["set", "classify", "local"]);
+    expect(logs.join("\n")).toContain(
+      "ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN and apiKeyHelper are set",
+    );
+  });
+
+  it("does not warn about other credentials when there are none", async () => {
+    await runConfig(["set", "classify", "local"]);
+    expect(logs.join("\n")).not.toContain("/login");
   });
 
   it("says so when switching to local finds the token revoked, and pulls it from OTel", async () => {

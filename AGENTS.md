@@ -40,9 +40,12 @@ change.
    classification, and it is gated on the tenant's stored `prompt_collection`
    consent, sends the prompt to the configured backend only, and stores the
    returned label rather than the text. Its local mode (`classify local`) sends
-   the prompt nowhere but the developer's own Claude Code login, the account the
-   session already sent it to, so it skips `prompt_collection` but still honors
-   the developer's opt-out. It runs on Claude Code prompts only.
+   the prompt nowhere but the account the developer stored with `claude /login`,
+   so it skips `prompt_collection` but still honors the developer's opt-out. That
+   is the session's own account unless the session authenticates some other way
+   (an env key or an `apiKeyHelper`, which the child does not use), and
+   `config set classify local` warns when it finds one. It runs on Claude Code
+   prompts only.
 
    Paths the client wrote to itself are not session content and are covered
    separately: `~/.pheebs/installs.json` records the agent config files `init`

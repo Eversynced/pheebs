@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   CODEBOOK,
   CODEBOOK_VERSION,
@@ -47,7 +49,8 @@ const ARGS = [
 // An env API key goes too: headless `claude -p` uses one without the approval an interactive
 // session asks for, so a key the developer declined would receive the prompt. Without it the
 // child uses the login stored on the machine.
-const STRIPPED_KEYS = new Set([...PHEEBS_OTEL_KEYS, "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]);
+const AUTH_KEYS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
+const STRIPPED_KEYS = new Set([...PHEEBS_OTEL_KEYS, ...AUTH_KEYS]);
 
 function childEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
@@ -143,4 +146,18 @@ export async function classifyLocally(prompt: string): Promise<ClassifyResult | 
 export async function canRunClaude(): Promise<boolean> {
   // A bare `claude` on Windows resolves against the working folder first, so a repo could plant one.
   return (await runClaude(["--version"], { cwd: tmpdir() }))?.code === 0;
+}
+
+// The credentials a session may authenticate with that the child never uses, by name only: a
+// developer whose sessions run on a company key would otherwise have work prompts classified on
+// a personal `/login` without knowing. The settings `env` counts because the session exports it.
+export function alternateAuthSources(): string[] {
+  let settings: { apiKeyHelper?: unknown; env?: Record<string, unknown> } = {};
+  try {
+    const dir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+    settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf-8")) ?? {};
+  } catch {}
+  const found = AUTH_KEYS.filter((key) => process.env[key] || settings.env?.[key]);
+  if (settings.apiKeyHelper) found.push("apiKeyHelper");
+  return found;
 }
