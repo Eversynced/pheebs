@@ -223,6 +223,26 @@ describe("hook delivery", () => {
     );
   });
 
+  // The end of a turn or a session is when someone looks at the numbers, so those two skip the
+  // linger: the flusher already waiting on earlier events sends them all at once.
+  it("sends at once when a turn ends, taking the events lingering before it", async () => {
+    configure(await startExampleBackend());
+    runHook(["hook-codex", "tool_invoked"], { session_id: "s1", tool_name: "Read" });
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(storedRows()).toEqual([]);
+
+    const { status, ms } = runHook(["hook-codex", "turn_ended"], { session_id: "s1" });
+    expect(status).toBe(0);
+    expect(ms).toBeLessThan(3000);
+    await until(() => storedRows().length === 2 && queued() === 0, 5000);
+  }, 15_000);
+
+  it("sends at once when a session ends", async () => {
+    configure(await startExampleBackend());
+    runHook(["hook", "session_end"], { session_id: "s1" });
+    await until(() => storedRows().length === 1 && queued() === 0, 5000);
+  });
+
   it("falls back to one /ingest per event against a backend that does not batch", async () => {
     const received: Array<Record<string, unknown>> = [];
     configure(await startOldBackend(received));
@@ -322,7 +342,7 @@ describe("hook delivery", () => {
     const atB: unknown[] = [];
     configure(await startOldBackend(atA));
     const first = oldBackend;
-    runHook(["hook-codex", "turn_ended"], { session_id: "s1" }, 1500);
+    runHook(["hook-codex", "tool_invoked"], { session_id: "s1", tool_name: "Read" }, 1500);
     oldBackend = undefined;
     const b = await startOldBackend(atB);
     writeFileSync(join(home, ".pheebs", "config.json"), JSON.stringify({ baseUrl: b }));

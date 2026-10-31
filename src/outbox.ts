@@ -75,6 +75,7 @@ export interface Pending {
   path: string;
   bytes: number;
   queuedAt: number;
+  sendNow: boolean;
 }
 
 const newDir = (dir: string) => join(dir, "new");
@@ -170,12 +171,21 @@ export function updateState(patch: Partial<OutboxState>, dir: string): OutboxSta
   return next;
 }
 
-export function enqueue(payload: Record<string, unknown>, dir: string, now = Date.now()): void {
+// An event that should not wait out the linger says so in its own name, so the signal arrives with
+// the event and leaves with it, and no separate file can be lost between a hook and the flusher.
+const SEND_NOW_SUFFIX = ".now.json";
+
+export function enqueue(
+  payload: Record<string, unknown>,
+  dir: string,
+  now = Date.now(),
+  sendNow = false,
+): void {
   mkdirSync(tmpDir(dir), { recursive: true, mode: 0o700 });
   mkdirSync(newDir(dir), { recursive: true, mode: 0o700 });
   const id = typeof payload.event_id === "string" ? payload.event_id : randomUUID();
   // The name sorts by arrival, and the id keeps two events in one millisecond apart.
-  const name = `${String(now).padStart(13, "0")}-${id}.json`;
+  const name = `${String(now).padStart(13, "0")}-${id}${sendNow ? SEND_NOW_SUFFIX : ".json"}`;
   const staged = join(tmpDir(dir), name);
   writeFileSync(staged, JSON.stringify(payload), { mode: 0o600 });
   renameSync(staged, join(newDir(dir), name));
@@ -192,7 +202,13 @@ export function listPending(dir: string): Pending[] {
   for (const name of names.sort()) {
     const path = join(newDir(dir), name);
     try {
-      pending.push({ name, path, bytes: statSync(path).size, queuedAt: Number(name.slice(0, 13)) });
+      pending.push({
+        name,
+        path,
+        bytes: statSync(path).size,
+        queuedAt: Number(name.slice(0, 13)),
+        sendNow: name.endsWith(SEND_NOW_SUFFIX),
+      });
     } catch {}
   }
   return pending;

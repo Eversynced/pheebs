@@ -29,6 +29,10 @@ const LINGER_MS = (() => {
   return Number.isFinite(configured) && configured >= 0 ? configured : 60_000;
 })();
 
+// How often a lingering flusher looks for an event that asks to be sent now. The hook that queued it
+// saw this flusher live and started no other, so nothing else would cut the linger short.
+const SEND_NOW_CHECK_MS = 1_000;
+
 const MAX_BATCH_EVENTS = 500;
 const MAX_BATCH_BYTES = 512 * 1024;
 const SEND_TIMEOUT_MS = 10_000;
@@ -482,14 +486,18 @@ async function drain(ctx: FlushContext, lock: Lock, linger: boolean) {
     // already due, as the hook does: honouring one would hold the queue until the clock caught up.
     const now = Date.now();
     const queuedAt = pending[0].queuedAt;
-    const wait = Math.max(
-      linger && queuedAt <= now ? queuedAt + LINGER_MS - now : 0,
-      honourBackoff ? remainingMs(readState(dir).nextAttemptAt, MAX_PAUSE_MS, now) : 0,
-      0,
-    );
+    const lingerLeft =
+      linger && queuedAt <= now && !pending.some((item) => item.sendNow)
+        ? queuedAt + LINGER_MS - now
+        : 0;
+    const backoffLeft = honourBackoff
+      ? remainingMs(readState(dir).nextAttemptAt, MAX_PAUSE_MS, now)
+      : 0;
+    const wait = Math.max(lingerLeft, backoffLeft, 0);
     if (wait > LINGER_MS) return false;
     if (wait > 0) {
-      await sleep(wait);
+      // Only the linger gives way to an event that asks to be sent now; a backoff still holds.
+      await sleep(lingerLeft > backoffLeft ? Math.min(wait, SEND_NOW_CHECK_MS) : wait);
       continue;
     }
 

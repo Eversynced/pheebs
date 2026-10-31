@@ -32,8 +32,9 @@ from stalling them ([`src/transports/http.ts`](../src/transports/http.ts)). Prom
 classification is the one call a hook still makes, bounded at 2.5 seconds.
 
 The flusher lets the oldest event wait up to a minute, so one request carries a burst of hooks,
-then sends batches to `POST /ingest/batch` until the queue is empty, falling back to `/ingest`
-on a backend that does not batch ([`src/flusher.ts`](../src/flusher.ts)). What it retries, and
+unless a `turn_ended` or `session_end` is queued, which it sends at once along with everything
+ahead of it. It then sends batches to `POST /ingest/batch` until the queue is empty, falling back
+to `/ingest` on a backend that does not batch ([`src/flusher.ts`](../src/flusher.ts)). What it retries, and
 what a backend owes a resend, is in [`backend-contract.md`](./backend-contract.md).
 
 Each backend and token gets its own queue, and pointing Pheebs elsewhere discards the old one

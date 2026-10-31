@@ -201,8 +201,8 @@ pheebs doctor --global   # checks user-level config instead of project-local
 
 Reports whether all expected hook entries are registered correctly. With a backend and a token set, it also
 shows the send queue: how many events are waiting, how long the oldest has waited, and the last
-problem sending them. Events normally leave within a minute; if they pile up, fix what doctor
-reports, then run `pheebs flush` to send them at once. A fix that changes `base-url` or the token
+problem sending them. Events normally leave within a minute, and at once when a turn or session
+ends; if they pile up, fix what doctor reports, then run `pheebs flush` to send them at once. A fix that changes `base-url` or the token
 discards what was queued for the old one; the local log still has those events.
 
 ### 4. Just use your tool

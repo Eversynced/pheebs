@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { baseUrl, classifyPromptUrl, hasBackend } from "../backend-config.js";
+import { EVENTS } from "../hooks/types.js";
 import type { LogEntry } from "../logger.js";
 import {
   enqueue,
@@ -22,6 +23,10 @@ const CLASSIFY_TIMEOUT_MS = 2500;
 // Dropped when the backend rejects our token; `pheebs doctor` reads it to tell the
 // developer to re-set the token. The event itself is still kept in the local JSONL log.
 export const TRANSPORT_ERROR_PATH = join(homedir(), ".pheebs", ".last-transport-error");
+
+// The end of a turn or a session is when a developer looks at the numbers, so these skip the
+// linger. The hook still only queues; the flusher sends, within the same lock and backoff.
+const SEND_NOW_EVENTS = new Set<string>([EVENTS.TurnEnded, EVENTS.SessionEnd]);
 
 // Never sent to the server. `logPath` is client-internal; `developer` is omitted because
 // the server stamps identity from the token — a client-supplied developer is ignored.
@@ -76,7 +81,7 @@ export class HttpTransport implements RemoteTransport {
       const dir = scopeDir(scope);
       // Old scopes' queues are removed by the flusher, off the hook path: a backlog of thousands of
       // files is not something Cursor or Codex should wait on.
-      enqueue(payload, dir);
+      enqueue(payload, dir, Date.now(), SEND_NOW_EVENTS.has(entry.event));
       if (!isFlusherLive(dir) && remainingMs(readState(dir).nextAttemptAt, MAX_PAUSE_MS) === 0) {
         startFlusher();
       }
