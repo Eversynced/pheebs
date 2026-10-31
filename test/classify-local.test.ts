@@ -186,6 +186,13 @@ describe("classifyLocally", () => {
     expect(await canRunClaude()).toBe(false);
   });
 
+  // On Windows a bare `claude` resolves against the working folder first, so a repo could plant one.
+  it("checks whether claude starts from outside the current folder", async () => {
+    spawnMock.mockReturnValue(fakeChild("2.1.304 (Claude Code)"));
+    await canRunClaude();
+    expect((spawnMock.mock.calls[0][2] as { cwd: string }).cwd).toBe(tmpdir());
+  });
+
   it("resolves undefined when spawn itself throws", async () => {
     spawnMock.mockImplementation(() => {
       throw new Error("EMFILE");

@@ -141,5 +141,6 @@ export async function classifyLocally(prompt: string): Promise<ClassifyResult | 
 
 // Only whether `claude` starts here. A provider whose model ids differ still fails per prompt.
 export async function canRunClaude(): Promise<boolean> {
-  return (await runClaude(["--version"]))?.code === 0;
+  // A bare `claude` on Windows resolves against the working folder first, so a repo could plant one.
+  return (await runClaude(["--version"], { cwd: tmpdir() }))?.code === 0;
 }
