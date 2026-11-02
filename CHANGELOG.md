@@ -6,6 +6,29 @@ Pheebs was developed privately before this repository was opened. That history i
 so this changelog starts at the first public release rather than linking commits that cannot
 be resolved.
 
+## [1.3.0](https://github.com/Eversynced/pheebs/compare/v1.2.0...v1.3.0) (2026-11-02)
+
+
+### Features
+
+* **classify:** classify Claude Code prompts on-machine through claude -p ([ac9e97c](https://github.com/Eversynced/pheebs/commit/ac9e97cc51ffe816d262305ad5bf913ae373ae04))
+* **classify:** classify Claude Code prompts on-machine through claude -p ([c9bcb44](https://github.com/Eversynced/pheebs/commit/c9bcb4444e46829d0ee0b3cfe2cb624ccf8de045))
+* **config:** add classify local ([daf1089](https://github.com/Eversynced/pheebs/commit/daf1089c169007542476764b672ab2150c21a8c0))
+* **config:** add classify local ([d5c57d3](https://github.com/Eversynced/pheebs/commit/d5c57d320d9502de0f75d2f222fb03d71271e036))
+* **config:** warn when local classification will not use the session's key ([8e5a28e](https://github.com/Eversynced/pheebs/commit/8e5a28e154487ef1eadef3bd75e3e9e8c0d92d66))
+* **delivery:** queue events in the hook and send them in batches from a detached flusher ([aa27825](https://github.com/Eversynced/pheebs/commit/aa278256b4ba759148ab2bd73ad79b9574cc36d8))
+* **token:** cache the developer's classification opt-out ([3d65ba2](https://github.com/Eversynced/pheebs/commit/3d65ba29d97642a141f4af886ecea9daa083be67))
+* **token:** cache the developer's classification opt-out ([e7acee1](https://github.com/Eversynced/pheebs/commit/e7acee1b49831cb47ef0260d551f6176cadf3f2c))
+
+
+### Bug Fixes
+
+* **classify:** check for claude from outside the current folder ([cc660db](https://github.com/Eversynced/pheebs/commit/cc660dbca81fcaa78acd2316a78bf446b602bdfa))
+* **delivery:** send at once when a turn or session ends ([16d3089](https://github.com/Eversynced/pheebs/commit/16d3089a3485bc24c62d85f3e353a0807de0e727))
+* **delivery:** tighten the send-now linger, single-send stops and queue removal ([498b569](https://github.com/Eversynced/pheebs/commit/498b56954acd59881db0c3c8bddf7300bf0dd0ab))
+* **event-id:** date the id from the event's timestamp ([8b65c36](https://github.com/Eversynced/pheebs/commit/8b65c36ed62df7a435cf8b60b2341ac57cbbe752))
+* **token:** discard the send queue when a token is revoked ([69f3500](https://github.com/Eversynced/pheebs/commit/69f3500d058b82b909b8ea33f35e9bbc3d783e9b))
+
 ## [1.2.0](https://github.com/Eversynced/pheebs/compare/v1.1.0...v1.2.0) (2026-10-22)
 
 
