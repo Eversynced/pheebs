@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.4.0"
+  version: "1.5.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -529,7 +529,9 @@ components:
           description: Rides on the prompt event beside `prompt_intent`, not only in ClassifyResponse.
         classifier_version:
           type: string
-          description: Rides on the prompt event beside `prompt_intent`.
+          description: |
+            Rides on the prompt event beside `prompt_intent`. A client set to `classify local`
+            labels Claude Code prompts itself and stamps `claude-code:<model>@<codebook>`.
         prompt_intent:
           type: string
           description: |
@@ -537,7 +539,8 @@ components:
         task_scope:
           type: string
           description: |
-            Sits beside `prompt_intent`, copied from the classifier and never derived on-machine.
+            Sits beside `prompt_intent`, copied from the classifier and never derived by rule. Under
+            `classify local` the classifier is the client's own `claude -p` run.
             Absent whenever the classifier degraded, so absence is not `n/a`.
 
             A plain string rather than `TaskScope`, and deliberately so. The client stores what the
@@ -588,10 +591,10 @@ components:
         opt_out:
           type: boolean
           description: |
-            Advisory only in the current client — it changes a message printed by
-            `pheebs config set token` and nothing else. It does not suppress ingest and does
-            not gate classification; `prompt_collection: false` is the only field that stops
-            prompt text being sent. Enforce it server-side if you mean it.
+            The client caches it, and under `classify local` an opted-out developer's prompts are
+            not classified on-machine. It does not suppress ingest, and it does not gate
+            `/classify-prompt` on the client: `prompt_collection: false` is the only field that
+            stops prompt text reaching the backend. Enforce it server-side if you mean it.
         prompt_collection:
           type: boolean
           description: |

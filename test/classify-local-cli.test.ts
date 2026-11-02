@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -12,7 +13,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CODEBOOK } from "../src/codebook.js";
-import { runHookRows } from "./hook-runner.js";
+import { cliPath, runHookRows, withPath } from "./hook-runner.js";
 
 // A stand-in `claude` that records how it was started and answers like `claude -p` does, so these
 // run the real spawn, pipes and env of the built CLI. POSIX only: Windows cannot spawn a script
@@ -123,5 +124,36 @@ describe.skipIf(process.platform === "win32")("classify local through the built 
       PHEEBS_DEBUG: "",
     });
     expect(row.prompt_intent).toBe("unclassified");
+  });
+
+  it("warns on switching to local that a key or helper is set, without printing either", () => {
+    const home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
+    try {
+      mkdirSync(join(home, ".claude"));
+      writeFileSync(
+        join(home, ".claude", "settings.json"),
+        JSON.stringify({ apiKeyHelper: "/opt/helper-secret.sh" }),
+      );
+      const env = withPath(
+        {
+          ...process.env,
+          HOME: home,
+          USERPROFILE: home,
+          CLAUDE_CONFIG_DIR: "",
+          ANTHROPIC_API_KEY: "sk-key-secret",
+          ANTHROPIC_AUTH_TOKEN: "",
+          FAKE_CLAUDE_CALLS: calls,
+        },
+        `${join(dir, "bin")}${delimiter}${process.env.PATH}`,
+      );
+      const out = execFileSync(process.execPath, [cliPath, "config", "set", "classify", "local"], {
+        encoding: "utf-8",
+        env,
+      });
+      expect(out).toContain("ANTHROPIC_API_KEY and apiKeyHelper");
+      expect(out).not.toContain("secret");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

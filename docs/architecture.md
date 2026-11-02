@@ -87,7 +87,8 @@ Two integration points exist for consumers that need more than stored rows:
   present, the client sends the raw prompt and attaches the returned
   `prompt_intent` to the event. It is best-effort and bounded: it degrades to
   `prompt_intent: "unclassified"`, sends no prompt text on failure, and never
-  blocks the hook.
+  blocks the hook. With `classify local` the client classifies Claude Code
+  prompts itself through a headless `claude -p` and never calls this route.
 - **`/insights`**, an optional backend route for a consumer that computes
   repertoire or judgement-signal sections over the stored events.
 

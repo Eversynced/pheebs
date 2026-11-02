@@ -19,7 +19,8 @@ work goes through a review pass, whether AI output gets questioned or accepted w
 skills, sub-agents, and MCP servers are actually in play. Pheebs captures that.
 
 It installs as hooks in your agent, writes a JSONL line per event to your machine, and sends
-nothing anywhere until you point it at a backend you control. No source code, no prompts, no file
+nothing anywhere until you point it at a backend you control (or opt in to classifying prompts
+through your own Claude Code login). No source code, no prompts, no file
 paths.
 
 ```mermaid
@@ -128,8 +129,8 @@ Pheebs is about interaction patterns, not surveillance.
 **By default, no telemetry leaves your machine.** No backend endpoint ships with the client, so a
 fresh install writes JSONL to `~/.pheebs/logs/` and sends no event, prompt, or OpenTelemetry data
 anywhere. Sending requires setting an endpoint (`pheebs config set base-url <url>`) and a token.
-One non-telemetry call can still happen, an opt-in once-a-day update check, named in
-[`PRIVACY.md`](./PRIVACY.md).
+Two opt-in exceptions are named in [`PRIVACY.md`](./PRIVACY.md): a once-a-day update check, and
+`classify local`, which sends each Claude Code prompt to Anthropic through your own `claude -p`.
 
 Read your own data at any time — it is plain text:
 
@@ -155,6 +156,10 @@ unless every one holds. With classification off the event carries no `prompt_int
 with it on but something else missing, the event records `prompt_intent: "unclassified"`.
 
 Only the returned label is stored. The prompt text is never written to your log.
+
+`pheebs config set classify local` classifies Claude Code prompts on your machine instead, through a
+headless `claude -p` under your own login, so no prompt reaches the backend. See
+[`PRIVACY.md`](./PRIVACY.md#local-mode).
 
 Turn it off entirely:
 
@@ -359,7 +364,7 @@ pheebs config unset <key>          # reset a setting to its default (or clear th
 |---|---|---|
 | `base-url` | _(unset — local-only)_ | The backend endpoint. Unset means nothing is sent. |
 | `auto-update` | `off` | Once-a-day background self-update. Off by default: it installs in a detached, silent process, so it is opt-in. `pheebs doctor` reports when a newer version exists. |
-| `classify` | `on` | Send prompts to the backend intent classifier |
+| `classify` | `on` | `on` sends prompts to the backend intent classifier; `local` classifies Claude Code prompts on-machine through your own Claude Code login; `off` disables it |
 | `token` | unset | Your Pheebs API token (identity + auth) |
 
 Two working-directory settings are still environment variables (not persisted config):

@@ -58,10 +58,13 @@ to decide whether to offer `pheebs insights --team`; `/insights/team` resolves t
 token's own record on every call regardless. Absent means `engineer`, so a backend with no notion
 of roles hands out no team views.
 
-`opt_out` is **advisory in the current client**: it only changes a message printed by
-`pheebs config set token`. It does not suppress ingest, and it does not gate classification —
-`prompt_collection: false` is the only response field that stops prompt text being sent. If you
-mean to stop capture for a developer, enforce it server-side.
+`opt_out` does two things in the current client. It changes a message printed by
+`pheebs config set token`, and it stops `classify local`, which has no backend to refuse the
+developer. The client caches it and narrows it only: an opt-out reaches the machine on
+revalidation, and an opt-in waits for `pheebs config set token`. It does not suppress ingest, and
+it does not gate backend classification. There, `prompt_collection: false` is the only response
+field that stops prompt text being sent. If you mean to stop capture for a developer, enforce it
+server-side.
 
 **A 5xx is not a verdict.** The client treats it as "backend unreachable" and degrades offline,
 preserving any identity it had already resolved. A `4xx` is a real rejection and the token is not
@@ -107,6 +110,11 @@ do not:
 
 Any degraded response — non-2xx, `allowed: false`, a missing `result.label`, a timeout — lands the
 same way: `prompt_intent: "unclassified"`, no error surfaced, no blocking.
+
+A client set to `classify local` never calls this route. Its Claude Code prompt events still carry
+`prompt_intent`, `requests_verification` and `task_scope`, under a `classifier_version` of the form
+`claude-code:<model>@<codebook>`. A backend that only trusts labels from versions it has gated
+needs to admit that version too, or it will ignore every local label.
 
 ### `result.task_scope`
 
