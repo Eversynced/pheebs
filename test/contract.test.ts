@@ -22,7 +22,7 @@ describe("openapi.yaml", () => {
   });
 
   it("carries the version that introduced the batch route", () => {
-    expect(spec).toContain('\n  version: "1.4.0"\n');
+    expect(spec).toContain('\n  version: "1.6.0"\n');
   });
 
   it("documents the batch route and the id it deduplicates on", () => {

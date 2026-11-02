@@ -54,7 +54,7 @@ promises it can tell a resend from a new event. It resends only an event the bac
 stored: a connection that never opened, a 429, a redirect, or a rejected token.
 This route is what the client falls back to when `/ingest/batch` is not served.
 
-Clients written against contract 1.4.0 send `event_id` on every envelope, a UUIDv7 that stays the
+Clients written against contract 1.6.0 send `event_id` on every envelope, a UUIDv7 that stays the
 same across resends; older clients omit it. Store it as a unique key if you can; a backend that
 ignores it keeps it as an extra field.
 
