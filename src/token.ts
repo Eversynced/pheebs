@@ -2,6 +2,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { hasBackend, validateUrl } from "./backend-config.js";
+import { removeOutbox } from "./outbox.js";
 import { readJsonFile, writeJsonFile } from "./pheebs-store.js";
 
 const TOKEN_PATH = join(homedir(), ".pheebs", ".token");
@@ -259,6 +260,11 @@ export async function revalidateStoredTokenIfStale({ force = false } = {}): Prom
 
   if (result?.reason === "revoked") {
     clearStoredToken();
+    // No flusher sends or expires a queue without a token, and a revoked one is never accepted
+    // again, so its queue would otherwise sit on disk. The local log keeps every event.
+    try {
+      removeOutbox();
+    } catch {}
     return true;
   }
 
