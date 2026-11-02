@@ -38,6 +38,9 @@ vi.mock("../src/classify-local.js", () => ({
   alternateAuthSources: () => alternateAuthSourcesMock(),
 }));
 
+const removeOutboxMock = vi.fn(() => true);
+vi.mock("../src/outbox.js", () => ({ removeOutbox: () => removeOutboxMock() }));
+
 const { runConfig } = await import("../src/commands/config.js");
 
 let config: object;
@@ -71,6 +74,7 @@ beforeEach(() => {
   canRunClaudeMock.mockResolvedValue(true);
   alternateAuthSourcesMock.mockReset();
   alternateAuthSourcesMock.mockReturnValue([]);
+  removeOutboxMock.mockClear();
   vi.spyOn(console, "log").mockImplementation((m?: unknown) => {
     logs.push(String(m));
   });
@@ -213,6 +217,14 @@ describe("config unset", () => {
     clearStoredTokenMock.mockReturnValue(true);
     await runConfig(["unset", "token"]);
     expect(clearStoredTokenMock).toHaveBeenCalledOnce();
+    expect(removeOutboxMock).toHaveBeenCalledOnce();
+  });
+
+  it("says so when the send queue could not be removed", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    removeOutboxMock.mockReturnValueOnce(false);
+    await runConfig(["unset", "token"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("send queue"));
   });
 });
 

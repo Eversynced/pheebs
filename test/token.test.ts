@@ -17,6 +17,9 @@ vi.mock("node:fs", () => ({
   unlinkSync: (...a: unknown[]) => unlinkSyncMock(...a),
 }));
 
+const removeOutboxMock = vi.fn();
+vi.mock("../src/outbox.js", () => ({ removeOutbox: () => removeOutboxMock() }));
+
 const backend = vi.hoisted(() => ({ configured: true }));
 vi.mock("../src/backend-config.js", () => ({
   validateUrl: () => "https://api.test/validate-token",
@@ -50,6 +53,7 @@ beforeEach(() => {
     mkdirSyncMock,
     chmodSyncMock,
     unlinkSyncMock,
+    removeOutboxMock,
   ]) {
     m.mockReset();
   }
@@ -561,6 +565,14 @@ describe("revalidateStoredTokenIfStale", () => {
     expect(await revalidateStoredTokenIfStale()).toBe(true);
     expect(unlinkSyncMock).toHaveBeenCalledOnce();
     expect(writeFileSyncMock).not.toHaveBeenCalled();
+  });
+
+  // No flusher sends or expires a queue without a token, and a revoked one is never accepted again.
+  it("discards the send queue along with a revoked token", async () => {
+    storeReturns({ token: "pheebs_x", id: "old", last_validated_at: "2000-01-01T00:00:00.000Z" });
+    stubFetch(new Response(JSON.stringify({ allowed: false, reason: "revoked" }), { status: 200 }));
+    expect(await revalidateStoredTokenIfStale()).toBe(true);
+    expect(removeOutboxMock).toHaveBeenCalledOnce();
   });
 
   it("keeps the id and stamps the attempt when there is no verdict", async () => {
