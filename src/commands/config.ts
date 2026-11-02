@@ -2,7 +2,8 @@ import {
   autoUpdateEnabled,
   type BackendConfig,
   baseUrl,
-  classifyEnabled,
+  classifyMode,
+  classifyModeFields,
   hasBackend,
   isHttpUrl,
   readConfig,
@@ -10,7 +11,14 @@ import {
 } from "../backend-config.js";
 import { resyncOtelConfigs } from "../otel-resync.js";
 import { removeOutbox } from "../outbox.js";
-import { clearStoredToken, readStoredToken, setToken, tokenLast4 } from "../token.js";
+import {
+  clearStoredToken,
+  optOutStatus,
+  readStoredToken,
+  revalidateStoredTokenIfStale,
+  setToken,
+  tokenLast4,
+} from "../token.js";
 
 const USAGE = `pheebs config <command>
 
@@ -23,7 +31,7 @@ Commands:
 Keys:
   base-url             Backend endpoint URL
   auto-update          Background self-update: on | off
-  classify             Send prompts to the intent classifier: on | off
+  classify             Classify prompt intent: on (backend) | off | local (Claude Code)
   token                Your Pheebs API token (validated on set)`;
 
 export async function runConfig(args: string[]): Promise<void> {
@@ -69,9 +77,7 @@ function runList(): void {
   console.log(
     `auto-update  ${autoUpdateEnabled() ? "on" : "off"}  (${source(cfg.autoUpdate !== undefined)})`,
   );
-  console.log(
-    `classify     ${classifyEnabled() ? "on" : "off"}  (${source(cfg.classify !== undefined)})`,
-  );
+  console.log(`classify     ${classifyMode()}  (${source(cfg.classify !== undefined)})`);
   console.log(`token        ${tokenSummary()}`);
 }
 
@@ -85,7 +91,7 @@ function runGet(key: string | undefined): void {
       console.log(autoUpdateEnabled() ? "on" : "off");
       return;
     case "classify":
-      console.log(classifyEnabled() ? "on" : "off");
+      console.log(classifyMode());
       return;
     case "token":
       console.log(tokenSummary());
@@ -133,13 +139,60 @@ async function runSet(key: string | undefined, value: string | undefined): Promi
     return;
   }
 
+  if (key === "classify" && value === "local") {
+    updateConfig(classifyModeFields("local"));
+    // Imported here so other `config` commands never load the spawn path and the codebook.
+    const { alternateAuthSources, canRunClaude } = await import("../classify-local.js");
+    // The opt-out gates local mode, and a token stored before it was cached carries none, so ask
+    // the backend now rather than classify an opted-out developer until the revalidation TTL.
+    // The narrowing revalidation, not setToken: switching modes must never widen consent.
+    const [revoked, claudeRuns] = await Promise.all([
+      revalidateStoredTokenIfStale({ force: true }),
+      canRunClaude(),
+    ]);
+    if (revoked) resyncOtelConfigs();
+    console.log("pheebs: classify set to local");
+    if (!claudeRuns) {
+      console.log("pheebs: could not run `claude` here, so prompts will record unclassified.");
+    }
+    const otherAuth = alternateAuthSources();
+    if (otherAuth.length > 0) {
+      const [verb, pronoun] = otherAuth.length === 1 ? ["is", "it"] : ["are", "them"];
+      const names = `${otherAuth.slice(0, -1).join(", ")}${otherAuth.length > 1 ? " and " : ""}${otherAuth.at(-1)}`;
+      console.log(
+        `pheebs: ${names} ${verb} set, but local classification ignores ${pronoun} and runs on the account stored by \`claude /login\`, which may not be the one your sessions use.`,
+      );
+    }
+    if (revoked) {
+      console.log(
+        "pheebs: the stored token was revoked and has been removed. Ask an admin for a new one.",
+      );
+    }
+    const optOut = optOutStatus();
+    if (optOut === "opted_out") {
+      console.log("pheebs: this token is opted out, so prompts will record unclassified.");
+    } else if (optOut === "unknown") {
+      console.log(
+        "pheebs: could not confirm your classification opt-out with the backend, so prompts record unclassified until it answers.",
+      );
+    } else if (optOut === "unchecked") {
+      console.log(
+        "pheebs: no backend is configured, so your classification opt-out cannot be checked.",
+      );
+    }
+    return;
+  }
+
   if (key === "auto-update" || key === "classify") {
     const on = parseBool(value);
     if (on === undefined) {
-      console.error(`pheebs: ${key} must be "on" or "off".`);
+      const allowed = key === "classify" ? `"on", "off", or "local"` : `"on" or "off"`;
+      console.error(`pheebs: ${key} must be ${allowed}.`);
       process.exit(1);
     }
-    updateConfig(key === "auto-update" ? { autoUpdate: on } : { classify: on });
+    updateConfig(
+      key === "auto-update" ? { autoUpdate: on } : classifyModeFields(on ? "on" : "off"),
+    );
     console.log(`pheebs: ${key} set to ${on ? "on" : "off"}`);
     return;
   }
@@ -154,10 +207,10 @@ function discardQueue(): void {
   } catch {}
 }
 
-function unsetConfigKey(field: keyof BackendConfig): void {
+function unsetConfigKey(...fields: (keyof BackendConfig)[]): void {
   const cfg = readConfig();
   if (!cfg) return; // nothing stored yet — defaults already apply; don't create an empty file
-  delete cfg[field];
+  for (const field of fields) delete cfg[field];
   writeConfig(cfg);
 }
 
@@ -183,7 +236,7 @@ function runUnset(key: string | undefined): void {
       unsetConfigKey("autoUpdate");
       break;
     case "classify":
-      unsetConfigKey("classify");
+      unsetConfigKey("classify", "classifyLocally");
       break;
     default:
       console.error(`pheebs: unknown key "${key ?? ""}". Run \`pheebs config\` for the list.`);

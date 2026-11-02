@@ -6,6 +6,63 @@ Pheebs was developed privately before this repository was opened. That history i
 so this changelog starts at the first public release rather than linking commits that cannot
 be resolved.
 
+## [1.2.0](https://github.com/Eversynced/pheebs/compare/v1.1.0...v1.2.0) (2026-10-22)
+
+
+### Features
+
+* **insights:** add --team for managers ([430342e](https://github.com/Eversynced/pheebs/commit/430342e642f0684d7f9d9997422eedda4ff2a4c0))
+* **insights:** add --team for managers ([a709634](https://github.com/Eversynced/pheebs/commit/a709634d8270754e669242659b1f5a1983a868f5))
+* **insights:** add repair attribution to the contract and both reports ([a8c39c5](https://github.com/Eversynced/pheebs/commit/a8c39c530d8a473136af6da02076aa232c8ae05f))
+* **insights:** compute the repertoire section from the local log ([47ca958](https://github.com/Eversynced/pheebs/commit/47ca958f96f62c08a54dc570078957cd8be7e26d))
+* **insights:** compute verification coverage from the local log ([e5ab223](https://github.com/Eversynced/pheebs/commit/e5ab223e13ebce62e1003431be8eef337d0d1375))
+* **insights:** fetch the manager's team report from /insights/team ([200964e](https://github.com/Eversynced/pheebs/commit/200964e25fa36f9e876b25d20231af1a6cf50400))
+* **insights:** judge split-phase delivery from the local model timeline ([3ed1d99](https://github.com/Eversynced/pheebs/commit/3ed1d996d4a687ef39df97a256c31fd82f0ab591))
+* **insights:** name the developer stamps the local report counts ([f9a1732](https://github.com/Eversynced/pheebs/commit/f9a173222e1199023edd64b36b6694ba571b186d))
+* **insights:** normalize and render the team report ([14a6346](https://github.com/Eversynced/pheebs/commit/14a6346460854adbbff2547292c8023429e3e31f))
+* **insights:** render repair attribution on both reports ([2f20c65](https://github.com/Eversynced/pheebs/commit/2f20c651024e356a0370555ee80435b2ade00a65))
+* **insights:** report from the local log without a backend ([4c1da91](https://github.com/Eversynced/pheebs/commit/4c1da9143a8ff8d0e90c7aa23eac371dddd4e9d4))
+* **insights:** report from the local log without a backend, or with --local ([bb57ea6](https://github.com/Eversynced/pheebs/commit/bb57ea61062c3b24c8267453f5c4765603545a33))
+* **token:** cache the role /validate-token reports ([7263c84](https://github.com/Eversynced/pheebs/commit/7263c848ad059864571816fe70a4dd3c3aea0eb7))
+
+
+### Bug Fixes
+
+* **auto-update:** hide the background update's console on Windows ([142552a](https://github.com/Eversynced/pheebs/commit/142552a3f40e29a2728f1c183881a70b89656ac6))
+* **config:** expand a backslash tilde in PHEEBS_LOG_PATH on Windows ([0c9fef0](https://github.com/Eversynced/pheebs/commit/0c9fef088854f30dd62942ce4ab4b2c93dd66977))
+* **doctor:** find binaries on Windows without which ([d2dca6f](https://github.com/Eversynced/pheebs/commit/d2dca6ff24cec82e0c723b489bc8df29b5bb3922))
+* **doctor:** name the emptied settings file instead of undefined ([2b36b80](https://github.com/Eversynced/pheebs/commit/2b36b80e2f52c4c5a1ab833feecb1a82a988077b))
+* **doctor:** read the last logged event without tail ([785b28f](https://github.com/Eversynced/pheebs/commit/785b28fa5fe9d2a7bf1962c779f78e4d42e2accd))
+* **hooks:** accept hook payloads that start with a UTF-8 BOM ([e767fbc](https://github.com/Eversynced/pheebs/commit/e767fbca608415ab48b0fc6400487a3a80aba74d))
+* **identity:** address review on token revalidation and the identity label ([c6b2cd0](https://github.com/Eversynced/pheebs/commit/c6b2cd0d0f4e613eb335401c476edc216730d62c))
+* **identity:** keep developer a string and finish the gh doc sweep ([47cc832](https://github.com/Eversynced/pheebs/commit/47cc8320ede4c2ecbf02d2fe1cf215b3306c8772))
+* **identity:** revalidate the token at session start, and close review gaps ([785f0e7](https://github.com/Eversynced/pheebs/commit/785f0e7ba91617764553c0af7866bcefbda88c9f))
+* **identity:** stamp developer from the stored token id, drop gh ([087aa77](https://github.com/Eversynced/pheebs/commit/087aa77ab959c984debe066bbe04ee7b51d43475))
+* **identity:** stamp developer from the stored token id, drop gh ([2b12124](https://github.com/Eversynced/pheebs/commit/2b12124393c9fdaeb92318c7b484f6c54cfba3d7))
+* **identity:** tell a proxy's 4xx from the backend's own rejection ([73a682b](https://github.com/Eversynced/pheebs/commit/73a682bb0ff09223cf85895258811aefe502b71e))
+* **insights:** count unknown apart and read stamps only in the report's window ([da81f99](https://github.com/Eversynced/pheebs/commit/da81f99f8571cb15549fc5fe6c36639878b26903))
+* **insights:** drop the team median column from the local report ([c7e59a5](https://github.com/Eversynced/pheebs/commit/c7e59a5e83e659bd207d442535ce801e4dc513e7))
+* **insights:** judge split-phase delivery from the model planning ended on ([39e4c88](https://github.com/Eversynced/pheebs/commit/39e4c888c5d46d4e8120d15bcc82a2354878a2c9))
+* **insights:** keep the team report from throwing on a terminal under four columns wide ([0007dd1](https://github.com/Eversynced/pheebs/commit/0007dd140269d163e9907197493c50f433de61c8))
+* **insights:** name unknown heatmap states, draw a repeated signal once, and pin the edges the reviews found ([ac9eac2](https://github.com/Eversynced/pheebs/commit/ac9eac2b0d1ecaf33bf2fb0aa14a5e48201e627b))
+* **insights:** read a list of non-rows as absent and unusable coverage as missing ([f229212](https://github.com/Eversynced/pheebs/commit/f229212bb9aedcb45e08ba4119f7361896c69c96))
+* **insights:** read EV1 and EV5 as Insufficient data on Windows Claude Code ([b9f0b3f](https://github.com/Eversynced/pheebs/commit/b9f0b3f8e7ceef84c3de013783edbd5eea364360))
+* **insights:** say when a team list is empty and when a dollar figure has no coverage ([80b2c53](https://github.com/Eversynced/pheebs/commit/80b2c53e6ea9a2e448fac0c00a8e7dee70180a55))
+* **intent:** classify commands from Claude Code's PowerShell tool ([be61342](https://github.com/Eversynced/pheebs/commit/be613426ba429f2a77d8cf6959d7c74dbc26ff32))
+* **path:** compare settings scopes case-insensitively on Windows ([0af2acc](https://github.com/Eversynced/pheebs/commit/0af2acc5a6c2eec398e9b85b18e5719131e4d968))
+* **settings:** read BOM-prefixed config files instead of resetting them ([56c9335](https://github.com/Eversynced/pheebs/commit/56c933513b3a5e7cefc151cca0a0fe8acfced43e))
+* **store:** restrict token-bearing files to the owner on Windows ([2435121](https://github.com/Eversynced/pheebs/commit/2435121642999eb38d01b7d2dd7cef0595638b8f))
+* **test:** drop git's repo variables before any test runs git ([a395e13](https://github.com/Eversynced/pheebs/commit/a395e133e19c81c80ae1de0abc2d64b7dda34c2a))
+* **test:** drop git's repo variables before any test runs git ([e411cf0](https://github.com/Eversynced/pheebs/commit/e411cf0a6e9f166dfd9c6c33e44d74af6047aedc))
+* **update:** run npm through a shell on Windows ([a84e546](https://github.com/Eversynced/pheebs/commit/a84e54616458cc192b45edf8fce6417652064bfc))
+* Windows portability from the Windows 11 test report ([4b0603f](https://github.com/Eversynced/pheebs/commit/4b0603f978598826d045ce1b9f6a73a877b4926e))
+* **windows:** launch system tools by full path, never from the repo ([b400333](https://github.com/Eversynced/pheebs/commit/b40033361fc61127a3eda853030d4d882f5edc8a))
+
+
+### Reverts
+
+* **insights:** drop the developer stamps from the local report ([111c8af](https://github.com/Eversynced/pheebs/commit/111c8af8fdc4c7bdad3f1a15d12a9fa33325cd2b))
+
 ## [1.1.0](https://github.com/Eversynced/pheebs/compare/v1.0.0...v1.1.0) (2026-10-02)
 
 
