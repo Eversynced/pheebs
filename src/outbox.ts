@@ -178,8 +178,7 @@ const SEND_NOW_SUFFIX = ".now.json";
 export function enqueue(
   payload: Record<string, unknown>,
   dir: string,
-  now = Date.now(),
-  sendNow = false,
+  { now = Date.now(), sendNow = false }: { now?: number; sendNow?: boolean } = {},
 ): void {
   mkdirSync(tmpDir(dir), { recursive: true, mode: 0o700 });
   mkdirSync(newDir(dir), { recursive: true, mode: 0o700 });
@@ -212,6 +211,15 @@ export function listPending(dir: string): Pending[] {
     } catch {}
   }
   return pending;
+}
+
+// A directory listing and nothing more, because a lingering flusher asks once a second.
+export function hasSendNow(dir: string): boolean {
+  try {
+    return readdirSync(newDir(dir)).some((name) => name.endsWith(SEND_NOW_SUFFIX));
+  } catch {
+    return false;
+  }
 }
 
 /** Whether every item is gone. One that is not would be sent again on the next pass. */
@@ -351,6 +359,12 @@ export function isFlusherLive(dir: string, now = Date.now()): boolean {
   }
 }
 
-export function removeOutbox(root = OUTBOX_ROOT): void {
-  rmSync(root, { recursive: true, force: true });
+/** A file held open, as Windows does for a running flusher, keeps the queue. */
+export function removeOutbox(root = OUTBOX_ROOT): boolean {
+  try {
+    rmSync(root, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }

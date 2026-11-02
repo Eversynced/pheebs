@@ -3,6 +3,7 @@ import { baseUrl, hasBackend, ingestBatchUrl, ingestUrl } from "./backend-config
 import { readCapped } from "./insights.js";
 import {
   discardOtherScopes,
+  hasSendNow,
   type Lock,
   listPending,
   MAX_PAUSE_MS,
@@ -232,15 +233,15 @@ function pauseFor(dir: string, now: number, lastError: string): FlushOutcome {
   return "stop";
 }
 
-function refused(dir: string, now: number, status: number): FlushOutcome | undefined {
-  if (status === 401 || status === 403) {
+const isTokenRejected = (status: number) => status === 401 || status === 403;
+const isRefusal = (status: number) => isTokenRejected(status) || isRedirect(status);
+
+function refused(dir: string, now: number, status: number): FlushOutcome {
+  if (isTokenRejected(status)) {
     writeMarker(status);
     return pauseFor(dir, now, `token rejected (${status})`);
   }
-  if (isRedirect(status)) {
-    return pauseFor(dir, now, `backend redirected (${status}); set base-url to its address`);
-  }
-  return undefined;
+  return pauseFor(dir, now, `backend redirected (${status}); set base-url to its address`);
 }
 
 // The fallback for a backend without /ingest/batch: one /ingest per event. An event is kept only
@@ -268,6 +269,19 @@ async function sendSingly(
     if (answered) updateState({ attempts: 0, nextAttemptAt: undefined, lastError }, dir);
     else if (lastError) updateState({ lastError }, dir);
   };
+  // A run that stops on a failure settles first, so the failure's backoff counts from what the run
+  // achieved, and an earlier drop stays beside the failure for doctor to report.
+  const stopWith = (stop: () => FlushOutcome): FlushOutcome => {
+    settle();
+    const outcome = stop();
+    if (lastError) {
+      const reason = readState(dir).lastError;
+      if (!reason?.includes(lastError)) {
+        updateState({ lastError: [reason, lastError].filter(Boolean).join("; ") }, dir);
+      }
+    }
+    return outcome;
+  };
   for (const [index, event] of events.entries()) {
     // Each send can take the full timeout, so the lock and the destination are checked per event:
     // a flusher that lost its lock stops before a second one sends the same event, and one whose
@@ -285,32 +299,27 @@ async function sendSingly(
       res = await post(ctx, ctx.singleUrl, event);
     } catch (err) {
       if (neverSent(err) || confirming) {
-        return retryLater(dir, now(), random, null, "backend unreachable");
+        return stopWith(() => retryLater(dir, now(), random, null, "backend unreachable"));
       }
-      if (!removePending([batch[index]])) return stuck(dir, now(), random);
+      if (!removePending([batch[index]])) return stopWith(() => stuck(dir, now(), random));
       lastError = "event dropped, its send failed after it may have arrived";
       continue;
     }
-    const refusal = refused(dir, now(), res.status);
-    if (refusal) return refusal;
+    if (isRefusal(res.status)) return stopWith(() => refused(dir, now(), res.status));
     if (res.status === 429) {
-      return retryLater(dir, now(), random, res.headers.get("retry-after"), "backend answered 429");
+      const retryAfter = res.headers.get("retry-after");
+      return stopWith(() => retryLater(dir, now(), random, retryAfter, "backend answered 429"));
     }
     if (confirming) {
       // Any verdict on the event itself shows /ingest is there; only an answer that could also
       // come from a missing route or a proxy leaves the question open.
       if (isTransient(res.status) || res.status === 404 || res.status === 405) {
-        return retryLater(
-          dir,
-          now(),
-          random,
-          null,
-          `batch route missing, /ingest answered ${res.status}`,
-        );
+        const reason = `batch route missing, /ingest answered ${res.status}`;
+        return stopWith(() => retryLater(dir, now(), random, null, reason));
       }
       updateState({ batchUnsupportedUntil: now() + UNSUPPORTED_RECHECK_MS }, dir);
     }
-    if (!removePending([batch[index]])) return stuck(dir, now(), random);
+    if (!removePending([batch[index]])) return stopWith(() => stuck(dir, now(), random));
     if (res.ok) {
       answered = true;
     } else {
@@ -394,8 +403,7 @@ export async function flushOnce(ctx: FlushContext): Promise<FlushOutcome> {
   }
 
   const { status } = res;
-  const refusal = refused(dir, now, status);
-  if (refusal) return refusal;
+  if (isRefusal(status)) return refused(dir, now, status);
   if (status === 404 || status === 405) {
     const through = state.inDoubtThrough;
     const inDoubt = through === undefined ? [] : sendable.filter((item) => item.name <= through);
@@ -464,6 +472,37 @@ export async function flushOnce(ctx: FlushContext): Promise<FlushOutcome> {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * How long the flusher waits before its next send, and whether an event that asks to be sent now
+ * may cut the wait short: only the linger gives way to one, a backoff still holds. Stamps from the
+ * future were written before the clock went backwards, and each is taken as already due, as the
+ * hook does: honouring one would hold the queue until the clock caught up.
+ */
+export function nextWait(
+  pending: Pending[],
+  nextAttemptAt: number | undefined,
+  { linger, honourBackoff, now }: { linger: boolean; honourBackoff: boolean; now: number },
+): { ms: number; interruptible: boolean } {
+  const queuedAt = pending[0].queuedAt;
+  const lingerLeft =
+    linger && queuedAt <= now && !pending.some((item) => item.sendNow)
+      ? queuedAt + LINGER_MS - now
+      : 0;
+  const backoffLeft = honourBackoff ? remainingMs(nextAttemptAt, MAX_PAUSE_MS, now) : 0;
+  return { ms: Math.max(lingerLeft, backoffLeft, 0), interruptible: lingerLeft > backoffLeft };
+}
+
+// Sleeps before each look, so a send-now name the queue listing skipped cannot spin the loop, and
+// keeps the lock fresh and the destination checked as the drain loop would.
+async function sleepUnlessSendNow(dir: string, ms: number, stillOurs: () => boolean) {
+  // A monotonic clock, so a wall clock stepped back mid-sleep cannot stretch the linger.
+  const until = performance.now() + ms;
+  for (let left = ms; left > 0; left = until - performance.now()) {
+    await sleep(Math.min(left, SEND_NOW_CHECK_MS));
+    if (!stillOurs() || hasSendNow(dir)) return;
+  }
+}
+
 // The configuration the flusher started under is the only one it may send for. A developer who
 // points pheebs elsewhere, or changes token, mid-linger has withdrawn the old destination.
 function stillScoped(scope: string): boolean {
@@ -482,22 +521,16 @@ async function drain(ctx: FlushContext, lock: Lock, linger: boolean) {
     const pending = listPending(dir);
     if (pending.length === 0) return true;
 
-    // Stamps from the future were written before the clock went backwards. Each is taken as
-    // already due, as the hook does: honouring one would hold the queue until the clock caught up.
-    const now = Date.now();
-    const queuedAt = pending[0].queuedAt;
-    const lingerLeft =
-      linger && queuedAt <= now && !pending.some((item) => item.sendNow)
-        ? queuedAt + LINGER_MS - now
-        : 0;
-    const backoffLeft = honourBackoff
-      ? remainingMs(readState(dir).nextAttemptAt, MAX_PAUSE_MS, now)
-      : 0;
-    const wait = Math.max(lingerLeft, backoffLeft, 0);
-    if (wait > LINGER_MS) return false;
-    if (wait > 0) {
-      // Only the linger gives way to an event that asks to be sent now; a backoff still holds.
-      await sleep(lingerLeft > backoffLeft ? Math.min(wait, SEND_NOW_CHECK_MS) : wait);
+    const { ms, interruptible } = nextWait(pending, readState(dir).nextAttemptAt, {
+      linger,
+      honourBackoff,
+      now: Date.now(),
+    });
+    if (ms > LINGER_MS) return false;
+    if (ms > 0) {
+      await (interruptible
+        ? sleepUnlessSendNow(dir, ms, () => lock.refresh() && !!ctx.stillScoped?.())
+        : sleep(ms));
       continue;
     }
 

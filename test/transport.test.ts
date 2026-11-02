@@ -153,6 +153,26 @@ describe("HttpTransport", () => {
     expect(payload).not.toHaveProperty("logPath");
   });
 
+  it("asks for a send now at the end of a turn or session, and for a prompt that arrives late", () => {
+    withToken("pheebs_secret");
+    const fresh = new Date().toISOString();
+    const late = new Date(Date.now() - 5000).toISOString();
+    new HttpTransport().send(entry({ timestamp: fresh }));
+    new HttpTransport().send(entry({ timestamp: fresh, event: "turn_ended" }));
+    new HttpTransport().send(entry({ timestamp: fresh, event: "session_end" }));
+    new HttpTransport().send(entry({ timestamp: late, event: "prompt_submitted" }));
+    new HttpTransport().send(entry({ timestamp: late }));
+    new HttpTransport().send(entry({ timestamp: "not a time", event: "prompt_submitted" }));
+    expect(enqueueMock.mock.calls.map(([, , options]) => options.sendNow)).toEqual([
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+    ]);
+  });
+
   it("scopes the queue to the backend and token without exposing the token", () => {
     withToken("pheebs_secret");
     new HttpTransport().send(entry());

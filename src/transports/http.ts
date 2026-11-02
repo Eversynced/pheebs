@@ -28,6 +28,11 @@ export const TRANSPORT_ERROR_PATH = join(homedir(), ".pheebs", ".last-transport-
 // linger. The hook still only queues; the flusher sends, within the same lock and backoff.
 const SEND_NOW_EVENTS = new Set<string>([EVENTS.TurnEnded, EVENTS.SessionEnd]);
 
+// A prompt written this long after its own stamp was held up by its classifier, and the end of its
+// turn may already have gone out without it, so it skips the linger too. Only a prompt: a slow
+// start delays every event alike and is no reason to give up batching.
+const LATE_PROMPT_MS = 2_000;
+
 // Never sent to the server. `logPath` is client-internal; `developer` is omitted because
 // the server stamps identity from the token — a client-supplied developer is ignored.
 const OMIT_KEYS = new Set(["logPath", "developer"]);
@@ -81,7 +86,10 @@ export class HttpTransport implements RemoteTransport {
       const dir = scopeDir(scope);
       // Old scopes' queues are removed by the flusher, off the hook path: a backlog of thousands of
       // files is not something Cursor or Codex should wait on.
-      enqueue(payload, dir, Date.now(), SEND_NOW_EVENTS.has(entry.event));
+      const late =
+        entry.event === EVENTS.PromptSubmitted &&
+        Date.now() - Date.parse(entry.timestamp) >= LATE_PROMPT_MS;
+      enqueue(payload, dir, { sendNow: SEND_NOW_EVENTS.has(entry.event) || late });
       if (!isFlusherLive(dir) && remainingMs(readState(dir).nextAttemptAt, MAX_PAUSE_MS) === 0) {
         startFlusher();
       }

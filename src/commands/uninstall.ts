@@ -145,9 +145,7 @@ export async function runUninstall(): Promise<void> {
 
   // Events still queued for the backend go with the hooks: nothing would send them now. The local
   // log keeps its copy.
-  try {
-    removeOutbox();
-  } catch {
-    console.warn("pheebs: could not remove the send queue in ~/.pheebs/outbox, skipping");
+  if (!removeOutbox()) {
+    console.warn("pheebs: could not remove the send queue in ~/.pheebs/outbox; delete it by hand");
   }
 }

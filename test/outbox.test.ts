@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   discardOtherScopes,
   enqueue,
+  hasSendNow,
   isFlusherLive,
   LOCK_STALE_MS,
   listPending,
@@ -40,8 +41,8 @@ const event = (id: string) => ({ event_id: id, event: "tool_use_completed" });
 
 describe("enqueue", () => {
   it("lands each event in new/ with nothing left in tmp/", () => {
-    enqueue(event("a"), dir, 1000);
-    enqueue(event("b"), dir, 1001);
+    enqueue(event("a"), dir, { now: 1000 });
+    enqueue(event("b"), dir, { now: 1001 });
     expect(readdirSync(join(dir, "tmp"))).toEqual([]);
     expect(listPending(dir).map((p) => p.name)).toEqual([
       "0000000001000-a.json",
@@ -50,15 +51,24 @@ describe("enqueue", () => {
   });
 
   it("keeps arrival order, and two events in one millisecond apart", () => {
-    enqueue(event("z"), dir, 5000);
-    enqueue(event("y"), dir, 5000);
-    enqueue(event("x"), dir, 4000);
+    enqueue(event("z"), dir, { now: 5000 });
+    enqueue(event("y"), dir, { now: 5000 });
+    enqueue(event("x"), dir, { now: 4000 });
     expect(listPending(dir).map((p) => p.queuedAt)).toEqual([4000, 5000, 5000]);
     expect(listPending(dir)).toHaveLength(3);
   });
 
+  it("marks an event that asks to be sent now, and only that one", () => {
+    expect(hasSendNow(dir)).toBe(false);
+    enqueue(event("a"), dir, { now: 1000 });
+    expect(hasSendNow(dir)).toBe(false);
+    enqueue(event("b"), dir, { now: 1001, sendNow: true });
+    expect(listPending(dir).map((p) => p.sendNow)).toEqual([false, true]);
+    expect(hasSendNow(dir)).toBe(true);
+  });
+
   it.skipIf(process.platform === "win32")("writes events owner-only", () => {
-    enqueue(event("a"), dir, 1000);
+    enqueue(event("a"), dir, { now: 1000 });
     expect(statSync(listPending(dir)[0].path).mode & 0o777).toBe(0o600);
   });
 });
@@ -125,7 +135,8 @@ describe("trimToCaps", () => {
   const limits = { maxEvents: 2, maxBytes: 1_000_000, maxAgeMs: 10_000 };
 
   it("drops the oldest past the count cap and counts them", () => {
-    for (const [i, id] of ["a", "b", "c", "d"].entries()) enqueue(event(id), dir, 1000 + i);
+    for (const [i, id] of ["a", "b", "c", "d"].entries())
+      enqueue(event(id), dir, { now: 1000 + i });
     expect(trimToCaps(dir, 2000, limits)).toBe(2);
     expect(listPending(dir).map((p) => p.name)).toEqual([
       "0000000001002-c.json",
@@ -135,15 +146,15 @@ describe("trimToCaps", () => {
   });
 
   it("drops events past the age cap", () => {
-    enqueue(event("old"), dir, 1000);
-    enqueue(event("new"), dir, 20_000);
+    enqueue(event("old"), dir, { now: 1000 });
+    enqueue(event("new"), dir, { now: 20_000 });
     expect(trimToCaps(dir, 20_500, limits)).toBe(1);
     expect(listPending(dir).map((p) => p.name)).toEqual(["0000000020000-new.json"]);
   });
 
   it("drops the oldest past the byte cap", () => {
-    enqueue({ ...event("a"), pad: "x".repeat(400) }, dir, 1000);
-    enqueue({ ...event("b"), pad: "x".repeat(400) }, dir, 1001);
+    enqueue({ ...event("a"), pad: "x".repeat(400) }, dir, { now: 1000 });
+    enqueue({ ...event("b"), pad: "x".repeat(400) }, dir, { now: 1001 });
     expect(trimToCaps(dir, 1002, { ...limits, maxBytes: 600 })).toBe(1);
     expect(listPending(dir)).toHaveLength(1);
   });

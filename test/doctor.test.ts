@@ -114,8 +114,8 @@ describe("outboxStatusLines", () => {
 
   it("reports how much is waiting, how long, and why", () => {
     const now = 1_800_000_000_000;
-    enqueue({ event_id: "a" }, dir, now - 3 * 60 * 60 * 1000);
-    enqueue({ event_id: "b" }, dir, now - 60_000);
+    enqueue({ event_id: "a" }, dir, { now: now - 3 * 60 * 60 * 1000 });
+    enqueue({ event_id: "b" }, dir, { now: now - 60_000 });
     updateState(
       {
         nextAttemptAt: now + 5 * 60_000,

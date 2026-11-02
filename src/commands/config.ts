@@ -202,9 +202,9 @@ async function runSet(key: string | undefined, value: string | undefined): Promi
 }
 
 function discardQueue(): void {
-  try {
-    removeOutbox();
-  } catch {}
+  if (!removeOutbox()) {
+    console.warn("pheebs: could not remove the send queue in ~/.pheebs/outbox; delete it by hand");
+  }
 }
 
 function unsetConfigKey(...fields: (keyof BackendConfig)[]): void {

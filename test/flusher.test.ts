@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backoffMs, type FlushContext, flushOnce } from "../src/flusher.js";
+import { backoffMs, type FlushContext, flushOnce, nextWait } from "../src/flusher.js";
 import { enqueue, listPending, readState, updateState } from "../src/outbox.js";
 
 const writeMarkerMock = vi.fn();
@@ -47,7 +47,7 @@ function answer(status: number, body?: unknown, headers?: Record<string, string>
 
 function queue(n: number): void {
   for (let i = 0; i < n; i++)
-    enqueue({ event_id: `id-${i}`, event: "turn_ended" }, dir, NOW - 120_000 + i);
+    enqueue({ event_id: `id-${i}`, event: "turn_ended" }, dir, { now: NOW - 120_000 + i });
 }
 
 function sentBodies(): Record<string, unknown>[] {
@@ -153,7 +153,9 @@ describe("flushOnce", () => {
 
   it("caps a batch at 512 KB", async () => {
     for (let i = 0; i < 3; i++)
-      enqueue({ event_id: `big-${i}`, pad: "x".repeat(200 * 1024) }, dir, NOW - 120_000 + i);
+      enqueue({ event_id: `big-${i}`, pad: "x".repeat(200 * 1024) }, dir, {
+        now: NOW - 120_000 + i,
+      });
     answer(200, { accepted: 2, duplicates: 0, rejected: [] });
     await flushOnce(ctx());
     expect((sentBodies()[0].events as unknown[]).length).toBe(2);
@@ -389,7 +391,7 @@ describe("a backend without /ingest/batch", () => {
     expect(listPending(dir)).toEqual([]);
     expect(readState(dir).lastError).toContain("may have arrived");
 
-    enqueue({ event_id: "id-new", event: "turn_ended" }, dir, later);
+    enqueue({ event_id: "id-new", event: "turn_ended" }, dir, { now: later });
     expect(await flushOnce(ctx({ now: later }))).toBe("sent");
     expect(sentBodies().at(-1)).toEqual({ event_id: "id-new", event: "turn_ended" });
     expect(readState(dir).batchUnsupportedUntil).toBeGreaterThan(later);
@@ -455,8 +457,8 @@ describe("a backend without /ingest/batch", () => {
       expect(listPending(dir)).toEqual([]);
 
       const later = NOW + 24 * HOUR;
-      enqueue({ event_id: "id-a", event: "turn_ended" }, dir, later - 1000);
-      enqueue({ event_id: "id-b", event: "turn_ended" }, dir, later - 999);
+      enqueue({ event_id: "id-a", event: "turn_ended" }, dir, { now: later - 1000 });
+      enqueue({ event_id: "id-b", event: "turn_ended" }, dir, { now: later - 999 });
       expect(await flushOnce(ctx({ now: later }))).toBe("retry");
       expect(await flushOnce(ctx({ now: later + 60_000 }))).toBe("retry");
       expect(listPending(dir)).toHaveLength(2);
@@ -472,7 +474,7 @@ describe("a backend without /ingest/batch", () => {
       expect(await flushOnce(ctx({ now: NOW + 1000 }))).toBe("sent");
       expect(readState(dir)).not.toHaveProperty("inDoubtThrough");
 
-      enqueue({ event_id: "id-late", event: "turn_ended" }, dir, NOW + 2 * HOUR);
+      enqueue({ event_id: "id-late", event: "turn_ended" }, dir, { now: NOW + 2 * HOUR });
       expect(await flushOnce(ctx({ now: NOW + 3 * HOUR }))).toBe("retry");
       expect(await flushOnce(ctx({ now: NOW + 3 * HOUR + 1000 }))).toBe("retry");
       expect(listPending(dir)).toHaveLength(1);
@@ -584,6 +586,20 @@ describe("a backend without /ingest/batch", () => {
     expect(readState(dir)).not.toHaveProperty("lastError");
   });
 
+  it("keeps an earlier drop beside the reason it stopped, and resets the backoff it earned", async () => {
+    queue(3);
+    updateState({ batchUnsupportedUntil: NOW + 1000, attempts: 6 }, dir);
+    fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockResolvedValueOnce(new Response(null, { status: 400 }))
+      .mockResolvedValueOnce(new Response(null, { status: 429 }));
+    expect(await flushOnce(ctx())).toBe("retry");
+    expect(readState(dir).attempts).toBe(1);
+    expect(readState(dir).lastError).toContain("backend answered 429");
+    expect(readState(dir).lastError).toContain("event dropped, backend answered 400");
+  });
+
   it("stops before sending once its lock was taken over", async () => {
     queue(2);
     updateState({ batchUnsupportedUntil: NOW + 1000 }, dir);
@@ -591,6 +607,33 @@ describe("a backend without /ingest/batch", () => {
     expect(await flushOnce(ctx({ lock: { refresh: () => false } }))).toBe("stop");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(listPending(dir)).toHaveLength(2);
+  });
+});
+
+describe("nextWait", () => {
+  const pending = (queuedAt: number, sendNow = false) => ({
+    name: `${queuedAt}.json`,
+    path: "",
+    bytes: 1,
+    queuedAt,
+    sendNow,
+  });
+  const lingering = { linger: true, honourBackoff: true, now: NOW };
+
+  it("lets a fresh queue linger, and a send-now event cut that short", () => {
+    const fresh = nextWait([pending(NOW - 1000)], undefined, lingering);
+    expect(fresh.ms).toBeGreaterThan(0);
+    expect(fresh.interruptible).toBe(true);
+    expect(nextWait([pending(NOW - 1000), pending(NOW, true)], undefined, lingering).ms).toBe(0);
+  });
+
+  it("still holds a backoff over a send-now event", () => {
+    const wait = nextWait([pending(NOW - 1000, true)], NOW + 5000, lingering);
+    expect(wait).toEqual({ ms: 5000, interruptible: false });
+  });
+
+  it("does not linger for a bare flush", () => {
+    expect(nextWait([pending(NOW)], undefined, { ...lingering, linger: false }).ms).toBe(0);
   });
 });
 

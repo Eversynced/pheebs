@@ -262,9 +262,9 @@ export async function revalidateStoredTokenIfStale({ force = false } = {}): Prom
     clearStoredToken();
     // No flusher sends or expires a queue without a token, and a revoked one is never accepted
     // again, so its queue would otherwise sit on disk. The local log keeps every event.
-    try {
-      removeOutbox();
-    } catch {}
+    // Silent on failure: this runs on the hook path, where nothing may print, and a later token's
+    // flusher removes any queue left for another one.
+    removeOutbox();
     return true;
   }
 
