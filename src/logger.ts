@@ -27,7 +27,10 @@ export function appendLogEntry(entry: LogEntry, config: PheebsConfig): void {
 
   if (!entry.timestamp) entry.timestamp = date;
   // The same id goes to the log and the backend, so a resent event is recognised as one event.
-  if (!entry.event_id) entry.event_id = newEventId();
+  // Dated from the event's own time: a prompt is stamped before a classification that can take
+  // seconds, and an id from the write would sort it after the tool calls it caused.
+  const stampedAt = Date.parse(entry.timestamp);
+  if (!entry.event_id) entry.event_id = newEventId(Number.isNaN(stampedAt) ? undefined : stampedAt);
 
   appendFileSync(fullPath, `${JSON.stringify(entry)}\n`);
 

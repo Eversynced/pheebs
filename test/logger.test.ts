@@ -78,6 +78,16 @@ describe("appendLogEntry", () => {
     expect(ids[2]).toBe("0190f3a0-0000-7000-8000-000000000000");
   });
 
+  // A prompt is stamped before it is classified, which can take seconds, and the id is what orders
+  // a session's rows, so it has to carry the event's own time rather than the time of the write.
+  it("dates the event id from the event's timestamp", () => {
+    const at = "2026-06-01T12:00:00.000Z";
+    appendLogEntry(entry({ timestamp: at }), { codebaseId: "org/repo", logPath: tmp });
+    const file = readdirSync(tmp)[0];
+    const id: string = JSON.parse(readFileSync(join(tmp, file), "utf-8").trim()).event_id;
+    expect(Number.parseInt(id.replace(/-/g, "").slice(0, 12), 16)).toBe(Date.parse(at));
+  });
+
   it("backfills a missing timestamp", () => {
     appendLogEntry(entry({ timestamp: "" }), { codebaseId: "org/repo", logPath: tmp });
     const file = readdirSync(tmp)[0];
