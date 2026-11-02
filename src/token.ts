@@ -16,6 +16,7 @@ export interface StoredToken {
   tenant?: string;
   /** Tenant consent gate for prompt collection, cached so it can be honored offline. */
   prompt_collection?: boolean;
+  opt_out?: boolean;
   /** Which report the token can draw, cached to decide whether to offer `insights --team`. */
   role?: TokenRole;
   /** ISO time of the last successful validation; drives TTL revalidation. */
@@ -63,6 +64,10 @@ export function isCachedManager(): boolean {
 // Anything but the two known roles is not cached, so an unknown value reads as the default.
 function roleOf(result: ValidateResult): TokenRole | undefined {
   return result.role === "manager" || result.role === "engineer" ? result.role : undefined;
+}
+
+function optOutNeverRevertsLocally(stored: StoredToken, served?: boolean): boolean {
+  return stored.opt_out === true || served === true;
 }
 
 export function writeStoredToken(stored: StoredToken): void {
@@ -143,10 +148,12 @@ export async function setToken(token: string): Promise<SetTokenOutcome> {
             developer: existing.developer,
             tenant: existing.tenant,
             prompt_collection: existing.prompt_collection,
+            opt_out: existing.opt_out,
             role: existing.role,
             last_validated_at: existing.last_validated_at,
           }
-        : { token };
+        : // A new token may be the same developer's rotation, so a known opt-out outlives it.
+          { token, ...(existing && optOutNeverRevertsLocally(existing) ? { opt_out: true } : {}) };
     writeStoredToken(preserved);
     return hasBackend()
       ? {
@@ -176,6 +183,8 @@ export async function setToken(token: string): Promise<SetTokenOutcome> {
     developer: result.developer,
     tenant: result.tenant ?? undefined,
     prompt_collection: result.prompt_collection,
+    // The backend sends `opt_out` only when it is set, so an answer without it settles a false.
+    opt_out: result.opt_out === true,
     role: roleOf(result),
     last_validated_at: new Date().toISOString(),
   });
@@ -211,15 +220,18 @@ function within(iso: string | undefined, ms: number): boolean {
  * that gives no verdict keeps the cached id and is retried after RETRY_AFTER_MS. A token
  * stored offline has never been validated, so it is always stale and resolves its id on the
  * first answer. Returns true when the token was revoked and cleared, so the caller can pull it
- * out of the exporter config too.
+ * out of the exporter config too. `force` skips the TTL and retry spacing, never the narrowing.
  */
-export async function revalidateStoredTokenIfStale(): Promise<boolean> {
+export async function revalidateStoredTokenIfStale({ force = false } = {}): Promise<boolean> {
   // Without an endpoint there is no one to ask, and so no failed attempt to record.
   if (!hasBackend()) return false;
   const stored = readStoredToken();
   if (!stored) return false;
-  if (within(stored.last_validated_at, REVALIDATE_TTL_MS)) return false;
-  if (within(stored.last_attempt_at, RETRY_AFTER_MS)) return false;
+  // A token validated before the opt-out was cached has none, and local mode waits on it, so it
+  // is due now rather than at the TTL. A rejected token has no id and keeps its TTL.
+  const settled = stored.opt_out !== undefined || !stored.id;
+  if (!force && settled && within(stored.last_validated_at, REVALIDATE_TTL_MS)) return false;
+  if (!force && within(stored.last_attempt_at, RETRY_AFTER_MS)) return false;
 
   const result = await validateToken(stored.token, REVALIDATE_TIMEOUT_MS);
 
@@ -237,16 +249,24 @@ export async function revalidateStoredTokenIfStale(): Promise<boolean> {
   // A non-2xx status comes from a proxy as often as from the backend, so it is no answer and
   // keeps the id. Written over what is on disk now, not what was read before the wait.
   if (result === undefined || result.status !== undefined) {
-    writeStoredToken({ ...current, last_attempt_at: new Date().toISOString() });
+    // A forced check is the developer's own command, so it leaves the session-start retry free.
+    if (!force) writeStoredToken({ ...current, last_attempt_at: new Date().toISOString() });
     return false;
   }
 
   // A 2xx without an id is the backend's own rejection: drop the identity and consent with it.
   if (!result.id) {
-    writeStoredToken({ token: stored.token, last_validated_at: new Date().toISOString() });
+    writeStoredToken({
+      token: stored.token,
+      // A rejection says nothing about the opt-out, so only a known one is kept.
+      ...(optOutNeverRevertsLocally(stored, current.opt_out) ? { opt_out: true } : {}),
+      last_validated_at: new Date().toISOString(),
+    });
     return false;
   }
 
+  // `current` too, so an opt-out a concurrent `config set token` wrote during the wait survives.
+  const optedOut = optOutNeverRevertsLocally(stored, result.opt_out) || current.opt_out === true;
   writeStoredToken({
     token: stored.token,
     id: result.id,
@@ -255,6 +275,8 @@ export async function revalidateStoredTokenIfStale(): Promise<boolean> {
     // Narrows only. A revoke reaches the machine here, but a grant waits for the developer to
     // set the token again, so prompt text never starts leaving a machine with no local action.
     prompt_collection: stored.prompt_collection === true && result.prompt_collection === true,
+    // An answer with an id settles it: the backend sends `opt_out` only when it is set.
+    opt_out: optedOut,
     role: roleOf(result),
     last_validated_at: new Date().toISOString(),
   });
