@@ -19,6 +19,7 @@ import {
 import { classifyIntent, classifyVcsAction } from "./intent.js";
 import { classifyCodexOutcome } from "./outcome.js";
 import { classifyRole } from "./role.js";
+import { RECURSION_GUARD_ENV } from "./types.js";
 
 const VALID_EVENTS = new Set<string>(Object.values(EVENTS));
 
@@ -580,6 +581,10 @@ export async function handleHookEvent(
     return;
   }
 
+  // Inside a local classifier's own `claude -p`, an event would log the classification call as
+  // developer activity.
+  if (process.env[RECURSION_GUARD_ENV]) return;
+
   const acceptedEvents = getHookDefinitionsForTool(tool).map((d) => d.eventName);
   if (!acceptedEvents.includes(eventName)) {
     console.error(`pheebs: event "${eventName}" is not registered for tool "${tool}", ignoring`);
@@ -621,10 +626,13 @@ export async function handleHookEvent(
     }
   }
 
-  // On a prompt, enrich the event with a classified intent. classifyPrompt gates on local
-  // consent and sends no prompt text otherwise; it degrades to undefined and never blocks long.
+  const submittedAt = new Date().toISOString();
+
+  // On a prompt, enrich the event with a classified intent. classifyPrompt sends prompt text only
+  // where its mode's gate allows; it degrades rather than throws, and is bounded by the remote
+  // timeout, or the longer local one under `classify local`.
   if (event === EVENTS.PromptSubmitted && typeof payload.prompt === "string") {
-    const classified = await classifyPrompt(payload.prompt);
+    const classified = await classifyPrompt(payload.prompt, tool);
     if (classified) Object.assign(extra, classified);
   }
 
@@ -639,7 +647,7 @@ export async function handleHookEvent(
       codebase: config.codebaseId,
       ai_tool: tool,
       session_id: sessionId ?? "unknown",
-      timestamp: new Date().toISOString(),
+      timestamp: submittedAt,
       version: PHEEBS_VERSION,
       ...extra,
     },

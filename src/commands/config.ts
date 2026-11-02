@@ -2,7 +2,8 @@ import {
   autoUpdateEnabled,
   type BackendConfig,
   baseUrl,
-  classifyEnabled,
+  classifyMode,
+  classifyModeFields,
   hasBackend,
   isHttpUrl,
   readConfig,
@@ -68,9 +69,7 @@ function runList(): void {
   console.log(
     `auto-update  ${autoUpdateEnabled() ? "on" : "off"}  (${source(cfg.autoUpdate !== undefined)})`,
   );
-  console.log(
-    `classify     ${classifyEnabled() ? "on" : "off"}  (${source(cfg.classify !== undefined)})`,
-  );
+  console.log(`classify     ${classifyMode()}  (${source(cfg.classify !== undefined)})`);
   console.log(`token        ${tokenSummary()}`);
 }
 
@@ -84,7 +83,7 @@ function runGet(key: string | undefined): void {
       console.log(autoUpdateEnabled() ? "on" : "off");
       return;
     case "classify":
-      console.log(classifyEnabled() ? "on" : "off");
+      console.log(classifyMode());
       return;
     case "token":
       console.log(tokenSummary());
@@ -138,7 +137,9 @@ async function runSet(key: string | undefined, value: string | undefined): Promi
       console.error(`pheebs: ${key} must be "on" or "off".`);
       process.exit(1);
     }
-    updateConfig(key === "auto-update" ? { autoUpdate: on } : { classify: on });
+    updateConfig(
+      key === "auto-update" ? { autoUpdate: on } : classifyModeFields(on ? "on" : "off"),
+    );
     console.log(`pheebs: ${key} set to ${on ? "on" : "off"}`);
     return;
   }
@@ -147,10 +148,10 @@ async function runSet(key: string | undefined, value: string | undefined): Promi
   process.exit(1);
 }
 
-function unsetConfigKey(field: keyof BackendConfig): void {
+function unsetConfigKey(...fields: (keyof BackendConfig)[]): void {
   const cfg = readConfig();
   if (!cfg) return; // nothing stored yet — defaults already apply; don't create an empty file
-  delete cfg[field];
+  for (const field of fields) delete cfg[field];
   writeConfig(cfg);
 }
 
@@ -172,7 +173,7 @@ function runUnset(key: string | undefined): void {
       unsetConfigKey("autoUpdate");
       break;
     case "classify":
-      unsetConfigKey("classify");
+      unsetConfigKey("classify", "classifyLocally");
       break;
     default:
       console.error(`pheebs: unknown key "${key ?? ""}". Run \`pheebs config\` for the list.`);

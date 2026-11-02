@@ -16,7 +16,12 @@ export interface BackendConfig {
   baseUrl?: string;
   autoUpdate?: boolean;
   classify?: boolean;
+  // Stored beside `classify: false`, never as a value of it: a client from before local mode reads
+  // anything but `false` as on, so a downgrade would start sending prompts to the backend.
+  classifyLocally?: boolean;
 }
+
+export type ClassifyMode = "on" | "off" | "local";
 
 export function readConfig(): BackendConfig | undefined {
   return readJsonFile<BackendConfig>(CONFIG_PATH);
@@ -59,9 +64,21 @@ export function autoUpdateEnabled(): boolean {
   return readConfig()?.autoUpdate === true;
 }
 
-/** Prompt classification is on unless explicitly disabled in config. */
-export function classifyEnabled(): boolean {
-  return readConfig()?.classify !== false;
+export function classifyMode(): ClassifyMode {
+  const cfg = readConfig();
+  // Local only alongside `classify: false`, so an off or unset written by a client from before
+  // local mode, which touches only `classify`, is not overridden by a leftover flag.
+  if (cfg?.classify !== false) return "on";
+  return cfg.classifyLocally === true ? "local" : "off";
+}
+
+/** The fields `classifyMode` reads a mode back from, so the pairing is written in one place. */
+export function classifyModeFields(
+  mode: ClassifyMode,
+): Pick<BackendConfig, "classify" | "classifyLocally"> {
+  return mode === "local"
+    ? { classify: false, classifyLocally: true }
+    : { classify: mode === "on", classifyLocally: undefined };
 }
 
 /**

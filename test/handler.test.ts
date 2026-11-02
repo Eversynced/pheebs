@@ -824,4 +824,13 @@ describe("handleHookEvent — validation guards", () => {
     await handleHookEvent("claude_code", "permission_requested", []);
     expect(err).toHaveBeenCalledWith(expect.stringContaining("not registered"));
   });
+
+  it("records nothing inside a local classifier's own claude -p", async () => {
+    vi.stubEnv("PHEEBS_LOCAL_CLASSIFIER", "1");
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Returns before reading stdin; this event would otherwise be rejected loudly.
+    await handleHookEvent("claude_code", "permission_requested", []);
+    expect(err).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
 });

@@ -64,6 +64,12 @@ describe("config set", () => {
     expect(written()).toMatchObject({ baseUrl: "https://cfg.test", classify: false });
   });
 
+  it("leaves local mode when classify is set on or off", async () => {
+    config = { classify: false, classifyLocally: true };
+    await runConfig(["set", "classify", "on"]);
+    expect(written()).toEqual({ classify: true });
+  });
+
   it("rejects a non on/off value for a toggle", async () => {
     await expect(runConfig(["set", "auto-update", "maybe"])).rejects.toThrow("exit:1");
     expect(writeFileSyncMock).not.toHaveBeenCalled();
@@ -98,6 +104,12 @@ describe("config unset", () => {
     await runConfig(["unset", "classify"]);
     expect(written()).not.toHaveProperty("classify");
     expect(written()).toMatchObject({ baseUrl: "https://cfg.test" });
+  });
+
+  it("leaves local mode on unset classify", async () => {
+    config = { classify: false, classifyLocally: true };
+    await runConfig(["unset", "classify"]);
+    expect(written()).toEqual({});
   });
 
   it("clears the token", async () => {
