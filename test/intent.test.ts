@@ -206,3 +206,31 @@ describe("classifyShellCommand on added tools", () => {
     expect(classifyShellCommand("tflint")).toBe("lint");
   });
 });
+
+describe("classifyShellCommand ignores separators inside quoted text", () => {
+  // A commit message or an inline script is text the command carries, not a command it runs.
+  it("keeps a commit whose message reads like a command", () => {
+    expect(classifyShellCommand('git commit -m "fix: make lint pass; npm test later"')).toBe("vcs");
+    expect(
+      classifyShellCommand(
+        "git commit -F - <<'EOF'\nfix(intent): split chains\n\nmake the tagger see each segment\nEOF",
+      ),
+    ).toBe("vcs");
+  });
+
+  it("does not read an inline script as a check", () => {
+    expect(classifyShellCommand("node -e 'run(); tsc()'")).toBe("other");
+    expect(classifyShellCommand('python3 -c "import x; pytest"')).toBe("other");
+  });
+
+  it("still finds a check outside the quoted text", () => {
+    expect(classifyShellCommand('git commit -m "wip; make it work" && npm test')).toBe("test_run");
+  });
+});
+
+describe("classifyVcsAction ignores separators inside quoted text", () => {
+  it("does not read a push out of a commit message", () => {
+    expect(classifyVcsAction('git commit -m "wip && git push"')).toBe("commit");
+    expect(classifyVcsAction("git commit -F - <<'EOF'\nnote\ngit push\nEOF")).toBe("commit");
+  });
+});
