@@ -65,7 +65,7 @@ All tools share the same log format and remote transport — the `ai_tool` field
 | `UserPromptExpansion` | `command_expanded` | `command_name`, `expansion_type`, `command_source` | Which slash commands / skills are being expanded? |
 | `SubagentStart` | `subagent_spawned` | `agent_type`, `agent_id` | How often are subagents being delegated to, and what kind? |
 | `SubagentStop` | `subagent_completed` | `agent_type`, `agent_id`, `stop_hook_active` | How do subagent runs end? |
-| `PostToolUse` | `tool_use_completed` | `tool_name`, `duration_ms` | Which tools are used and how long do they take? |
+| `PostToolUse` | `tool_use_completed` | `tool_name`, `duration_ms`, `subagent_model` (Agent calls) | Which tools are used and how long do they take? Which model did a subagent run on? |
 | `PostToolUseFailure` | `tool_use_failed` | `tool_name`, `duration_ms`, `is_interrupt` | Which tools fail, and how much back-and-forth follows? |
 | `PreCompact` (auto) | `context_compacted` | `trigger_type` | How deep do sessions get before the context overflows? |
 | `PreCompact` (manual) | `context_compacted` | `trigger_type` | Are developers manually compacting, or only hitting the limit? |

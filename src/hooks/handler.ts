@@ -37,6 +37,14 @@ function readCommand(value: unknown): string | undefined {
   return undefined;
 }
 
+// The Agent tool's result names the model the subagent ran on. Only that token
+// is read, so the subagent's prompt and output in the same response stay out.
+function readResolvedModel(toolResponse: unknown): string | undefined {
+  if (typeof toolResponse !== "object" || toolResponse === null) return undefined;
+  const model = (toolResponse as Record<string, unknown>).resolvedModel;
+  return typeof model === "string" && model.length > 0 ? model : undefined;
+}
+
 // Claude Code's Skill tool carries the skill name as `tool_input.skill`. Only
 // that token is captured, keeping the rest of the input out of telemetry.
 function readSkillName(value: unknown): string | undefined {
@@ -270,6 +278,12 @@ export function extractClaudeExtra(
     if (eventName === "tool_use_completed") {
       const linesChanged = readLinesChanged(toolName, payload.tool_response);
       if (linesChanged !== undefined) extra.lines_changed = linesChanged;
+      // SubagentStart carries no model, but the Agent call's result names the one
+      // the subagent resolved to, whether it came from the call or the agent file.
+      if (toolName === "Agent" || toolName === "Task") {
+        const resolved = readResolvedModel(payload.tool_response);
+        if (resolved) extra.subagent_model = resolved;
+      }
     }
   }
 
