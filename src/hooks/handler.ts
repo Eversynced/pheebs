@@ -37,12 +37,19 @@ function readCommand(value: unknown): string | undefined {
   return undefined;
 }
 
+// Model ids are short tokens. A value outside this shape, such as a Bedrock
+// inference-profile ARN carrying an account id, is dropped rather than logged.
+const MODEL_ID = /^[A-Za-z0-9._:@[\]-]{1,100}$/;
+
+function readModelId(value: unknown): string | undefined {
+  return typeof value === "string" && MODEL_ID.test(value) ? value : undefined;
+}
+
 // The Agent tool's result names the model the subagent ran on. Only that token
 // is read, so the subagent's prompt and output in the same response stay out.
 function readResolvedModel(toolResponse: unknown): string | undefined {
   if (typeof toolResponse !== "object" || toolResponse === null) return undefined;
-  const model = (toolResponse as Record<string, unknown>).resolvedModel;
-  return typeof model === "string" && model.length > 0 ? model : undefined;
+  return readModelId((toolResponse as Record<string, unknown>).resolvedModel);
 }
 
 // Claude Code's Skill tool carries the skill name as `tool_input.skill`. Only
@@ -279,10 +286,17 @@ export function extractClaudeExtra(
       const linesChanged = readLinesChanged(toolName, payload.tool_response);
       if (linesChanged !== undefined) extra.lines_changed = linesChanged;
       // SubagentStart carries no model, but the Agent call's result names the one
-      // the subagent resolved to, whether it came from the call or the agent file.
-      if (toolName === "Agent" || toolName === "Task") {
+      // the subagent resolved to. The type and the call's own model are emitted
+      // beside it so a consumer can tell a choice from a harness default.
+      if (toolName === "Agent") {
         const resolved = readResolvedModel(payload.tool_response);
         if (resolved) extra.subagent_model = resolved;
+        const input = payload.tool_input as Record<string, unknown> | null | undefined;
+        if (typeof input === "object" && input !== null) {
+          if (typeof input.subagent_type === "string") extra.agent_type = input.subagent_type;
+          const requested = readModelId(input.model);
+          if (requested) extra.requested_model = requested;
+        }
       }
     }
   }

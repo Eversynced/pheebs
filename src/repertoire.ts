@@ -146,6 +146,14 @@ const customAgents = (days: PracticeDay[]) =>
     days.flatMap((d) => [...d.or3_agents]).filter((a) => !BUILT_IN_AGENTS.has(a.toLowerCase())),
   ).size >= 2;
 
+// A subagent's model counts toward MD1 only when someone chose it: the call named a model, or the
+// agent is a custom one whose file sets it. A built-in agent runs on the harness's pick.
+function subagentModelWasChosen(row: Row): boolean {
+  if (filled(row, "requested_model")) return true;
+  const agent = filled(row, "agent_type");
+  return agent !== undefined && !BUILT_IN_AGENTS.has(agent.toLowerCase());
+}
+
 const all = (since: string): Record<Harness, Cell> => ({
   claude_code: { since },
   cursor: { since },
@@ -287,7 +295,9 @@ function addFacts(day: PracticeDay, row: Row): void {
   const model = filled(row, "model");
   if (model) day.md1_models.add(canonicalModel(model));
   const subagentModel = filled(row, "subagent_model");
-  if (subagentModel) day.md1_models.add(canonicalModel(subagentModel));
+  if (subagentModel && event === "tool_use_completed" && subagentModelWasChosen(row)) {
+    day.md1_models.add(canonicalModel(subagentModel));
+  }
   const effort = filled(row, "effort");
   if (effort) day.md3_efforts.add(effort);
   const mode = filled(row, "permission_mode");
