@@ -118,6 +118,22 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
 // misses most checks. Also used to catch the write action in `git add -A && git commit`.
 const COMMAND_SEPARATORS = /&&|\|\||;|\||\n/;
 
+// Heredoc body, from `<<WORD` (optionally quoted or `<<-`) through the line that is exactly WORD.
+// The rest of the opening line is kept because the command continues there.
+const HEREDOC = /(?<!<)<<-?[ \t]*(['"]?)(\w+)\1([^\n]*)\n[\s\S]*?\n\t*\2(?=\n|$)/g;
+const DOUBLE_QUOTED = /"(?:\\[\s\S]|[^"\\])*"/g;
+const SINGLE_QUOTED = /'[^']*'/g;
+
+// Quoted text and heredoc bodies are data the command carries, not commands it
+// runs, so a `;` in a commit message or an inline script must not split it.
+// Each is replaced by an empty quoted placeholder to keep token boundaries.
+function maskQuotedText(command: string): string {
+  return command
+    .replace(HEREDOC, '<<""$3')
+    .replace(DOUBLE_QUOTED, '""')
+    .replace(SINGLE_QUOTED, "''");
+}
+
 const CHECK_INTENTS: ReadonlySet<ToolIntent> = new Set(["test_run", "typecheck", "lint", "build"]);
 
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/;
@@ -167,7 +183,7 @@ function classifySegment(segment: string): ToolIntent {
 // count; otherwise the first recognized segment, so `cd x && git commit` stays vcs.
 export function classifyShellCommand(command: string): ToolIntent {
   let firstRecognized: ToolIntent = "other";
-  for (const segment of command.split(COMMAND_SEPARATORS)) {
+  for (const segment of maskQuotedText(command).split(COMMAND_SEPARATORS)) {
     const intent = classifySegment(segment);
     if (CHECK_INTENTS.has(intent)) return intent;
     if (firstRecognized === "other") firstRecognized = intent;
@@ -190,7 +206,7 @@ const VCS_ACTION_RANK: Record<VcsAction, number> = { other: 0, commit: 1, push: 
 // never the command itself.
 export function classifyVcsAction(command: string): VcsAction {
   let best: VcsAction = "other";
-  for (const segment of command.split(COMMAND_SEPARATORS)) {
+  for (const segment of maskQuotedText(command).split(COMMAND_SEPARATORS)) {
     const normalized = stripCommandPrefix(segment);
     for (const { action, prefixes } of VCS_WRITE_ACTIONS) {
       if (
