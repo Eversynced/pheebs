@@ -57,7 +57,7 @@ describe("classifyShellCommand", () => {
   it("falls back to other for unmatched and compound commands", () => {
     expect(classifyShellCommand("ls -la")).toBe("other");
     expect(classifyShellCommand("npm install")).toBe("other");
-    expect(classifyShellCommand("cd src && pytest")).toBe("other");
+    expect(classifyShellCommand("cd src && ls")).toBe("other");
   });
 
   it("classifies commands carrying flags and arguments", () => {
@@ -156,5 +156,53 @@ describe("classifyVcsAction", () => {
     // A word that merely starts with `push`/`commit` is not the git subcommand.
     expect(classifyVcsAction("git pushd")).toBe("other");
     expect(classifyVcsAction("git stash")).toBe("other");
+  });
+});
+
+describe("classifyShellCommand on chained commands", () => {
+  // Agents run checks from another directory or after an inline edit, in one command line.
+  it("finds a check after a cd", () => {
+    expect(classifyShellCommand("cd /repo && npm test")).toBe("test_run");
+    expect(classifyShellCommand("cd src && go test ./...")).toBe("test_run");
+    expect(classifyShellCommand("cd app; npx tsc --noEmit")).toBe("typecheck");
+  });
+
+  it("finds a check after an inline edit", () => {
+    expect(classifyShellCommand("sed -i 's/a/b/' f.ts && npx vitest run")).toBe("test_run");
+    expect(classifyShellCommand("git stash && npm test && git stash pop")).toBe("test_run");
+  });
+
+  it("finds a check inside a subshell", () => {
+    expect(classifyShellCommand("(npx tsc --noEmit)")).toBe("typecheck");
+  });
+
+  it("keeps a chain with no check on its other tags", () => {
+    expect(classifyShellCommand("cd repo && git commit -m x")).toBe("vcs");
+    expect(classifyShellCommand("cat f.txt | grep x")).toBe("other");
+  });
+});
+
+describe("classifyShellCommand on added tools", () => {
+  it("classifies script-runner checks", () => {
+    expect(classifyShellCommand("npm run lint")).toBe("lint");
+    expect(classifyShellCommand("pnpm run lint")).toBe("lint");
+    expect(classifyShellCommand("yarn lint")).toBe("lint");
+    expect(classifyShellCommand("npm run typecheck")).toBe("typecheck");
+    expect(classifyShellCommand("bun test")).toBe("test_run");
+  });
+
+  it("classifies biome and uvx-run tools", () => {
+    expect(classifyShellCommand("npx biome check .")).toBe("lint");
+    expect(classifyShellCommand("biome ci")).toBe("lint");
+    expect(classifyShellCommand("uvx ruff check")).toBe("lint");
+  });
+
+  it("classifies Swift, Xcode, .NET and Terraform checks", () => {
+    expect(classifyShellCommand("swift test")).toBe("test_run");
+    expect(classifyShellCommand("swift build")).toBe("build");
+    expect(classifyShellCommand("xcodebuild -scheme App test")).toBe("build");
+    expect(classifyShellCommand("dotnet test")).toBe("test_run");
+    expect(classifyShellCommand("terraform validate")).toBe("typecheck");
+    expect(classifyShellCommand("tflint")).toBe("lint");
   });
 });
