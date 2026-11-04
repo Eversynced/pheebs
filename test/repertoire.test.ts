@@ -244,29 +244,50 @@ describe("practiceStatesOf", () => {
     expect(practiceStatesOf(rows, TODAY).MD1).toBe("adopted");
   });
 
-  it("counts a subagent's model as a second model in the session", () => {
+  it("counts a subagent model when the call requested one", () => {
     const rows = [...base(), ev(WEEKS[3], "prompt_submitted", { model: "claude-opus-5" })];
     expect(practiceStatesOf(rows, TODAY).MD1).toBe("unobserved");
-    rows.push(ev(WEEKS[3], "tool_use_completed", { subagent_model: "claude-haiku-5-5" }));
+    rows.push(
+      ev(WEEKS[3], "tool_use_completed", {
+        subagent_model: "claude-haiku-5-5",
+        agent_type: "general-purpose",
+        requested_model: "haiku",
+      }),
+    );
     expect(practiceStatesOf(rows, TODAY).MD1).toBe("adopted");
   });
 
-  it("counts subagent models where the session itself names none", () => {
+  it("does not count a built-in agent that ran on the harness's pick", () => {
     const rows = [
       ...base(),
-      ev(WEEKS[3], "tool_use_completed", { subagent_model: "claude-sonnet-5-5" }),
-      ev(WEEKS[3], "tool_use_completed", { subagent_model: "claude-haiku-5-5" }),
+      ev(WEEKS[3], "prompt_submitted", { model: "claude-opus-5" }),
+      ev(WEEKS[3], "tool_use_completed", {
+        subagent_model: "claude-haiku-5-5",
+        agent_type: "Explore",
+      }),
+    ];
+    expect(practiceStatesOf(rows, TODAY).MD1).toBe("unobserved");
+  });
+
+  it("counts a custom agent's model without a requested model", () => {
+    const rows = [
+      ...base(),
+      ev(WEEKS[3], "prompt_submitted", { model: "claude-opus-5" }),
+      ev(WEEKS[3], "tool_use_completed", {
+        subagent_model: "claude-haiku-5-5",
+        agent_type: "my-reviewer",
+      }),
     ];
     expect(practiceStatesOf(rows, TODAY).MD1).toBe("adopted");
   });
 
-  it("counts a Cursor subagent's model", () => {
+  it("does not count a Cursor subagent's model, whose value shape is unverified", () => {
     const rows = [
       ...base("cursor"),
       ev(WEEKS[3], "session_started", { ai_tool: "cursor", model: "composer-2" }),
       ev(WEEKS[3], "subagent_spawned", { ai_tool: "cursor", subagent_model: "gpt-5.5" }),
     ];
-    expect(practiceStatesOf(rows, TODAY).MD1).toBe("adopted");
+    expect(practiceStatesOf(rows, TODAY).MD1).toBe("unobserved");
   });
 
   it("reads Insufficient data on Windows Claude Code where it cannot see test runs or ships", () => {

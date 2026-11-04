@@ -838,13 +838,13 @@ describe("handleHookEvent — validation guards", () => {
 describe("extractClaudeExtra subagent model", () => {
   // The Agent tool's response names the model the subagent ran on, whether the call passed one or
   // the agent definition set it. The prompt and reply beside it never leave.
-  it("reads the resolved model from an Agent call's response", () => {
+  it("reads the resolved model, agent type and requested model from an Agent call", () => {
     const extra = extractClaudeExtra(
       {
         tool_name: "Agent",
-        tool_input: { subagent_type: "tiny-haiku", prompt: "secret prompt" },
+        tool_input: { subagent_type: "general-purpose", model: "haiku", prompt: "secret prompt" },
         tool_response: {
-          agentType: "tiny-haiku",
+          agentType: "general-purpose",
           resolvedModel: "claude-haiku-5-5",
           prompt: "secret prompt",
           content: [{ type: "text", text: "secret reply" }],
@@ -854,7 +854,23 @@ describe("extractClaudeExtra subagent model", () => {
       "tool_use_completed",
     );
     expect(extra.subagent_model).toBe("claude-haiku-5-5");
+    expect(extra.agent_type).toBe("general-purpose");
+    expect(extra.requested_model).toBe("haiku");
     expect(JSON.stringify(extra)).not.toContain("secret");
+  });
+
+  it("leaves requested_model unset when the call passed no model", () => {
+    const extra = extractClaudeExtra(
+      {
+        tool_name: "Agent",
+        tool_input: { subagent_type: "Explore" },
+        tool_response: { resolvedModel: "claude-opus-5" },
+      },
+      [],
+      "tool_use_completed",
+    );
+    expect(extra.subagent_model).toBe("claude-opus-5");
+    expect(extra).not.toHaveProperty("requested_model");
   });
 
   it("leaves subagent_model unset when the response names no model", () => {
@@ -866,12 +882,30 @@ describe("extractClaudeExtra subagent model", () => {
     expect(extra).not.toHaveProperty("subagent_model");
   });
 
-  it("ignores a resolvedModel on a tool that is not a subagent call", () => {
+  it("ignores a resolvedModel on a tool that is not an Agent call, including Task", () => {
+    for (const tool_name of ["Bash", "Task"]) {
+      const extra = extractClaudeExtra(
+        { tool_name, tool_response: { resolvedModel: "claude-haiku-5-5" } },
+        [],
+        "tool_use_completed",
+      );
+      expect(extra).not.toHaveProperty("subagent_model");
+    }
+  });
+
+  it("drops a model value that is not a model id, keeping an ARN with an account id out", () => {
+    const arn = "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude";
     const extra = extractClaudeExtra(
-      { tool_name: "Bash", tool_response: { resolvedModel: "claude-haiku-5-5" } },
+      {
+        tool_name: "Agent",
+        tool_input: { model: arn },
+        tool_response: { resolvedModel: arn },
+      },
       [],
       "tool_use_completed",
     );
     expect(extra).not.toHaveProperty("subagent_model");
+    expect(extra).not.toHaveProperty("requested_model");
+    expect(JSON.stringify(extra)).not.toContain("123456789012");
   });
 });
