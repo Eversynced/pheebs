@@ -234,3 +234,22 @@ describe("classifyVcsAction ignores separators inside quoted text", () => {
     expect(classifyVcsAction("git commit -F - <<'EOF'\nnote\ngit push\nEOF")).toBe("commit");
   });
 });
+
+describe("classification time on adversarial commands", () => {
+  const MAX_MS = 200;
+  const inputs: Record<string, string> = {
+    "unterminated double quote full of escaped quotes": `"${'a\\"'.repeat(50_000)}`,
+    "unterminated heredoc openers": `${"cat <<EOF\n".repeat(5_000)}x`,
+    "plain newlines": "\n".repeat(200_000),
+    "stray apostrophes": "'".repeat(220_000),
+  };
+
+  for (const [name, command] of Object.entries(inputs)) {
+    it(`finishes quickly on ${name}`, () => {
+      const start = performance.now();
+      classifyShellCommand(command);
+      classifyVcsAction(command);
+      expect(performance.now() - start).toBeLessThan(MAX_MS);
+    });
+  }
+});
