@@ -17,7 +17,9 @@ export type ToolIntent =
 // Sub-tag for `tool_intent=vcs`: which kind of VCS action ran. Separates writes
 // that close work (commit/push/open a PR) from read-only git (status/log/diff),
 // so a downstream test-gate metric doesn't count a `git status` after a test as a
-// gate. `tool_intent` stays coarse; this rides alongside it only on `vcs`.
+// gate. `tool_intent` stays coarse; this rides alongside it on `vcs`, and on any
+// other intent when a write action ran in the chain, since a check in the same
+// chain wins `tool_intent` and would otherwise hide the commit or push.
 export type VcsAction = "commit" | "push" | "pr_create" | "other";
 
 // Tool names that map directly to an intent without inspecting any input.
@@ -59,8 +61,12 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
       "phpunit",
       "mocha",
       "bun test",
+      "bun run test",
       "swift test",
       "dotnet test",
+      // Only the action-first form: `xcodebuild -scheme App test` puts flags
+      // before the action and stays `build`, an accepted coarseness.
+      "xcodebuild test",
     ],
   },
   {
@@ -68,7 +74,19 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
     // `build`: most are verification runs (checking types) rather than compiling
     // for output.
     intent: "typecheck",
-    prefixes: ["mypy", "pyright", "tsc", "cargo check", "npm run typecheck", "terraform validate"],
+    prefixes: [
+      "mypy",
+      "pyright",
+      "tsc",
+      "cargo check",
+      "npm run typecheck",
+      "pnpm typecheck",
+      "pnpm run typecheck",
+      "yarn typecheck",
+      "yarn run typecheck",
+      "bun run typecheck",
+      "terraform validate",
+    ],
   },
   {
     // `cargo clippy` (not a bare `clippy`, which is invoked through cargo). `ruff`
@@ -83,8 +101,11 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
       "rubocop",
       "biome",
       "npm run lint",
+      "pnpm lint",
       "pnpm run lint",
       "yarn lint",
+      "yarn run lint",
+      "bun run lint",
       "tflint",
     ],
   },
@@ -116,23 +137,32 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
 // Shell operators that split a line into separate commands. Agents chain a
 // `cd` or an inline edit before the real command, so the leading token alone
 // misses most checks. Also used to catch the write action in `git add -A && git commit`.
-const COMMAND_SEPARATORS = /&&|\|\||;|\||\n/;
+// A lone `&` backgrounds a job; the `&` in `2>&1`, `>&2`, `&>` and `&&` is not one.
+const COMMAND_SEPARATORS = /&&|\|\||;|\||\n|(?<![<>&])&(?![>&])/;
 
 // A heredoc opener: `<<WORD`, `<<'WORD'`, `<<"WORD"` or `<<-WORD`. Sticky, so it matches only at `lastIndex`.
 const HEREDOC_OPENER = /<<-?[ \t]*(['"]?)(\w+)\1/y;
 
-// Quoted text and heredoc bodies are data the command carries, not commands it
-// runs, so a `;` in a commit message or an inline script must not split it.
-// Each is replaced by an empty quoted placeholder to keep token boundaries.
+// Quoted text, comments and heredoc bodies are data the command carries, not
+// commands it runs, so a `;` in a commit message or an inline script must not
+// split it. Quotes and heredocs become empty quoted placeholders to keep token
+// boundaries; comments are dropped; an escaped character becomes `_` (a
+// backslash-newline a space) so `\'` opens no quote and `\;` splits nothing.
 // One left-to-right pass: a regex per construct backtracks quadratically on
 // unterminated input, and this runs inside a hook. An unterminated quote or
 // heredoc masks to the end, since the rest is data either way.
 function maskQuotedText(command: string): string {
   let masked = "";
   let i = 0;
+  // Heredoc bodies start on the line after the opener, so the rest of the
+  // opening line is scanned like any other command text.
+  const pendingHeredocs: string[] = [];
   while (i < command.length) {
     const char = command[i];
-    if (char === '"') {
+    if (char === "\\") {
+      masked += command[i + 1] === "\n" ? " " : "_";
+      i += 2;
+    } else if (char === '"') {
       i++;
       while (i < command.length && command[i] !== '"') i += command[i] === "\\" ? 2 : 1;
       masked += '""';
@@ -141,6 +171,9 @@ function maskQuotedText(command: string): string {
       const close = command.indexOf("'", i + 1);
       masked += "''";
       i = close === -1 ? command.length : close + 1;
+    } else if (char === "#" && (i === 0 || /\s/.test(command[i - 1]))) {
+      const lineEnd = command.indexOf("\n", i);
+      i = lineEnd === -1 ? command.length : lineEnd;
     } else if (command.startsWith("<<<", i)) {
       masked += "<<<";
       i += 3;
@@ -152,11 +185,13 @@ function maskQuotedText(command: string): string {
         i += 2;
         continue;
       }
-      // The rest of the opening line stays: the command continues there.
-      const lineEnd = command.indexOf("\n", i);
-      const restEnd = lineEnd === -1 ? command.length : lineEnd;
-      masked += `<<""${command.slice(HEREDOC_OPENER.lastIndex, restEnd)}`;
-      i = lineEnd === -1 ? command.length : heredocEnd(command, lineEnd + 1, opener[2]);
+      pendingHeredocs.push(opener[2]);
+      masked += '<<""';
+      i = HEREDOC_OPENER.lastIndex;
+    } else if (char === "\n" && pendingHeredocs.length > 0) {
+      masked += "\n";
+      i++;
+      for (const word of pendingHeredocs.splice(0)) i = heredocEnd(command, i, word);
     } else {
       masked += char;
       i++;
@@ -182,14 +217,21 @@ const CHECK_INTENTS: ReadonlySet<ToolIntent> = new Set(["test_run", "typecheck",
 
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/;
 const LEADING_TOKEN = /^\S+\s+/;
+// Shell syntax that opens a command without being part of its name: a subshell
+// or group, negation, `time`, and the keywords that introduce a command in an
+// `if`, `while` or `for` body.
+const LEADING_SYNTAX = /^(?:\(+\s*|[{!]\s+|(?:if|then|else|elif|do|while|until|time)(?:\s+|$))/;
 const SUDO_PREFIX = /^sudo\s+/;
 const RUNNER_PREFIX = /^(?:npx|bunx|uvx|python3?\s+-m|uv\s+run|poetry\s+run)\s+/;
 
 // Strip leading wrappers so the keyword match sees the actual command:
-// env assignments, `sudo`, and a package/language runner (e.g. `CI=1 sudo npx
+// shell syntax, env assignments, `sudo`, and a package/language runner (e.g. `CI=1 sudo npx
 // jest` → `jest`, `uv run pytest` → `pytest`, `python -m pytest` → `pytest`).
 function stripCommandPrefix(command: string): string {
   let rest = command.trim();
+  while (LEADING_SYNTAX.test(rest)) {
+    rest = rest.replace(LEADING_SYNTAX, "");
+  }
   while (ENV_ASSIGNMENT.test(rest)) {
     rest = rest.replace(LEADING_TOKEN, "");
   }
@@ -213,8 +255,7 @@ function matchesPrefix(command: string, prefix: string): boolean {
 }
 
 function classifySegment(segment: string): ToolIntent {
-  // A leading `(` opens a subshell around the command, not part of its name.
-  const normalized = stripCommandPrefix(segment.trim().replace(/^\(+\s*/, ""));
+  const normalized = stripCommandPrefix(segment);
   for (const { intent, prefixes } of COMMAND_KEYWORDS) {
     if (prefixes.some((prefix) => matchesPrefix(normalized, prefix))) {
       return intent;
