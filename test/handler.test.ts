@@ -834,3 +834,44 @@ describe("handleHookEvent — validation guards", () => {
     vi.unstubAllEnvs();
   });
 });
+
+describe("extractClaudeExtra subagent model", () => {
+  // The Agent tool's response names the model the subagent ran on, whether the call passed one or
+  // the agent definition set it. The prompt and reply beside it never leave.
+  it("reads the resolved model from an Agent call's response", () => {
+    const extra = extractClaudeExtra(
+      {
+        tool_name: "Agent",
+        tool_input: { subagent_type: "tiny-haiku", prompt: "secret prompt" },
+        tool_response: {
+          agentType: "tiny-haiku",
+          resolvedModel: "claude-haiku-5-5",
+          prompt: "secret prompt",
+          content: [{ type: "text", text: "secret reply" }],
+        },
+      },
+      [],
+      "tool_use_completed",
+    );
+    expect(extra.subagent_model).toBe("claude-haiku-5-5");
+    expect(JSON.stringify(extra)).not.toContain("secret");
+  });
+
+  it("leaves subagent_model unset when the response names no model", () => {
+    const extra = extractClaudeExtra(
+      { tool_name: "Agent", tool_response: { agentType: "general-purpose" } },
+      [],
+      "tool_use_completed",
+    );
+    expect(extra).not.toHaveProperty("subagent_model");
+  });
+
+  it("ignores a resolvedModel on a tool that is not a subagent call", () => {
+    const extra = extractClaudeExtra(
+      { tool_name: "Bash", tool_response: { resolvedModel: "claude-haiku-5-5" } },
+      [],
+      "tool_use_completed",
+    );
+    expect(extra).not.toHaveProperty("subagent_model");
+  });
+});
