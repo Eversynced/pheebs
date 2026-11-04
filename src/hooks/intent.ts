@@ -36,8 +36,8 @@ const TOOL_NAME_INTENTS: Record<string, ToolIntent> = {
 const SHELL_TOOL_NAMES = new Set(["Bash", "PowerShell", "Shell", "shell"]);
 
 // Ordered keyword table for shell commands: the first entry whose prefix matches
-// the command's leading token(s) wins. Add new tools by extending a `prefixes`
-// list here — this is the single place the mapping lives.
+// a segment's leading token(s) wins. Add new tools by extending a `prefixes`
+// list here, this is the single place the mapping lives.
 const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }> = [
   {
     intent: "test_run",
@@ -58,6 +58,9 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
       "rspec",
       "phpunit",
       "mocha",
+      "bun test",
+      "swift test",
+      "dotnet test",
     ],
   },
   {
@@ -65,13 +68,25 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
     // `build`: most are verification runs (checking types) rather than compiling
     // for output.
     intent: "typecheck",
-    prefixes: ["mypy", "pyright", "tsc", "cargo check"],
+    prefixes: ["mypy", "pyright", "tsc", "cargo check", "npm run typecheck", "terraform validate"],
   },
   {
     // `cargo clippy` (not a bare `clippy`, which is invoked through cargo). `ruff`
     // covers `ruff check`; `ruff format` also lands here, an accepted coarseness.
     intent: "lint",
-    prefixes: ["eslint", "ruff", "flake8", "cargo clippy", "golangci-lint", "rubocop"],
+    prefixes: [
+      "eslint",
+      "ruff",
+      "flake8",
+      "cargo clippy",
+      "golangci-lint",
+      "rubocop",
+      "biome",
+      "npm run lint",
+      "pnpm run lint",
+      "yarn lint",
+      "tflint",
+    ],
   },
   {
     intent: "build",
@@ -87,6 +102,9 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
       "gradle",
       "mvn",
       "webpack",
+      "swift build",
+      "xcodebuild",
+      "dotnet build",
     ],
   },
   {
@@ -95,10 +113,17 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
   },
 ];
 
+// Shell operators that split a line into separate commands. Agents chain a
+// `cd` or an inline edit before the real command, so the leading token alone
+// misses most checks. Also used to catch the write action in `git add -A && git commit`.
+const COMMAND_SEPARATORS = /&&|\|\||;|\||\n/;
+
+const CHECK_INTENTS: ReadonlySet<ToolIntent> = new Set(["test_run", "typecheck", "lint", "build"]);
+
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/;
 const LEADING_TOKEN = /^\S+\s+/;
 const SUDO_PREFIX = /^sudo\s+/;
-const RUNNER_PREFIX = /^(?:npx|bunx|python3?\s+-m|uv\s+run|poetry\s+run)\s+/;
+const RUNNER_PREFIX = /^(?:npx|bunx|uvx|python3?\s+-m|uv\s+run|poetry\s+run)\s+/;
 
 // Strip leading wrappers so the keyword match sees the actual command:
 // env assignments, `sudo`, and a package/language runner (e.g. `CI=1 sudo npx
@@ -127,14 +152,27 @@ function matchesPrefix(command: string, prefix: string): boolean {
   return next === undefined || !/[A-Za-z0-9]/.test(next);
 }
 
-export function classifyShellCommand(command: string): ToolIntent {
-  const normalized = stripCommandPrefix(command);
+function classifySegment(segment: string): ToolIntent {
+  // A leading `(` opens a subshell around the command, not part of its name.
+  const normalized = stripCommandPrefix(segment.trim().replace(/^\(+\s*/, ""));
   for (const { intent, prefixes } of COMMAND_KEYWORDS) {
     if (prefixes.some((prefix) => matchesPrefix(normalized, prefix))) {
       return intent;
     }
   }
   return "other";
+}
+
+// A check anywhere in the chain wins, because verification is what callers
+// count; otherwise the first recognized segment, so `cd x && git commit` stays vcs.
+export function classifyShellCommand(command: string): ToolIntent {
+  let firstRecognized: ToolIntent = "other";
+  for (const segment of command.split(COMMAND_SEPARATORS)) {
+    const intent = classifySegment(segment);
+    if (CHECK_INTENTS.has(intent)) return intent;
+    if (firstRecognized === "other") firstRecognized = intent;
+  }
+  return firstRecognized;
 }
 
 // Write actions ordered by precedence: in a chained command
@@ -147,11 +185,6 @@ const VCS_WRITE_ACTIONS: ReadonlyArray<{ action: VcsAction; prefixes: string[] }
 ];
 
 const VCS_ACTION_RANK: Record<VcsAction, number> = { other: 0, commit: 1, push: 2, pr_create: 3 };
-
-// Shell operators that split a line into separate commands. classifyShellCommand
-// looks at the leading token only; here the intent is already `vcs`, so we split
-// to catch the write action in `git add -A && git commit`.
-const COMMAND_SEPARATORS = /&&|\|\||;|\||\n/;
 
 // Reads the command in-process only; callers persist just the derived tag,
 // never the command itself.
