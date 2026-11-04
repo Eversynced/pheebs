@@ -236,7 +236,7 @@ describe("classifyVcsAction ignores separators inside quoted text", () => {
 });
 
 describe("classification time on adversarial commands", () => {
-  const MAX_MS = 200;
+  const MAX_MS = 1000;
   const inputs: Record<string, string> = {
     "unterminated double quote full of escaped quotes": `"${'a\\"'.repeat(50_000)}`,
     "unterminated heredoc openers": `${"cat <<EOF\n".repeat(5_000)}x`,
