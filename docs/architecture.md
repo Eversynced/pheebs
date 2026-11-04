@@ -179,11 +179,15 @@ timestamps instead of one.
 - **The time window is a heuristic.** Ten minutes is a guess at "this test run
   belongs to this change". Widen it for slow suites, narrow it to reduce
   coincidental pairings.
-- **Chained commands resolve to their strongest write action.**
-  `git add -A && git commit && git push` reports `push`. A VCS command behind a
-  non-VCS leading token, such as `cd sub && git commit`, classifies as
-  `tool_intent = other` upstream and never reaches the metric. That is a known
-  limitation of leading-token intent classification.
+- **Chained commands are read segment by segment.** Every segment of a chain is
+  classified, quoted text, comments and heredoc bodies are ignored, and a check
+  (`test_run`, `typecheck`, `lint`, `build`) anywhere in the chain sets
+  `tool_intent`. `vcs_action` is set whenever a write ran, whatever the
+  `tool_intent`, and the strongest wins: `git add -A && git commit && git push`
+  reports `push`, and `git commit -m x && git push && npm run build` reports
+  `build` with `push`. The chain's exit status belongs to the whole chain, not to
+  the check, so `npm test || true` reports a passing test run. The table is
+  `COMMAND_KEYWORDS` in [`src/hooks/intent.ts`](../src/hooks/intent.ts).
 - **Codex outcome coverage is a lower bound.** Codex `PostToolUse` intercepts
   simple shell calls only, not `unified_exec` and not non-shell tools. Failures
   on uninstrumented calls never reach a hook. Claude Code and Cursor emit a
