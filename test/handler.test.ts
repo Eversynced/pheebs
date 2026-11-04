@@ -72,6 +72,19 @@ describe("extractClaudeExtra", () => {
     expect(extra.command).toBeUndefined();
   });
 
+  it("keeps the write action when a check wins the intent", () => {
+    const extra = extractClaudeExtra(
+      {
+        tool_name: "Bash",
+        tool_input: { command: "git commit -m x && git push && npm run build" },
+      },
+      [],
+      "tool_use_completed",
+    );
+    expect(extra.tool_intent).toBe("build");
+    expect(extra.vcs_action).toBe("push");
+  });
+
   it("tags read-only VCS as other and omits vcs_action for non-VCS intents", () => {
     expect(
       extractClaudeExtra(

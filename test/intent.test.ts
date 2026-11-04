@@ -235,6 +235,85 @@ describe("classifyVcsAction ignores separators inside quoted text", () => {
   });
 });
 
+describe("classifyShellCommand on heredoc opener lines", () => {
+  it("masks quoted text on the rest of the opening line", () => {
+    expect(classifyShellCommand('git commit -F - <<EOF && echo "a; npm test"\nmsg\nEOF')).toBe(
+      "vcs",
+    );
+  });
+
+  it("still finds a check after a heredoc", () => {
+    expect(classifyShellCommand("cat <<EOF > f.txt\nbody; npm test\nEOF\nnpm test")).toBe(
+      "test_run",
+    );
+  });
+});
+
+describe("classifyShellCommand on comments and escapes", () => {
+  it("drops a comment line before the command", () => {
+    expect(classifyShellCommand("# don't cache\ncd app && npm test")).toBe("test_run");
+  });
+
+  it("does not read a comment as a command", () => {
+    expect(classifyShellCommand("echo hi # npm test")).toBe("other");
+    expect(classifyShellCommand("echo $#; echo a#b")).toBe("other");
+  });
+
+  it("treats an escaped quote as no quote", () => {
+    expect(classifyShellCommand("echo don\\'t && npm test")).toBe("test_run");
+  });
+
+  it("treats an escaped separator as text", () => {
+    expect(classifyShellCommand("echo a\\; npm test")).toBe("other");
+  });
+});
+
+describe("classifyShellCommand on subshells and control keywords", () => {
+  it("reads a write action inside a subshell", () => {
+    expect(classifyVcsAction("(git commit -m x)")).toBe("commit");
+  });
+
+  it("finds a check inside control flow", () => {
+    expect(classifyShellCommand("if npm test; then echo ok; fi")).toBe("test_run");
+    expect(classifyShellCommand("for f in a b; do pytest $f; done")).toBe("test_run");
+    expect(classifyShellCommand("while ! npm run lint; do sleep 1; done")).toBe("lint");
+    expect(classifyShellCommand("{ tsc --noEmit; }")).toBe("typecheck");
+    expect(classifyShellCommand("time npm test")).toBe("test_run");
+  });
+});
+
+describe("classifyShellCommand on background jobs", () => {
+  it("splits on a lone ampersand", () => {
+    expect(classifyShellCommand("npm run dev & npm test")).toBe("test_run");
+  });
+
+  it("keeps redirections whole", () => {
+    expect(classifyShellCommand("npm test 2>&1 | tail")).toBe("test_run");
+    expect(classifyShellCommand("npm test >&2")).toBe("test_run");
+    expect(classifyShellCommand("npm test &> out.log")).toBe("test_run");
+  });
+});
+
+describe("classifyShellCommand on runner prefixes", () => {
+  it("classifies every runner form of lint, typecheck and test", () => {
+    for (const runner of ["npm run", "pnpm", "pnpm run", "yarn", "yarn run", "bun run"]) {
+      expect(classifyShellCommand(`${runner} lint`)).toBe("lint");
+      expect(classifyShellCommand(`${runner} typecheck`)).toBe("typecheck");
+    }
+    expect(classifyShellCommand("bun run test")).toBe("test_run");
+  });
+
+  it("reads xcodebuild test as a test run", () => {
+    expect(classifyShellCommand("xcodebuild test -scheme App")).toBe("test_run");
+  });
+});
+
+describe("classifyVcsAction in a chain with a check", () => {
+  it("keeps the write action", () => {
+    expect(classifyVcsAction("git commit -m x && git push && npm run build")).toBe("push");
+  });
+});
+
 describe("classification time on adversarial commands", () => {
   const MAX_MS = 1000;
   const inputs: Record<string, string> = {
@@ -242,6 +321,9 @@ describe("classification time on adversarial commands", () => {
     "unterminated heredoc openers": `${"cat <<EOF\n".repeat(5_000)}x`,
     "plain newlines": "\n".repeat(200_000),
     "stray apostrophes": "'".repeat(220_000),
+    "stray backslashes": "\\".repeat(220_000),
+    "stray comment markers": "# a\n".repeat(50_000),
+    "lone ampersands": "a & ".repeat(50_000),
   };
 
   for (const [name, command] of Object.entries(inputs)) {
