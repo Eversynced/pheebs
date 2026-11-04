@@ -118,20 +118,64 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
 // misses most checks. Also used to catch the write action in `git add -A && git commit`.
 const COMMAND_SEPARATORS = /&&|\|\||;|\||\n/;
 
-// Heredoc body, from `<<WORD` (optionally quoted or `<<-`) through the line that is exactly WORD.
-// The rest of the opening line is kept because the command continues there.
-const HEREDOC = /(?<!<)<<-?[ \t]*(['"]?)(\w+)\1([^\n]*)\n[\s\S]*?\n\t*\2(?=\n|$)/g;
-const DOUBLE_QUOTED = /"(?:\\[\s\S]|[^"\\])*"/g;
-const SINGLE_QUOTED = /'[^']*'/g;
+// A heredoc opener: `<<WORD`, `<<'WORD'`, `<<"WORD"` or `<<-WORD`. Sticky, so it matches only at `lastIndex`.
+const HEREDOC_OPENER = /<<-?[ \t]*(['"]?)(\w+)\1/y;
 
 // Quoted text and heredoc bodies are data the command carries, not commands it
 // runs, so a `;` in a commit message or an inline script must not split it.
 // Each is replaced by an empty quoted placeholder to keep token boundaries.
+// One left-to-right pass: a regex per construct backtracks quadratically on
+// unterminated input, and this runs inside a hook. An unterminated quote or
+// heredoc masks to the end, since the rest is data either way.
 function maskQuotedText(command: string): string {
-  return command
-    .replace(HEREDOC, '<<""$3')
-    .replace(DOUBLE_QUOTED, '""')
-    .replace(SINGLE_QUOTED, "''");
+  let masked = "";
+  let i = 0;
+  while (i < command.length) {
+    const char = command[i];
+    if (char === '"') {
+      i++;
+      while (i < command.length && command[i] !== '"') i += command[i] === "\\" ? 2 : 1;
+      masked += '""';
+      i++;
+    } else if (char === "'") {
+      const close = command.indexOf("'", i + 1);
+      masked += "''";
+      i = close === -1 ? command.length : close + 1;
+    } else if (command.startsWith("<<<", i)) {
+      masked += "<<<";
+      i += 3;
+    } else if (char === "<" && command[i + 1] === "<") {
+      HEREDOC_OPENER.lastIndex = i;
+      const opener = HEREDOC_OPENER.exec(command);
+      if (!opener) {
+        masked += "<<";
+        i += 2;
+        continue;
+      }
+      // The rest of the opening line stays: the command continues there.
+      const lineEnd = command.indexOf("\n", i);
+      const restEnd = lineEnd === -1 ? command.length : lineEnd;
+      masked += `<<""${command.slice(HEREDOC_OPENER.lastIndex, restEnd)}`;
+      i = lineEnd === -1 ? command.length : heredocEnd(command, lineEnd + 1, opener[2]);
+    } else {
+      masked += char;
+      i++;
+    }
+  }
+  return masked;
+}
+
+// Index just past the line that is exactly `word` (leading tabs allowed), or
+// the end of input when the heredoc never closes.
+function heredocEnd(command: string, bodyStart: number, word: string): number {
+  let lineStart = bodyStart;
+  while (lineStart <= command.length) {
+    const newline = command.indexOf("\n", lineStart);
+    const lineEnd = newline === -1 ? command.length : newline;
+    if (command.slice(lineStart, lineEnd).replace(/^\t+/, "") === word) return lineEnd;
+    lineStart = lineEnd + 1;
+  }
+  return command.length;
 }
 
 const CHECK_INTENTS: ReadonlySet<ToolIntent> = new Set(["test_run", "typecheck", "lint", "build"]);
