@@ -859,6 +859,22 @@ describe("extractClaudeExtra subagent model", () => {
     expect(JSON.stringify(extra)).not.toContain("secret");
   });
 
+  it("drops an agent type that is not a short identifier", () => {
+    for (const subagent_type of [
+      "/home/dev/secret-repo/agent",
+      "has spaces and text",
+      "",
+      "a".repeat(101),
+    ]) {
+      const extra = extractClaudeExtra(
+        { tool_name: "Agent", tool_input: { subagent_type }, tool_response: {} },
+        [],
+        "tool_use_completed",
+      );
+      expect(extra).not.toHaveProperty("agent_type");
+    }
+  });
+
   it("leaves requested_model unset when the call passed no model", () => {
     const extra = extractClaudeExtra(
       {
