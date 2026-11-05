@@ -230,7 +230,7 @@ function stripCommandPrefix(command: string): string {
   if (RUNNER_PREFIX.test(rest)) {
     rest = rest.replace(RUNNER_PREFIX, "");
   }
-  return rest;
+  return rest.replace(/[ \t]+/g, " ");
 }
 
 // Match `prefix` against `command` on token boundaries: the prefix must be
