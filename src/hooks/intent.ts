@@ -213,6 +213,10 @@ function heredocEnd(command: string, bodyStart: number, word: string): number {
   return command.length;
 }
 
+function commandSegments(command: string): string[] {
+  return maskQuotedText(command).split(COMMAND_SEPARATORS);
+}
+
 const CHECK_INTENTS: ReadonlySet<ToolIntent> = new Set(["test_run", "typecheck", "lint", "build"]);
 
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/;
@@ -268,7 +272,7 @@ function classifySegment(segment: string): ToolIntent {
 // count; otherwise the first recognized segment, so `cd x && git commit` stays vcs.
 export function classifyShellCommand(command: string): ToolIntent {
   let firstRecognized: ToolIntent = "other";
-  for (const segment of maskQuotedText(command).split(COMMAND_SEPARATORS)) {
+  for (const segment of commandSegments(command)) {
     const intent = classifySegment(segment);
     if (CHECK_INTENTS.has(intent)) return intent;
     if (firstRecognized === "other") firstRecognized = intent;
@@ -291,7 +295,7 @@ const VCS_ACTION_RANK: Record<VcsAction, number> = { other: 0, commit: 1, push: 
 // never the command itself.
 export function classifyVcsAction(command: string): VcsAction {
   let best: VcsAction = "other";
-  for (const segment of maskQuotedText(command).split(COMMAND_SEPARATORS)) {
+  for (const segment of commandSegments(command)) {
     const normalized = stripCommandPrefix(segment);
     for (const { action, prefixes } of VCS_WRITE_ACTIONS) {
       if (
