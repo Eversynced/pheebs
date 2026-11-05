@@ -105,6 +105,18 @@ describe("extractClaudeExtra", () => {
     ).toBeUndefined();
   });
 
+  it("derives vcs_action only from shell tools, not from any tool with a command field", () => {
+    const input = { command: "git push origin main" };
+    expect(
+      extractClaudeExtra({ tool_name: "mcp__x__run", tool_input: input }, [], "tool_use_completed")
+        .vcs_action,
+    ).toBeUndefined();
+    expect(
+      extractClaudeExtra({ tool_name: "Write", tool_input: input }, [], "tool_use_completed")
+        .vcs_action,
+    ).toBeUndefined();
+  });
+
   it("derives tool_intent from the tool name for read/edit tools", () => {
     expect(extractClaudeExtra({ tool_name: "Read" }, [], "tool_use_completed").tool_intent).toBe(
       "read",

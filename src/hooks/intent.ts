@@ -294,6 +294,10 @@ export function classifyVcsAction(command: string): VcsAction {
   return best;
 }
 
+export function isShellTool(toolName: string | undefined): boolean {
+  return toolName !== undefined && SHELL_TOOL_NAMES.has(toolName);
+}
+
 export function classifyIntent(toolName: string | undefined, command?: string): ToolIntent {
   if (toolName && SHELL_TOOL_NAMES.has(toolName)) {
     return typeof command === "string" ? classifyShellCommand(command) : "other";
