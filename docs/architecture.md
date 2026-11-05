@@ -151,7 +151,8 @@ WITH stream AS (
     extras->>'vcs_action'  AS vcs_action
   FROM events
   WHERE event IN ('tool_use_completed', 'tool_use_failed')
-    AND extras->>'tool_intent' IN ('test_run', 'vcs')
+    AND (extras->>'tool_intent' = 'test_run'
+         OR extras->>'vcs_action' IN ('commit', 'push', 'pr_create'))
 ),
 tagged AS (
   SELECT *,
@@ -165,8 +166,7 @@ SELECT
   (last_pass_ts IS NOT NULL
    AND ts - last_pass_ts <= interval '10 minutes') AS test_gated
 FROM tagged
-WHERE intent = 'vcs'
-  AND vcs_action IN ('commit', 'push', 'pr_create')
+WHERE vcs_action IN ('commit', 'push', 'pr_create')
   AND event = 'tool_use_completed';
 ```
 
