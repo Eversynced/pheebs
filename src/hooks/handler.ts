@@ -37,8 +37,6 @@ function readCommand(value: unknown): string | undefined {
   return undefined;
 }
 
-// Claude Code's Skill tool carries the skill name as `tool_input.skill`. Only
-// that token is captured, keeping the rest of the input out of telemetry.
 // A check in the same chain wins tool_intent, so the write action rides on any
 // intent when one ran; read-only git on a vcs intent still reports `other`.
 function applyVcsAction(extra: Record<string, unknown>, command: string | undefined): void {
@@ -47,6 +45,8 @@ function applyVcsAction(extra: Record<string, unknown>, command: string | undefi
   if (extra.tool_intent === "vcs" || action !== "other") extra.vcs_action = action;
 }
 
+// Claude Code's Skill tool carries the skill name as `tool_input.skill`. Only
+// that token is captured, keeping the rest of the input out of telemetry.
 function readSkillName(value: unknown): string | undefined {
   if (typeof value === "object" && value !== null && "skill" in value) {
     const skill = (value as Record<string, unknown>).skill;
