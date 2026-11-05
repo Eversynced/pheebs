@@ -160,7 +160,6 @@ describe("classifyVcsAction", () => {
 });
 
 describe("classifyShellCommand on chained commands", () => {
-  // Agents run checks from another directory or after an inline edit, in one command line.
   it("finds a check after a cd", () => {
     expect(classifyShellCommand("cd /repo && npm test")).toBe("test_run");
     expect(classifyShellCommand("cd src && go test ./...")).toBe("test_run");
@@ -208,7 +207,6 @@ describe("classifyShellCommand on added tools", () => {
 });
 
 describe("classifyShellCommand ignores separators inside quoted text", () => {
-  // A commit message or an inline script is text the command carries, not a command it runs.
   it("keeps a commit whose message reads like a command", () => {
     expect(classifyShellCommand('git commit -m "fix: make lint pass; npm test later"')).toBe("vcs");
     expect(

@@ -134,28 +134,18 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
   },
 ];
 
-// Shell operators that split a line into separate commands. Agents chain a
-// `cd` or an inline edit before the real command, so the leading token alone
-// misses most checks. Also used to catch the write action in `git add -A && git commit`.
-// A lone `&` backgrounds a job; the `&` in `2>&1`, `>&2`, `&>` and `&&` is not one.
+// Shell operators that split a line into separate commands. A lone `&` backgrounds a job; the `&` in `2>&1`, `>&2`, `&>` and `&&` is not one.
 const COMMAND_SEPARATORS = /&&|\|\||;|\||\n|(?<![<>&])&(?![>&])/;
 
-// A heredoc opener: `<<WORD`, `<<'WORD'`, `<<"WORD"` or `<<-WORD`. Sticky, so it matches only at `lastIndex`.
 const HEREDOC_OPENER = /<<-?[ \t]*(['"]?)(\w+)\1/y;
 
 // Quoted text, comments and heredoc bodies are data the command carries, not
 // commands it runs, so a `;` in a commit message or an inline script must not
-// split it. Quotes and heredocs become empty quoted placeholders to keep token
-// boundaries; comments are dropped; an escaped character becomes `_` (a
-// backslash-newline a space) so `\'` opens no quote and `\;` splits nothing.
-// One left-to-right pass: a regex per construct backtracks quadratically on
-// unterminated input, and this runs inside a hook. An unterminated quote or
-// heredoc masks to the end, since the rest is data either way.
+// split it. One linear pass, because a regex per construct backtracks
+// quadratically on unterminated input and this runs inside a hook.
 function maskQuotedText(command: string): string {
   let masked = "";
   let i = 0;
-  // Heredoc bodies start on the line after the opener, so the rest of the
-  // opening line is scanned like any other command text.
   const pendingHeredocs: string[] = [];
   while (i < command.length) {
     const char = command[i];
@@ -200,8 +190,6 @@ function maskQuotedText(command: string): string {
   return masked;
 }
 
-// Index just past the line that is exactly `word` (leading tabs allowed), or
-// the end of input when the heredoc never closes.
 function heredocEnd(command: string, bodyStart: number, word: string): number {
   let lineStart = bodyStart;
   while (lineStart <= command.length) {
@@ -221,9 +209,6 @@ const CHECK_INTENTS: ReadonlySet<ToolIntent> = new Set(["test_run", "typecheck",
 
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/;
 const LEADING_TOKEN = /^\S+\s+/;
-// Shell syntax that opens a command without being part of its name: a subshell
-// or group, negation, `time`, and the keywords that introduce a command in an
-// `if`, `while` or `for` body.
 const LEADING_SYNTAX = /^(?:\(+\s*|[{!]\s+|(?:if|then|else|elif|do|while|until|time)(?:\s+|$))/;
 const SUDO_PREFIX = /^sudo\s+/;
 const RUNNER_PREFIX = /^(?:npx|bunx|uvx|python3?\s+-m|uv\s+run|poetry\s+run)\s+/;

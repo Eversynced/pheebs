@@ -37,8 +37,6 @@ function readCommand(value: unknown): string | undefined {
   return undefined;
 }
 
-// A check in the same chain wins tool_intent, so the write action rides on any
-// intent when one ran; read-only git on a vcs intent still reports `other`.
 function applyVcsAction(extra: Record<string, unknown>, command: string | undefined): void {
   if (!command) return;
   const action = classifyVcsAction(command);
