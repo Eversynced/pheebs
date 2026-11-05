@@ -470,6 +470,22 @@ describe("extractClaudeExtra", () => {
 });
 
 describe("extractCursorExtra", () => {
+  it("derives vcs_action from a shell hook and not from another tool", () => {
+    const command = "npm test && git commit -m x";
+    const shell = extractCursorExtra(
+      { hook_event_name: "afterShellExecution", command },
+      [],
+      "tool_use_completed",
+    );
+    expect(shell).toMatchObject({ tool_intent: "test_run", vcs_action: "commit" });
+    const edit = extractCursorExtra(
+      { hook_event_name: "afterFileEdit", command },
+      [],
+      "tool_use_completed",
+    );
+    expect(edit.vcs_action).toBeUndefined();
+  });
+
   it("maps shared fields and renames duration", () => {
     const extra = extractCursorExtra(
       { conversation_id: "c1", model: "auto", duration: 1200 },
@@ -687,6 +703,18 @@ describe("extractCursorExtra", () => {
 });
 
 describe("extractCodexExtra", () => {
+  it("derives vcs_action from a shell call and not from another tool", () => {
+    const tool_input = { command: "npm test && git push" };
+    const shell = extractCodexExtra({ tool_name: "shell", tool_input }, [], "tool_use_completed");
+    expect(shell).toMatchObject({ tool_intent: "test_run", vcs_action: "push" });
+    const other = extractCodexExtra(
+      { tool_name: "mcp__x__run", tool_input },
+      [],
+      "tool_use_completed",
+    );
+    expect(other.vcs_action).toBeUndefined();
+  });
+
   it("maps model and token fields", () => {
     const extra = extractCodexExtra(
       { model: "gpt", input_tokens: 10, output_tokens: 20 },
