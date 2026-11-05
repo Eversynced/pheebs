@@ -137,7 +137,7 @@ const COMMAND_KEYWORDS: ReadonlyArray<{ intent: ToolIntent; prefixes: string[] }
 // Shell operators that split a line into separate commands. A lone `&` backgrounds a job; the `&` in `2>&1`, `>&2`, `&>` and `&&` is not one.
 const COMMAND_SEPARATORS = /&&|\|\||;|\||\n|(?<![<>&])&(?![>&])/;
 
-const HEREDOC_OPENER = /<<-?[ \t]*(['"]?)(\w+)\1/y;
+const HEREDOC_OPENER = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/y;
 
 // Quoted text, comments and heredoc bodies are data the command carries, not
 // commands it runs, so a `;` in a commit message or an inline script must not

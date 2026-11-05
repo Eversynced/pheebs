@@ -245,6 +245,10 @@ describe("classifyShellCommand on heredoc opener lines", () => {
       "test_run",
     );
   });
+
+  it("does not read an arithmetic shift as a heredoc", () => {
+    expect(classifyShellCommand("echo $((1<<2))\nnpm test")).toBe("test_run");
+  });
 });
 
 describe("classifyShellCommand on comments and escapes", () => {
