@@ -285,7 +285,11 @@ describe("practiceStatesOf", () => {
     const rows = [
       ...base("cursor"),
       ev(WEEKS[3], "session_started", { ai_tool: "cursor", model: "composer-2" }),
-      ev(WEEKS[3], "subagent_spawned", { ai_tool: "cursor", subagent_model: "gpt-5.5" }),
+      ev(WEEKS[3], "subagent_spawned", {
+        ai_tool: "cursor",
+        subagent_model: "gpt-5.5",
+        requested_model: "gpt-5.5",
+      }),
     ];
     expect(practiceStatesOf(rows, TODAY).MD1).toBe("unobserved");
   });
