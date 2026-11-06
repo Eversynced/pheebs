@@ -57,7 +57,7 @@ describe("classifyShellCommand", () => {
   it("falls back to other for unmatched and compound commands", () => {
     expect(classifyShellCommand("ls -la")).toBe("other");
     expect(classifyShellCommand("npm install")).toBe("other");
-    expect(classifyShellCommand("cd src && pytest")).toBe("other");
+    expect(classifyShellCommand("cd src && ls")).toBe("other");
   });
 
   it("classifies commands carrying flags and arguments", () => {
@@ -157,4 +157,243 @@ describe("classifyVcsAction", () => {
     expect(classifyVcsAction("git pushd")).toBe("other");
     expect(classifyVcsAction("git stash")).toBe("other");
   });
+});
+
+describe("classifyShellCommand on chained commands", () => {
+  it("finds a check after a cd", () => {
+    expect(classifyShellCommand("cd /repo && npm test")).toBe("test_run");
+    expect(classifyShellCommand("cd src && go test ./...")).toBe("test_run");
+    expect(classifyShellCommand("cd app; npx tsc --noEmit")).toBe("typecheck");
+  });
+
+  it("finds a check after an inline edit", () => {
+    expect(classifyShellCommand("sed -i 's/a/b/' f.ts && npx vitest run")).toBe("test_run");
+    expect(classifyShellCommand("git stash && npm test && git stash pop")).toBe("test_run");
+  });
+
+  it("finds a check inside a subshell", () => {
+    expect(classifyShellCommand("(npx tsc --noEmit)")).toBe("typecheck");
+  });
+
+  it("keeps a chain with no check on its other tags", () => {
+    expect(classifyShellCommand("cd repo && git commit -m x")).toBe("vcs");
+    expect(classifyShellCommand("cat f.txt | grep x")).toBe("other");
+  });
+});
+
+describe("classifyShellCommand on added tools", () => {
+  it("classifies script-runner checks", () => {
+    expect(classifyShellCommand("npm run lint")).toBe("lint");
+    expect(classifyShellCommand("pnpm run lint")).toBe("lint");
+    expect(classifyShellCommand("yarn lint")).toBe("lint");
+    expect(classifyShellCommand("npm run typecheck")).toBe("typecheck");
+    expect(classifyShellCommand("bun test")).toBe("test_run");
+  });
+
+  it("classifies biome and uvx-run tools", () => {
+    expect(classifyShellCommand("npx biome check .")).toBe("lint");
+    expect(classifyShellCommand("biome ci")).toBe("lint");
+    expect(classifyShellCommand("uvx ruff check")).toBe("lint");
+  });
+
+  it("classifies Swift, Xcode, .NET and Terraform checks", () => {
+    expect(classifyShellCommand("swift test")).toBe("test_run");
+    expect(classifyShellCommand("swift build")).toBe("build");
+    expect(classifyShellCommand("xcodebuild -scheme App test")).toBe("build");
+    expect(classifyShellCommand("dotnet test")).toBe("test_run");
+    expect(classifyShellCommand("terraform validate")).toBe("typecheck");
+    expect(classifyShellCommand("tflint")).toBe("lint");
+  });
+});
+
+describe("classifyShellCommand ignores separators inside quoted text", () => {
+  it("keeps a commit whose message reads like a command", () => {
+    expect(classifyShellCommand('git commit -m "fix: make lint pass; npm test later"')).toBe("vcs");
+    expect(
+      classifyShellCommand(
+        "git commit -F - <<'EOF'\nfix(intent): split chains\n\nmake the tagger see each segment\nEOF",
+      ),
+    ).toBe("vcs");
+  });
+
+  it("does not read an inline script as a check", () => {
+    expect(classifyShellCommand("node -e 'run(); tsc()'")).toBe("other");
+    expect(classifyShellCommand('python3 -c "import x; pytest"')).toBe("other");
+  });
+
+  it("still finds a check outside the quoted text", () => {
+    expect(classifyShellCommand('git commit -m "wip; make it work" && npm test')).toBe("test_run");
+  });
+});
+
+describe("classifyVcsAction ignores separators inside quoted text", () => {
+  it("does not read a push out of a commit message", () => {
+    expect(classifyVcsAction('git commit -m "wip && git push"')).toBe("commit");
+    expect(classifyVcsAction("git commit -F - <<'EOF'\nnote\ngit push\nEOF")).toBe("commit");
+  });
+});
+
+describe("classifyShellCommand on heredoc opener lines", () => {
+  it("masks quoted text on the rest of the opening line", () => {
+    expect(classifyShellCommand('git commit -F - <<EOF && echo "a; npm test"\nmsg\nEOF')).toBe(
+      "vcs",
+    );
+  });
+
+  it("still finds a check after a heredoc", () => {
+    expect(classifyShellCommand("cat <<EOF > f.txt\nbody; npm test\nEOF\nnpm test")).toBe(
+      "test_run",
+    );
+  });
+
+  it("does not read an arithmetic shift as a heredoc", () => {
+    expect(classifyShellCommand("echo $((1<<2))\nnpm test")).toBe("test_run");
+  });
+});
+
+describe("classifyShellCommand separators and precedence", () => {
+  it("splits on || and |", () => {
+    expect(classifyShellCommand("false || npm test")).toBe("test_run");
+    expect(classifyShellCommand("git commit -m x | npm test")).toBe("test_run");
+    expect(classifyShellCommand("false || git commit -m x")).toBe("vcs");
+  });
+
+  it("lets lint and typecheck win over an earlier segment", () => {
+    expect(classifyShellCommand("git commit -m x && npm run lint")).toBe("lint");
+    expect(classifyShellCommand("git commit -m x && npm run typecheck")).toBe("typecheck");
+  });
+
+  it("does not split on redirections", () => {
+    expect(classifyShellCommand("git commit -m x 2>&1")).toBe("vcs");
+    expect(classifyShellCommand("git commit -m x >&2")).toBe("vcs");
+    expect(classifyShellCommand("git commit -m x &> out.log")).toBe("vcs");
+    expect(classifyShellCommand("git commit -m x & npm test")).toBe("test_run");
+  });
+
+  it("reads then, else and until bodies", () => {
+    expect(classifyShellCommand("if true; then npm test; fi")).toBe("test_run");
+    expect(classifyShellCommand("if false; then echo a; else npm test; fi")).toBe("test_run");
+    expect(classifyShellCommand("until npm test; do sleep 1; done")).toBe("test_run");
+  });
+
+  it("matches a multi-word command across tabs and repeated spaces", () => {
+    expect(classifyVcsAction("git  commit -m x")).toBe("commit");
+    expect(classifyVcsAction("git\tpush")).toBe("push");
+  });
+
+  it("classifies dotnet build", () => {
+    expect(classifyShellCommand("dotnet build")).toBe("build");
+  });
+});
+
+describe("classifyShellCommand masking details", () => {
+  it("ignores a here-string body", () => {
+    expect(classifyShellCommand("git commit -F - <<< 'a; npm test'")).toBe("vcs");
+  });
+
+  it("closes a <<- heredoc on a tab-indented terminator", () => {
+    expect(classifyShellCommand("cat <<-EOF\n\tbody; npm test\n\tEOF\nnpm run build")).toBe(
+      "build",
+    );
+  });
+
+  it("keeps a # inside a word and drops a # comment", () => {
+    expect(classifyShellCommand("git commit -m x#y && mvn")).toBe("build");
+    expect(classifyShellCommand("mvn #; npm test")).toBe("build");
+  });
+
+  it("joins a backslash-newline continuation", () => {
+    expect(classifyShellCommand("npm \\\ntest")).toBe("test_run");
+  });
+
+  it("skips an escaped quote inside double quotes", () => {
+    expect(classifyShellCommand('git commit -m "a \\" ; npm test"')).toBe("vcs");
+  });
+});
+
+describe("classifyShellCommand on comments and escapes", () => {
+  it("drops a comment line before the command", () => {
+    expect(classifyShellCommand("# don't cache\ncd app && npm test")).toBe("test_run");
+  });
+
+  it("does not read a comment as a command", () => {
+    expect(classifyShellCommand("echo hi # npm test")).toBe("other");
+    expect(classifyShellCommand("echo $#; echo a#b")).toBe("other");
+  });
+
+  it("treats an escaped quote as no quote", () => {
+    expect(classifyShellCommand("echo don\\'t && npm test")).toBe("test_run");
+  });
+
+  it("treats an escaped separator as text", () => {
+    expect(classifyShellCommand("echo a\\; npm test")).toBe("other");
+  });
+});
+
+describe("classifyShellCommand on subshells and control keywords", () => {
+  it("reads a write action inside a subshell", () => {
+    expect(classifyVcsAction("(git commit -m x)")).toBe("commit");
+  });
+
+  it("finds a check inside control flow", () => {
+    expect(classifyShellCommand("if npm test; then echo ok; fi")).toBe("test_run");
+    expect(classifyShellCommand("for f in a b; do pytest $f; done")).toBe("test_run");
+    expect(classifyShellCommand("while ! npm run lint; do sleep 1; done")).toBe("lint");
+    expect(classifyShellCommand("{ tsc --noEmit; }")).toBe("typecheck");
+    expect(classifyShellCommand("time npm test")).toBe("test_run");
+  });
+});
+
+describe("classifyShellCommand on background jobs", () => {
+  it("splits on a lone ampersand", () => {
+    expect(classifyShellCommand("npm run dev & npm test")).toBe("test_run");
+  });
+
+  it("keeps redirections whole", () => {
+    expect(classifyShellCommand("npm test 2>&1 | tail")).toBe("test_run");
+    expect(classifyShellCommand("npm test >&2")).toBe("test_run");
+    expect(classifyShellCommand("npm test &> out.log")).toBe("test_run");
+  });
+});
+
+describe("classifyShellCommand on runner prefixes", () => {
+  it("classifies every runner form of lint, typecheck and test", () => {
+    for (const runner of ["npm run", "pnpm", "pnpm run", "yarn", "yarn run", "bun run"]) {
+      expect(classifyShellCommand(`${runner} lint`)).toBe("lint");
+      expect(classifyShellCommand(`${runner} typecheck`)).toBe("typecheck");
+    }
+    expect(classifyShellCommand("bun run test")).toBe("test_run");
+  });
+
+  it("reads xcodebuild test as a test run", () => {
+    expect(classifyShellCommand("xcodebuild test -scheme App")).toBe("test_run");
+  });
+});
+
+describe("classifyVcsAction in a chain with a check", () => {
+  it("keeps the write action", () => {
+    expect(classifyVcsAction("git commit -m x && git push && npm run build")).toBe("push");
+  });
+});
+
+describe("classification time on adversarial commands", () => {
+  const MAX_MS = 1000;
+  const inputs: Record<string, string> = {
+    "unterminated double quote full of escaped quotes": `"${'a\\"'.repeat(50_000)}`,
+    "unterminated heredoc openers": `${"cat <<EOF\n".repeat(5_000)}x`,
+    "plain newlines": "\n".repeat(200_000),
+    "stray apostrophes": "'".repeat(220_000),
+    "stray backslashes": "\\".repeat(220_000),
+    "stray comment markers": "# a\n".repeat(50_000),
+    "lone ampersands": "a & ".repeat(50_000),
+  };
+
+  for (const [name, command] of Object.entries(inputs)) {
+    it(`finishes quickly on ${name}`, () => {
+      const start = performance.now();
+      classifyShellCommand(command);
+      classifyVcsAction(command);
+      expect(performance.now() - start).toBeLessThan(MAX_MS);
+    });
+  }
 });
