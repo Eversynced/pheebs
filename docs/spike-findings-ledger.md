@@ -45,6 +45,33 @@ privacy line.
 
 ## Findings
 
+### 2026-11-04: Cursor runs the hooks in a project's `.claude/settings.json`, with Cursor-shaped payloads [Status: CONFIRMED]
+
+- **Tool(s):** cursor, claude_code
+- **Hook / event:** `SessionStart`, `PreToolUse`, `PostToolUse` registered in `.claude/settings.json`
+- **Claim (doc/assumption):** a hook registered in Claude Code's settings file fires only under Claude Code.
+- **Finding:** in a directory holding only `.claude/settings.json` hooks, cursor-agent fired `SessionStart`, `PreToolUse` and `PostToolUse` from it. The payloads were Cursor-shaped: a camelCase `hook_event_name` (e.g. `sessionStart`), plus `cursor_version`, `conversation_id`, `generation_id` and `model`. A `pheebs hook <event>` registered there would receive them.
+- **Method:** raw payload capture hooks in a scratch directory, cursor-agent 2026.10.19.
+- **Impact:** a Cursor user with a project Claude Code install has Cursor sessions logged a second time as `ai_tool=claude_code`, which inflates MD2 and per-tool counts. Not handled yet.
+
+### 2026-11-04: `SessionStart` carries no `model` under `claude -p`, and the desktop app matches [Status: CONFIRMED]
+
+- **Tool(s):** claude_code
+- **Hook / event:** `SessionStart` → `session_started`
+- **Claim (doc/assumption):** `session_started.model` names the session's model.
+- **Finding:** under `claude -p` the payload keys were `cwd`, `hook_event_name`, `session_id`, `source`, `transcript_path`, with no `model`. Backend data shows the Claude desktop app behaves the same: 0 of 210 new sessions from one desktop user carried `model`.
+- **Method:** raw payload capture under `claude -p`, Claude Code 2.1.318; a count over backend `session_started` rows.
+- **Impact:** capped-by-tool. `session_started.model` cannot be the only MD1 source on Claude Code, which is why the subagent model entry below exists.
+
+### 2026-11-04: A Claude Code subagent's model is in the Agent call's `resolvedModel`, not in `SubagentStart` [Status: CONFIRMED]
+
+- **Tool(s):** claude_code
+- **Hook / event:** `SubagentStart` → `subagent_spawned`; `PreToolUse`/`PostToolUse` on `Agent` → `tool_use_completed`
+- **Claim (doc/assumption):** the model a subagent ran on is somewhere in the subagent events.
+- **Finding:** the `SubagentStart` payload has `agent_id`, `agent_type`, `cwd`, `hook_event_name`, `prompt_id`, `session_id`, `transcript_path`, and no model. `tool_input.model` on the Agent call is present only when the call passed `model` (e.g. `haiku`), and absent when the model came from the agent file's frontmatter. The `PostToolUse` `tool_response` has `agentId`, `agentType`, `canContinueAgent`, `content`, `harnessNoteCount`, `harnessSectionHash`, `harnessTailCount`, `prompt`, `resolvedModel`, `status`, `totalDurationMs`, `totalTokens`, `totalToolUseCount`, `usage`. `resolvedModel` was a full model id in both cases (call parameter and frontmatter). A call with `model: "haiku"` had `tool_input.model` `haiku` and `resolvedModel` `claude-haiku-5-5`. An `Explore` call with no `model` param resolved to the parent's model. A `run_in_background: true` Agent call also carried `resolvedModel`, in its async launch response (keys `agentId`, `canContinueAgent`, `canReadOutputFile`, `description`, `isAsync`, `outputFile`, `prompt`, `resolvedModel`, `status`).
+- **Method:** raw hook payload capture under `claude -p`, Claude Code 2.1.318, one Agent call with `model` and one relying on frontmatter.
+- **Impact:** capture. `extractClaudeExtra` emits `subagent_model` on `tool_use_completed` for `Agent` calls, from `resolvedModel` only, with `agent_type` from `tool_input.subagent_type` and `requested_model` from `tool_input.model`, each bounded to a model-id shape. `src/repertoire.ts` counts it toward MD1 only on `tool_use_completed` rows where `requested_model` is set or `agent_type` is a custom agent, since a built-in agent runs on the harness's pick. Cursor's `subagent_spawned.subagent_model` is captured but not yet counted, pending a payload check of its value shape (Cursor reports `default` on Auto).
+
 ### 2026-10-21: A headless `claude -p` launched from a hook inherits the session's telemetry switch and exports under the developer's identity unless its env is stripped [Status: CONFIRMED]
 
 - **Tool(s):** claude_code
