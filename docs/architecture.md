@@ -80,7 +80,7 @@ Every event, from every tool, has the same base shape:
 The typed fields are `timestamp, source, event, developer, codebase, ai_tool,
 session_id, version, event_id`. `event_id` is a UUIDv7 minted for each event and kept
 across resends, so a backend can store a retried batch once. Everything tool-specific or
-event-specific rides alongside them as extras: `tool_intent`, `vcs_action`, `command_name`, `lines_changed`,
+event-specific rides alongside them as extras: `tool_intent`, `vcs_action`, `command_sequence`, `command_name`, `lines_changed`,
 `agent_type`, and so on. `ai_tool` says which agent produced the event.
 
 `developer` is stripped by the client before the send. The backend stamps
@@ -131,15 +131,19 @@ a completion event, so including it double-counts.
 fire `tool_use_failed` on a failed call and `tool_use_completed` on success.
 Codex has no failure hook, so the handler derives the outcome from the raw tool
 result and rewrites the event to `tool_use_failed`. A `test_run` on
-`tool_use_completed` passed; on `tool_use_failed` it failed.
+`tool_use_completed` passed; on `tool_use_failed` it failed. Test-gated
+ship counts a test of either outcome, because running the tests is the gate.
 
 **Correlation never crosses `session_id`.** A test run in one session and a
 commit in another are unrelated, and treating them otherwise invents a
 sequence that did not happen.
 
 A worked example, a test-gate ratio: for each VCS write action, carry forward
-the timestamp of the most recent passing test run in the same session, and call
-the action gated when one falls inside a short preceding window.
+the timestamp of the most recent test run in the same session, whatever its
+outcome, and call the action gated when one falls inside a short preceding
+window. A ship whose own row's `command_sequence` shows a test linked to it by
+`&&` alone is also gated: no earlier row can show that, and the window excludes
+the current row so `git push && npm test` does not gate itself.
 
 ```sql
 WITH stream AS (
@@ -148,7 +152,8 @@ WITH stream AS (
     timestamp::timestamptz AS ts,
     event,
     extras->>'tool_intent' AS intent,
-    extras->>'vcs_action'  AS vcs_action
+    extras->>'vcs_action'  AS vcs_action,
+    extras->>'command_sequence' AS command_sequence
   FROM events
   WHERE event IN ('tool_use_completed', 'tool_use_failed')
     AND (extras->>'tool_intent' = 'test_run'
@@ -156,15 +161,16 @@ WITH stream AS (
 ),
 tagged AS (
   SELECT *,
-    max(ts) FILTER (WHERE intent = 'test_run' AND event = 'tool_use_completed')
+    max(ts) FILTER (WHERE intent = 'test_run')
       OVER (PARTITION BY session_id ORDER BY ts
-            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS last_pass_ts
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS last_test_ts
   FROM stream
 )
 SELECT
   session_id, developer, ts AS vcs_ts, vcs_action,
-  (last_pass_ts IS NOT NULL
-   AND ts - last_pass_ts <= interval '10 minutes') AS test_gated
+  (coalesce(command_sequence ~ '(test_run)( && [a-z_]+)* && (commit|push|pr_create)', false)
+   OR (last_test_ts IS NOT NULL
+       AND ts - last_test_ts <= interval '10 minutes')) AS test_gated
 FROM tagged
 WHERE vcs_action IN ('commit', 'push', 'pr_create')
   AND event = 'tool_use_completed';
@@ -188,6 +194,15 @@ timestamps instead of one.
   `build` with `push`. The chain's exit status belongs to the whole chain, not to
   the check, so `npm test || true` reports a passing test run. The table is
   `COMMAND_KEYWORDS` in [`src/hooks/intent.ts`](../src/hooks/intent.ts).
+- **`command_sequence` keeps the order a chain collapses.** A shell row with two
+  or more segments carries each segment's tag, joined by the operators that
+  separated them: `test_run && push`, `test_run ; push`, `test_run | other && push`.
+  A segment's tag is its write action (`commit`, `push`, `pr_create`) when it is
+  one, else its intent. The operators are `&&`, `||`, `;`, `|` and `&`, and a
+  newline reads as `;`. It is absent for a single command, and stops at 32
+  segments. It holds tags and operators, never command text. Pheebs does not
+  decide a chain was gated: a reader of `test_run && push` and `test_run ; push`
+  makes that call.
 - **Codex outcome coverage is a lower bound.** Codex `PostToolUse` intercepts
   simple shell calls only, not `unified_exec` and not non-shell tools. Failures
   on uninstrumented calls never reach a hook. Claude Code and Cursor emit a
