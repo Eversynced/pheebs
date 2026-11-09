@@ -205,6 +205,9 @@ function commandSegments(command: string): string[] {
   return maskQuotedText(command).split(COMMAND_SEPARATORS);
 }
 
+// The capture group makes split() keep each operator between the segments.
+const SEPARATORS_WITH_OPERATORS = new RegExp(`(${COMMAND_SEPARATORS.source})`);
+
 const CHECK_INTENTS: ReadonlySet<ToolIntent> = new Set(["test_run", "typecheck", "lint", "build"]);
 
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/;
@@ -276,23 +279,55 @@ const VCS_WRITE_ACTIONS: ReadonlyArray<{ action: VcsAction; prefixes: string[] }
 
 const VCS_ACTION_RANK: Record<VcsAction, number> = { other: 0, commit: 1, push: 2, pr_create: 3 };
 
+function segmentVcsWrite(normalized: string): VcsAction {
+  for (const { action, prefixes } of VCS_WRITE_ACTIONS) {
+    if (prefixes.some((prefix) => matchesPrefix(normalized, prefix))) return action;
+  }
+  return "other";
+}
+
 // Reads the command in-process only; callers persist just the derived tag,
 // never the command itself.
 export function classifyVcsAction(command: string): VcsAction {
   let best: VcsAction = "other";
   for (const segment of commandSegments(command)) {
-    const normalized = stripCommandPrefix(segment);
-    for (const { action, prefixes } of VCS_WRITE_ACTIONS) {
-      if (
-        VCS_ACTION_RANK[action] > VCS_ACTION_RANK[best] &&
-        prefixes.some((prefix) => matchesPrefix(normalized, prefix))
-      ) {
-        best = action;
-      }
-    }
+    const action = segmentVcsWrite(stripCommandPrefix(segment));
+    if (VCS_ACTION_RANK[action] > VCS_ACTION_RANK[best]) best = action;
   }
   return best;
 }
+
+// Past this many segments the sequence stops, so a hostile command cannot make a large row.
+// A ship after the cap is still reported by `vcs_action`.
+export const MAX_SEQUENCE_SEGMENTS = 32;
+
+// Order and linkage of a chained command, as tags and operators only:
+// `npm test && git push` is `test_run && push`. A segment is its write action when it is one,
+// else its intent. A newline reads as `;`. Absent for a single command, which `tool_intent`
+// already describes. Whether the chain gated anything is the consumer's call.
+export function classifyCommandSequence(command: string): string | undefined {
+  const parts = maskQuotedText(command).split(SEPARATORS_WITH_OPERATORS);
+  let sequence = "";
+  let count = 0;
+  let operator: string | undefined;
+  for (let i = 0; i < parts.length && count < MAX_SEQUENCE_SEGMENTS; i += 2) {
+    const normalized = stripCommandPrefix(parts[i]);
+    if (normalized !== "") {
+      const write = segmentVcsWrite(normalized);
+      if (count > 0) sequence += ` ${operator === "\n" ? ";" : operator} `;
+      sequence += write === "other" ? classifySegment(parts[i]) : write;
+      count++;
+      operator = undefined;
+    }
+    // The first operator after a segment links it to the next, so `a &&\n b` reads `&&`.
+    operator ??= parts[i + 1];
+  }
+  return count > 1 ? sequence : undefined;
+}
+
+// Same-row test gate: a test, then only `&&` links, then a write action. Pheebs records the
+// sequence; this is a reader's rule, mirrored by the SQL example in docs/architecture.md.
+export const GATED_SHIP_SEQUENCE = /test_run( && [a-z_]+)* && (commit|push|pr_create)/;
 
 export function isShellTool(toolName: string | undefined): boolean {
   return toolName !== undefined && SHELL_TOOL_NAMES.has(toolName);

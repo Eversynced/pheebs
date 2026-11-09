@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { classifyIntent, classifyShellCommand, classifyVcsAction } from "../src/hooks/intent.js";
+import {
+  classifyCommandSequence,
+  classifyIntent,
+  classifyShellCommand,
+  classifyVcsAction,
+  GATED_SHIP_SEQUENCE,
+  MAX_SEQUENCE_SEGMENTS,
+} from "../src/hooks/intent.js";
 
 describe("classifyShellCommand", () => {
   it("classifies test runners", () => {
@@ -376,6 +383,84 @@ describe("classifyVcsAction in a chain with a check", () => {
   });
 });
 
+describe("classifyCommandSequence", () => {
+  it("is absent for a single command", () => {
+    expect(classifyCommandSequence("npm test")).toBeUndefined();
+    expect(classifyCommandSequence("npm test &&")).toBeUndefined();
+    expect(classifyCommandSequence("git commit -m 'a; b' ")).toBeUndefined();
+    expect(classifyCommandSequence("")).toBeUndefined();
+  });
+
+  it("joins each segment's tag with the operator that separated it", () => {
+    expect(classifyCommandSequence("npm test && git push")).toBe("test_run && push");
+    expect(classifyCommandSequence("npm test; git push")).toBe("test_run ; push");
+    expect(classifyCommandSequence("git push && npm test")).toBe("push && test_run");
+    expect(classifyCommandSequence("cd x && npm test && git commit -m y")).toBe(
+      "other && test_run && commit",
+    );
+    expect(classifyCommandSequence("npm test | tee log && git push")).toBe(
+      "test_run | other && push",
+    );
+    expect(classifyCommandSequence("npm test || git push")).toBe("test_run || push");
+    expect(classifyCommandSequence("npm test & git push")).toBe("test_run & push");
+    expect(classifyCommandSequence("npm test\ngh pr create")).toBe("test_run ; pr_create");
+  });
+
+  it("tags a git segment as its write action, else vcs", () => {
+    expect(classifyCommandSequence("git status && git add -A && git commit -m x")).toBe(
+      "vcs && vcs && commit",
+    );
+  });
+
+  it("keeps the first operator when separators repeat or a newline follows one", () => {
+    expect(classifyCommandSequence("npm test &&\n git push")).toBe("test_run && push");
+    expect(classifyCommandSequence("npm test ;; git push")).toBe("test_run ; push");
+  });
+
+  it("ignores quoted text, comments and heredoc bodies, and never carries command text", () => {
+    const sequence = classifyCommandSequence(
+      "git commit -m 'secret; npm test' && git push # npm test && x\ncat <<EOF\nnpm test && git push\nEOF",
+    );
+    expect(sequence).toBe("commit && push ; other");
+    expect(sequence).not.toMatch(/secret/);
+  });
+
+  it("stops at the segment cap", () => {
+    const sequence = classifyCommandSequence(
+      `${"a && ".repeat(MAX_SEQUENCE_SEGMENTS + 10)}git push`,
+    );
+    expect(sequence?.split(" && ")).toHaveLength(MAX_SEQUENCE_SEGMENTS);
+    expect(sequence).not.toContain("push");
+  });
+});
+
+describe("GATED_SHIP_SEQUENCE", () => {
+  it("matches a test followed only by && links up to a write action", () => {
+    for (const sequence of [
+      "test_run && push",
+      "test_run && other && commit",
+      "other && test_run && vcs && pr_create",
+    ]) {
+      expect(GATED_SHIP_SEQUENCE.test(sequence)).toBe(true);
+    }
+  });
+
+  it("rejects the ship before the test, or a test not linked by &&", () => {
+    for (const sequence of [
+      "push && test_run",
+      "test_run ; push",
+      "test_run | other && push",
+      "test_run || push",
+      "test_run & push",
+      "test_run && other ; push",
+      "build && push",
+      "push",
+    ]) {
+      expect(GATED_SHIP_SEQUENCE.test(sequence)).toBe(false);
+    }
+  });
+});
+
 describe("classification time on adversarial commands", () => {
   const MAX_MS = 1000;
   const inputs: Record<string, string> = {
@@ -386,6 +471,8 @@ describe("classification time on adversarial commands", () => {
     "stray backslashes": "\\".repeat(220_000),
     "stray comment markers": "# a\n".repeat(50_000),
     "lone ampersands": "a & ".repeat(50_000),
+    "endless chain": "npm test && ".repeat(50_000),
+    "separators only": "&&;|".repeat(100_000),
   };
 
   for (const [name, command] of Object.entries(inputs)) {
@@ -393,6 +480,7 @@ describe("classification time on adversarial commands", () => {
       const start = performance.now();
       classifyShellCommand(command);
       classifyVcsAction(command);
+      classifyCommandSequence(command);
       expect(performance.now() - start).toBeLessThan(MAX_MS);
     });
   }

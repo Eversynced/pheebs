@@ -16,7 +16,12 @@ import {
   getHookDefinitionsForTool,
   type PheebsEvent,
 } from "./definitions.js";
-import { classifyIntent, classifyVcsAction, isShellTool } from "./intent.js";
+import {
+  classifyCommandSequence,
+  classifyIntent,
+  classifyVcsAction,
+  isShellTool,
+} from "./intent.js";
 import { classifyCodexOutcome } from "./outcome.js";
 import { classifyRole } from "./role.js";
 import { RECURSION_GUARD_ENV } from "./types.js";
@@ -37,7 +42,7 @@ function readCommand(value: unknown): string | undefined {
   return undefined;
 }
 
-function applyVcsAction(
+function applyShellFacts(
   extra: Record<string, unknown>,
   toolName: string | undefined,
   command: string | undefined,
@@ -45,6 +50,8 @@ function applyVcsAction(
   if (!command || !isShellTool(toolName)) return;
   const action = classifyVcsAction(command);
   if (extra.tool_intent === "vcs" || action !== "other") extra.vcs_action = action;
+  const sequence = classifyCommandSequence(command);
+  if (sequence) extra.command_sequence = sequence;
 }
 
 // Claude Code's Skill tool carries the skill name as `tool_input.skill`. Only
@@ -259,7 +266,7 @@ export function extractClaudeExtra(
     extra.tool_intent = classifyIntent(toolName, command);
     // Refine vcs into commit/push/pr_create so a test-gate metric anchors on
     // write actions, not read-only git. Command read in-process, never persisted.
-    applyVcsAction(extra, toolName, command);
+    applyShellFacts(extra, toolName, command);
     // Normalize MCP server identity onto the same field Cursor uses.
     const mcpServer = deriveMcpServerName(toolName);
     if (mcpServer) extra.mcp_server_name = mcpServer;
@@ -460,7 +467,7 @@ export function extractCursorExtra(
     }
     const command = typeof payload.command === "string" ? payload.command : undefined;
     extra.tool_intent = classifyIntent(toolName, command);
-    applyVcsAction(extra, toolName, command);
+    applyShellFacts(extra, toolName, command);
   }
 
   if (eventName === "tool_use_failed") {
@@ -552,7 +559,7 @@ export function extractCodexExtra(
       readCommand(payload.tool_input) ??
       (typeof payload.command === "string" ? payload.command : undefined);
     extra.tool_intent = classifyIntent(toolName, command);
-    applyVcsAction(extra, toolName, command);
+    applyShellFacts(extra, toolName, command);
     // Normalize MCP server identity onto the same field Cursor uses.
     const mcpServer = deriveMcpServerName(toolName);
     if (mcpServer) extra.mcp_server_name = mcpServer;

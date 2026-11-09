@@ -85,6 +85,26 @@ describe("extractClaudeExtra", () => {
     expect(extra.vcs_action).toBe("push");
   });
 
+  it("records the chain's order and operators without the command text", () => {
+    const sequenceOf = (command: string) =>
+      extractClaudeExtra({ tool_name: "Bash", tool_input: { command } }, [], "tool_use_completed")
+        .command_sequence;
+    expect(sequenceOf("npm test && git push")).toBe("test_run && push");
+    expect(sequenceOf("npm test; git push")).toBe("test_run ; push");
+    expect(sequenceOf("git push && npm test")).toBe("push && test_run");
+    expect(sequenceOf("git commit -m 'wip; npm test' && git push")).toBe("commit && push");
+    expect(sequenceOf("npm test")).toBeUndefined();
+  });
+
+  it("emits command_sequence only for shell tools", () => {
+    const extra = extractClaudeExtra(
+      { tool_name: "Edit", tool_input: { command: "npm test && git push" } },
+      [],
+      "tool_use_completed",
+    );
+    expect(extra).not.toHaveProperty("command_sequence");
+  });
+
   it("tags read-only VCS as other and omits vcs_action for non-VCS intents", () => {
     expect(
       extractClaudeExtra(
@@ -477,13 +497,26 @@ describe("extractCursorExtra", () => {
       [],
       "tool_use_completed",
     );
-    expect(shell).toMatchObject({ tool_intent: "test_run", vcs_action: "commit" });
+    expect(shell).toMatchObject({
+      tool_intent: "test_run",
+      vcs_action: "commit",
+      command_sequence: "test_run && commit",
+    });
+    expect(JSON.stringify(shell)).not.toContain("-m x");
     const edit = extractCursorExtra(
       { hook_event_name: "afterFileEdit", command },
       [],
       "tool_use_completed",
     );
     expect(edit.vcs_action).toBeUndefined();
+    expect(edit).not.toHaveProperty("command_sequence");
+    expect(
+      extractCursorExtra(
+        { hook_event_name: "afterShellExecution", command: "npm test" },
+        [],
+        "tool_use_completed",
+      ),
+    ).not.toHaveProperty("command_sequence");
   });
 
   it("maps shared fields and renames duration", () => {
@@ -706,13 +739,25 @@ describe("extractCodexExtra", () => {
   it("derives vcs_action from a shell call and not from another tool", () => {
     const tool_input = { command: "npm test && git push" };
     const shell = extractCodexExtra({ tool_name: "shell", tool_input }, [], "tool_use_completed");
-    expect(shell).toMatchObject({ tool_intent: "test_run", vcs_action: "push" });
+    expect(shell).toMatchObject({
+      tool_intent: "test_run",
+      vcs_action: "push",
+      command_sequence: "test_run && push",
+    });
     const other = extractCodexExtra(
       { tool_name: "mcp__x__run", tool_input },
       [],
       "tool_use_completed",
     );
     expect(other.vcs_action).toBeUndefined();
+    expect(other).not.toHaveProperty("command_sequence");
+    expect(
+      extractCodexExtra(
+        { tool_name: "shell", tool_input: { command: "npm test; git push" } },
+        [],
+        "tool_use_completed",
+      ).command_sequence,
+    ).toBe("test_run ; push");
   });
 
   it("maps model and token fields", () => {
