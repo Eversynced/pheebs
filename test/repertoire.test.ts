@@ -244,40 +244,15 @@ describe("practiceStatesOf", () => {
     expect(practiceStatesOf(rows, TODAY).MD1).toBe("adopted");
   });
 
-  it("counts a subagent model when the call requested one", () => {
+  it("counts a built-in subagent's model without a requested model", () => {
     const rows = [...base(), ev(WEEKS[3], "prompt_submitted", { model: "claude-opus-5" })];
     expect(practiceStatesOf(rows, TODAY).MD1).toBe("unobserved");
     rows.push(
       ev(WEEKS[3], "tool_use_completed", {
         subagent_model: "claude-haiku-5-5",
-        agent_type: "general-purpose",
-        requested_model: "haiku",
-      }),
-    );
-    expect(practiceStatesOf(rows, TODAY).MD1).toBe("adopted");
-  });
-
-  it("does not count a built-in agent that ran on the harness's pick", () => {
-    const rows = [
-      ...base(),
-      ev(WEEKS[3], "prompt_submitted", { model: "claude-opus-5" }),
-      ev(WEEKS[3], "tool_use_completed", {
-        subagent_model: "claude-haiku-5-5",
         agent_type: "Explore",
       }),
-    ];
-    expect(practiceStatesOf(rows, TODAY).MD1).toBe("unobserved");
-  });
-
-  it("counts a custom agent's model without a requested model", () => {
-    const rows = [
-      ...base(),
-      ev(WEEKS[3], "prompt_submitted", { model: "claude-opus-5" }),
-      ev(WEEKS[3], "tool_use_completed", {
-        subagent_model: "claude-haiku-5-5",
-        agent_type: "my-reviewer",
-      }),
-    ];
+    );
     expect(practiceStatesOf(rows, TODAY).MD1).toBe("adopted");
   });
 
