@@ -4,6 +4,8 @@
 // (docs/ai-proficiency-model-practice-and-signal-registry.md); the states, the window and placement
 // are the model's (docs/ai-proficiency-model.md). Pure: the caller reads the log and passes `today`.
 
+import { GATED_SHIP_SEQUENCE } from "./hooks/intent.js";
+
 export type Row = Record<string, unknown>;
 
 export type PracticeState = "unobserved" | "adopted" | "recurring" | "insufficient_data" | "n/a";
@@ -346,13 +348,16 @@ function markPatterns(sessions: Timed[][], days: Map<string, PracticeDay>): void
       const isFail = event === "tool_use_failed" && intent === "test_run";
       const isEdit = completed && intent === "edit";
       const isShip = completed && SHIPS.has(field(row, "vcs_action") ?? "");
+      const gatesItself = GATED_SHIP_SEQUENCE.test(field(row, "command_sequence") ?? "");
 
       const target = days.get(`${field(row, "ai_tool") ?? ""}|${day}`);
       if (target) {
         if (isPass && firstFail !== undefined && lastEdit !== undefined && firstFail < lastEdit) {
           target.flags.add("ev4");
         }
-        if (isShip && lastTest !== undefined && (lastEdit === undefined || lastTest > lastEdit)) {
+        const testedBefore =
+          lastTest !== undefined && (lastEdit === undefined || lastTest > lastEdit);
+        if (isShip && (testedBefore || gatesItself)) {
           target.flags.add("ev5");
         }
       }

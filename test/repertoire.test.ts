@@ -268,6 +268,26 @@ describe("practiceStatesOf", () => {
     expect(practiceStatesOf(ship([test, edit, commit]), TODAY).EV5).toBe("unobserved");
   });
 
+  it("credits a ship whose own row shows a test linked to it by && only", () => {
+    const ship = (command_sequence: string) => [
+      ...base(),
+      ev(
+        WEEKS[3],
+        "tool_use_completed",
+        { tool_intent: "test_run", vcs_action: "push", command_sequence, session_id: "ship" },
+        "11:00:00",
+      ),
+    ];
+    const ev5 = (sequence: string) => practiceStatesOf(ship(sequence), TODAY).EV5;
+
+    expect(ev5("test_run && push")).toBe("adopted");
+    expect(ev5("other && test_run && other && push")).toBe("adopted");
+    expect(ev5("push && test_run")).toBe("unobserved");
+    expect(ev5("test_run ; push")).toBe("unobserved");
+    expect(ev5("test_run | other && push")).toBe("unobserved");
+    expect(ev5("test_run || push")).toBe("unobserved");
+  });
+
   it("reads a sequence across the whole session, even when it began before the window", () => {
     const rows = [
       ...base(),
