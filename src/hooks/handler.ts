@@ -286,8 +286,8 @@ export function extractClaudeExtra(
       const linesChanged = readLinesChanged(toolName, payload.tool_response);
       if (linesChanged !== undefined) extra.lines_changed = linesChanged;
       // SubagentStart carries no model, but the Agent call's result names the one
-      // the subagent resolved to. The type and the call's own model are emitted
-      // beside it so a consumer can tell a choice from a harness default.
+      // the subagent resolved to. The type and the call's own model ride beside it
+      // as facts only: Claude fills in `model` itself, so neither shows who picked.
       if (toolName === "Agent") {
         const resolved = readResolvedModel(payload.tool_response);
         if (resolved) extra.subagent_model = resolved;
