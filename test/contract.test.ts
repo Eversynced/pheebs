@@ -21,8 +21,12 @@ describe("openapi.yaml", () => {
     expect(envelopeEventEnum().sort()).toEqual(Object.values(EVENTS).sort());
   });
 
-  it("carries the version that introduced the batch route", () => {
-    expect(spec).toContain('\n  version: "1.6.0"\n');
+  it("carries the version that introduced command_sequence", () => {
+    expect(spec).toContain('\n  version: "1.8.0"\n');
+  });
+
+  it("documents command_sequence beside the fields a chain changes", () => {
+    expect(spec).toContain("\n        command_sequence:\n");
   });
 
   it("documents the batch route and the id it deduplicates on", () => {
