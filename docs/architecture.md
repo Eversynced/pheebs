@@ -203,6 +203,10 @@ timestamps instead of one.
   segments. It holds tags and operators, never command text. Pheebs does not
   decide a chain was gated: a reader of `test_run && push` and `test_run ; push`
   makes that call.
+- **The same-row gate credits the row's strongest write.** The rule asks only
+  that some write follow the test through `&&` links, while `vcs_action` reports
+  the strongest write in the row. So `npm test && git commit -m x; git push`
+  reads as a gated push, though only the commit was gated.
 - **Codex outcome coverage is a lower bound.** Codex `PostToolUse` intercepts
   simple shell calls only, not `unified_exec` and not non-shell tools. Failures
   on uninstrumented calls never reach a hook. Claude Code and Cursor emit a
