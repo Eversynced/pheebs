@@ -19,8 +19,9 @@ flowchart TD
     H --> J["Layer 2<br/>classifiers, cost analysis, dashboards"]
 ```
 
-Cursor also runs the hooks in a project's `.claude/settings.json`. `pheebs hook` ignores those
-payloads on the Claude Code path, because the Cursor install already logs them (`isCursorPayload` in
+Cursor also runs the hooks in a project's `.claude/settings.json`. Pheebs records Cursor
+sessions only through its Cursor install (`pheebs init --cursor`), so the Claude Code path ignores
+those payloads rather than logging them as `claude_code` (`isCursorPayload` in
 [`src/hooks/handler.ts`](../src/hooks/handler.ts)).
 
 Local logging always happens. The send is skipped entirely when no
