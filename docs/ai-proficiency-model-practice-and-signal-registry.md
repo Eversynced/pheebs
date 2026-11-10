@@ -43,9 +43,9 @@ Every practice ships with:
 | MD3 | Effort variation, 2+ distinct `effort` values | Per-event `effort` (CC); **preferred** on Cursor: `model_params` entries (`{id, value}`, ids `effort` and the undocumented `fast`) on `session_started` / `prompt_submitted` / `turn_ended`, **not** the tool events the vendor doc names; fallback where `model_params` is absent: the effort-suffixed slug on `session_started.model` | 🟢 | 🟢 via `model_params` on the **GUI**; **CLI emits none of it**, so the slug-suffix fallback is what a CLI session gives | n/a | Stat | Live |
 | MD4 | Plan-mode use | `permission_mode = plan` segments | 🟢 | n/a to hooks today | n/a, `permission_mode` never reports `plan` | Stat | Live (CC only) |
 | MD5 | Autonomy variation, 2+ distinct `permission_mode` values | Per-event `permission_mode` | 🟢 | n/a | n/a, value is constant per harness | Stat | Live (CC only) |
-| MD6 | Split-phase delivery: plan-mode segment on one model or effort, then an execution segment on another, same session | `permission_mode` transitions joined with per-event `model` and OTel tokens-by-model | 🟢 | n/a | n/a, no `permission_mode` transitions occur | Pattern | Live, backend join (CC only) |
+| MD6 | Split-phase delivery: plan-mode segment on one model or effort, then an execution segment on another, same session | `permission_mode` transitions read against per-event `effort` and the session's model timeline: `session_started.model`, then each `model_switched` counting only `switch_source` in `command`/`picker`/`sdk` | 🟢 | n/a | n/a, no `permission_mode` transitions occur | Pattern | Live (CC only) |
 
-MD6 is the classic Opus-to-plan, Sonnet-to-execute pattern, expressed as a detector.
+MD6 is the classic Opus-to-plan, Sonnet-to-execute pattern, expressed as a detector. Claude Code's `opusplan` setting, which plans on one model and executes on another with no `model_switched`, is out of scope by the hook surface: no hook names that change, so such a session reads Unobserved for MD6.
 
 ### Corrections from the 2026-09-09 Cursor/Codex payload capture
 
