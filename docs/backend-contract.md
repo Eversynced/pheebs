@@ -71,6 +71,12 @@ any row where a write ran. Find commits and pushes by `vcs_action`: a query on
 `tool_intent = 'vcs'` misses every chained one. A chain also carries `command_sequence`, its
 segments' tags and operators in order, such as `test_run && push`.
 
+Contract 1.9.0 adds `subagent_prompt_intent` to the Agent tool's `tool_use_completed`: what kind of
+work the model asked a subagent to do (`review`, `build`, `research` or `other`), set only under
+`classify local`, with `subagent_classifier_version` beside it. The prompt is never sent to a
+backend or stored. Absent means not classified, never
+`other`.
+
 ## `/ingest/batch` (optional)
 
 `{ "events": [envelope, ...], "droppedSinceLastSend": n }`, at most 500 events. The client writes

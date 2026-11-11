@@ -1,7 +1,7 @@
 import { maybeAutoUpdate } from "../auto-update.js";
 import { ensureConfig } from "../backend-config.js";
 import { stripBom } from "../bom.js";
-import { classifyPrompt } from "../classify.js";
+import { classifyPrompt, classifySubagentPrompt } from "../classify.js";
 import { getConfig } from "../config.js";
 import { getDeveloperHandle } from "../developer-id.js";
 import { appendLogEntry } from "../logger.js";
@@ -67,6 +67,14 @@ function readIdToken(value: unknown): string | undefined {
 function readResolvedModel(toolResponse: unknown): string | undefined {
   if (typeof toolResponse !== "object" || toolResponse === null) return undefined;
   return readIdToken((toolResponse as Record<string, unknown>).resolvedModel);
+}
+
+function readAgentPrompt(payload: Record<string, unknown>): string | undefined {
+  if (payload.tool_name !== "Agent") return undefined;
+  const input = payload.tool_input;
+  if (typeof input !== "object" || input === null) return undefined;
+  const prompt = (input as Record<string, unknown>).prompt;
+  return typeof prompt === "string" && prompt.length > 0 ? prompt : undefined;
 }
 
 // Claude Code's Skill tool carries the skill name as `tool_input.skill`. Only
@@ -693,6 +701,23 @@ export async function handleHookEvent(
   if (event === EVENTS.PromptSubmitted && typeof payload.prompt === "string") {
     const classified = await classifyPrompt(payload.prompt, tool);
     if (classified) Object.assign(extra, classified);
+  }
+
+  // The Agent call's prompt is written by the model, not typed by the developer. It is read here
+  // to derive one label and dropped; the extractor never carries it.
+  if (tool === AI_TOOLS.CLAUDE_CODE && event === EVENTS.ToolUseCompleted) {
+    const subagentPrompt = readAgentPrompt(payload);
+    if (subagentPrompt) {
+      try {
+        const labeled = await classifySubagentPrompt(subagentPrompt, tool);
+        if (labeled) {
+          extra.subagent_prompt_intent = labeled.label;
+          extra.subagent_classifier_version = labeled.classifier_version;
+        }
+      } catch {
+        // A failed label must not cost the event itself.
+      }
+    }
   }
 
   const developerHandle = getDeveloperHandle(sessionId);

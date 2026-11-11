@@ -13,11 +13,13 @@ vi.mock("node:fs", () => ({
 }));
 
 const classifyLocallyMock = vi.fn();
+const classifySubagentLocallyMock = vi.fn();
 vi.mock("../src/classify-local.js", () => ({
   classifyLocally: (...a: unknown[]) => classifyLocallyMock(...a),
+  classifySubagentLocally: (...a: unknown[]) => classifySubagentLocallyMock(...a),
 }));
 
-const { classifyPrompt } = await import("../src/classify.js");
+const { classifyPrompt, classifySubagentPrompt } = await import("../src/classify.js");
 
 let storedToken: object | null = null;
 let cfg: object = { baseUrl: "https://api.test" };
@@ -46,6 +48,8 @@ beforeEach(() => {
   });
   stubFetch(new Response(JSON.stringify({ allowed: true, result: { label: "task" } })));
   classifyLocallyMock.mockReset();
+  classifySubagentLocallyMock.mockReset();
+  classifySubagentLocallyMock.mockResolvedValue("review");
   classifyLocallyMock.mockResolvedValue({
     label: "repair",
     requests_verification: false,
@@ -251,5 +255,57 @@ describe("classifyPrompt: local", () => {
     expect(await classifyPrompt("the build is broken", "claude_code")).toEqual({
       prompt_intent: "unclassified",
     });
+  });
+});
+
+describe("classifySubagentPrompt", () => {
+  beforeEach(() => {
+    cfg = { classify: false, classifyLocally: true };
+    withStored({ token: "pheebs_x", opt_out: false });
+  });
+
+  it("returns the label and the codebook version, classifying on-machine", async () => {
+    expect(await classifySubagentPrompt("check the diff", "claude_code")).toEqual({
+      label: "review",
+      classifier_version: "claude-code:claude-haiku-5-5@sb1",
+    });
+    expect(classifySubagentLocallyMock).toHaveBeenCalledWith("check the diff");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing in remote mode, where the backend has no subagent codebook", async () => {
+    cfg = { baseUrl: "https://api.test" };
+    withStored({ token: "pheebs_x", prompt_collection: true, opt_out: false });
+    expect(await classifySubagentPrompt("check the diff", "claude_code")).toBeUndefined();
+    expect(classifySubagentLocallyMock).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing when classification is off", async () => {
+    cfg = { classify: false };
+    expect(await classifySubagentPrompt("check the diff", "claude_code")).toBeUndefined();
+    expect(classifySubagentLocallyMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["cursor", "codex"] as const)("sends nothing from %s", async (tool) => {
+    expect(await classifySubagentPrompt("check the diff", tool)).toBeUndefined();
+    expect(classifySubagentLocallyMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["opted out", { token: "pheebs_x", opt_out: true }],
+    ["opt-out unknown", { token: "pheebs_x" }],
+  ])("sends nothing for a developer whose status is %s", async (_name, stored) => {
+    // Unknown only counts against a backend that could still answer.
+    cfg = { baseUrl: "https://api.test", classify: false, classifyLocally: true };
+    withStored(stored);
+    expect(await classifySubagentPrompt("check the diff", "claude_code")).toBeUndefined();
+    expect(classifySubagentLocallyMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves the label absent for an empty prompt or a failed run, never a stand-in", async () => {
+    expect(await classifySubagentPrompt("", "claude_code")).toBeUndefined();
+    classifySubagentLocallyMock.mockResolvedValue(undefined);
+    expect(await classifySubagentPrompt("check the diff", "claude_code")).toBeUndefined();
   });
 });

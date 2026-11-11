@@ -10,9 +10,14 @@ vi.mock("node:child_process", () => ({
   spawn: (...a: unknown[]) => spawnMock(...a),
 }));
 
-const { alternateAuthSources, canRunClaude, classifyLocally, LOCAL_CLASSIFIER_VERSION } =
-  await import("../src/classify-local.js");
-const { CODEBOOK } = await import("../src/codebook.js");
+const {
+  alternateAuthSources,
+  canRunClaude,
+  classifyLocally,
+  classifySubagentLocally,
+  LOCAL_CLASSIFIER_VERSION,
+} = await import("../src/classify-local.js");
+const { CODEBOOK, SUBAGENT_CODEBOOK } = await import("../src/codebook.js");
 
 interface FakeChild extends EventEmitter {
   stdin: PassThrough;
@@ -200,6 +205,61 @@ describe("classifyLocally", () => {
       throw new Error("EMFILE");
     });
     expect(await classifyLocally("x")).toBeUndefined();
+  });
+});
+
+describe("classifySubagentLocally", () => {
+  it("returns the label under the subagent codebook, with the prompt on stdin only", async () => {
+    const child = fakeChild(cliResult({ label: "review" }));
+    spawnMock.mockReturnValue(child);
+
+    expect(await classifySubagentLocally("check the diff")).toBe("review");
+    expect(child.received).toBe("check the diff");
+    const args = spawnMock.mock.calls[0][1] as string[];
+    const flagValue = (flag: string) => args[args.indexOf(flag) + 1];
+    expect(flagValue("--system-prompt")).toBe(SUBAGENT_CODEBOOK);
+    expect(JSON.parse(flagValue("--json-schema")).properties.label.enum).toEqual([
+      "review",
+      "build",
+      "research",
+      "other",
+    ]);
+    expect(JSON.parse(flagValue("--settings"))).toEqual({ disableAllHooks: true });
+    expect(args).not.toContain("check the diff");
+  });
+
+  it("resolves undefined on a label outside the codebook, including a developer-prompt label", async () => {
+    for (const label of ["task", "", undefined]) {
+      spawnMock.mockReturnValue(fakeChild(cliResult({ label })));
+      expect(await classifySubagentLocally("x")).toBeUndefined();
+    }
+  });
+
+  it("reads the label out of a verbose message list and rejects a label outside the set", async () => {
+    spawnMock.mockReturnValue(
+      fakeChild(JSON.stringify([{ type: "system" }, JSON.parse(cliResult({ label: "build" }))])),
+    );
+    expect(await classifySubagentLocally("x")).toBe("build");
+    spawnMock.mockReturnValue(fakeChild(cliResult({ label: "bogus" })));
+    expect(await classifySubagentLocally("x")).toBeUndefined();
+    spawnMock.mockReturnValue(
+      fakeChild(JSON.stringify({ type: "result", structured_output: null })),
+    );
+    expect(await classifySubagentLocally("x")).toBeUndefined();
+  });
+
+  it("sends the head of an oversized prompt, not all of it", async () => {
+    const child = fakeChild(cliResult({ label: "review" }));
+    spawnMock.mockReturnValue(child);
+    await classifySubagentLocally("a".repeat(50_000));
+    expect(child.received).toBe("a".repeat(20_000));
+  });
+
+  it("resolves undefined on a failed or unparseable run", async () => {
+    spawnMock.mockReturnValue(fakeChild(cliResult({ label: "review" }), 1));
+    expect(await classifySubagentLocally("x")).toBeUndefined();
+    spawnMock.mockReturnValue(fakeChild("not json"));
+    expect(await classifySubagentLocally("x")).toBeUndefined();
   });
 });
 

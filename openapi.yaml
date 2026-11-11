@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.8.0"
+  version: "1.9.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -553,6 +553,19 @@ components:
             `test_run && push`. A segment's tag is its write action when it is one, else its
             intent. Absent for a single command, stops at 32 segments, and never holds command
             text. Whether a chain gated a write is the reader's call.
+        subagent_prompt_intent:
+          type: string
+          enum: [review, build, research, other]
+          description: |
+            On the Agent tool's `tool_use_completed`, under `classify local` only: what kind of
+            work the model asked the subagent to do, labeled on the developer's machine from the
+            prompt, which is never sent to a backend or stored. Absent when not classified; `other` is the classifier's
+            own answer, not a stand-in.
+        subagent_classifier_version:
+          type: string
+          description: |
+            Beside `subagent_prompt_intent`: the model and subagent codebook that labeled it, such
+            as `claude-code:claude-haiku-5-5@sb1`. Compare labels only within one version.
         command_name:
           type: string
           description: A slash command or skill name.

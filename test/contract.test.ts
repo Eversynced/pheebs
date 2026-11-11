@@ -26,8 +26,13 @@ describe("openapi.yaml", () => {
     expect(spec).toContain("\n        requested_model:\n");
   });
 
-  it("carries the version that introduced command_sequence", () => {
-    expect(spec).toContain('\n  version: "1.8.0"\n');
+  it("carries the version that introduced subagent_prompt_intent", () => {
+    expect(spec).toContain('\n  version: "1.9.0"\n');
+  });
+
+  it("documents subagent_prompt_intent with its closed label set", () => {
+    expect(spec).toContain("\n        subagent_prompt_intent:\n");
+    expect(spec).toContain("enum: [review, build, research, other]");
   });
 
   it("documents command_sequence beside the fields a chain changes", () => {

@@ -8,6 +8,9 @@ import {
   INTENT_SCHEMA,
   LABELS,
   MODEL,
+  SUBAGENT_CODEBOOK,
+  SUBAGENT_LABELS,
+  SUBAGENT_SCHEMA,
   TASK_SCOPES,
 } from "./codebook.js";
 import { RECURSION_GUARD_ENV } from "./hooks/types.js";
@@ -20,28 +23,33 @@ export const LOCAL_CLASSIFIER_VERSION = `claude-code:${MODEL}@${CODEBOOK_VERSION
 
 // `--bare` would skip hooks too, but it refuses the subscription login this path exists to use,
 // so hooks, settings, MCP servers, and skills are each switched off by name instead.
-const ARGS = [
-  "-p",
-  "--model",
-  MODEL,
-  "--effort",
-  "low",
-  "--system-prompt",
-  CODEBOOK,
-  "--json-schema",
-  JSON.stringify(INTENT_SCHEMA),
-  "--output-format",
-  "json",
-  "--tools",
-  "",
-  "--setting-sources",
-  "",
-  "--settings",
-  JSON.stringify({ disableAllHooks: true }),
-  "--strict-mcp-config",
-  "--no-session-persistence",
-  "--disable-slash-commands",
-];
+function argsFor(codebook: string, schema: object): string[] {
+  return [
+    "-p",
+    "--model",
+    MODEL,
+    "--effort",
+    "low",
+    "--system-prompt",
+    codebook,
+    "--json-schema",
+    JSON.stringify(schema),
+    "--output-format",
+    "json",
+    "--tools",
+    "",
+    "--setting-sources",
+    "",
+    "--settings",
+    JSON.stringify({ disableAllHooks: true }),
+    "--strict-mcp-config",
+    "--no-session-persistence",
+    "--disable-slash-commands",
+  ];
+}
+
+const ARGS = argsFor(CODEBOOK, INTENT_SCHEMA);
+const SUBAGENT_ARGS = argsFor(SUBAGENT_CODEBOOK, SUBAGENT_SCHEMA);
 
 // The hook inherits the session's settings env, telemetry switch included. A child that kept it
 // would export its own token usage under the developer's identity and inflate every cost figure.
@@ -64,7 +72,7 @@ function childEnv(): NodeJS.ProcessEnv {
 
 // Checked against the enums, unlike a backend label, which is copied through: this client owns
 // the codebook, so a value outside it is a failed run here, not a table the client does not know.
-function parse(stdout: string): ClassifyResult | undefined {
+function structuredOutput(stdout: string): Record<string, unknown> | undefined {
   try {
     const parsed = JSON.parse(stdout);
     // A `verbose` the child still reads from the legacy global config turns the output into the
@@ -72,19 +80,25 @@ function parse(stdout: string): ClassifyResult | undefined {
     const result = Array.isArray(parsed)
       ? parsed.filter((message) => message?.type === "result").at(-1)
       : parsed;
-    const out = result?.structured_output;
-    if (!LABELS.includes(out?.label)) return undefined;
-    return {
-      label: out.label,
-      ...(typeof out.requests_verification === "boolean"
-        ? { requests_verification: out.requests_verification }
-        : {}),
-      ...(TASK_SCOPES.includes(out.task_scope) ? { task_scope: out.task_scope } : {}),
-      classifier_version: LOCAL_CLASSIFIER_VERSION,
-    };
+    return result?.structured_output ?? undefined;
   } catch {
     return undefined;
   }
+}
+
+function parse(stdout: string): ClassifyResult | undefined {
+  const out = structuredOutput(stdout);
+  if (typeof out?.label !== "string" || !LABELS.includes(out.label)) return undefined;
+  return {
+    label: out.label,
+    ...(typeof out.requests_verification === "boolean"
+      ? { requests_verification: out.requests_verification }
+      : {}),
+    ...(typeof out.task_scope === "string" && TASK_SCOPES.includes(out.task_scope)
+      ? { task_scope: out.task_scope }
+      : {}),
+    classifier_version: LOCAL_CLASSIFIER_VERSION,
+  };
 }
 
 interface ClaudeRun {
@@ -140,6 +154,21 @@ export async function classifyLocally(prompt: string): Promise<ClassifyResult | 
   // codebook is classifying against.
   const run = await runClaude(ARGS, { input: prompt, cwd: tmpdir(), env: childEnv() });
   return run?.code === 0 ? parse(run.stdout) : undefined;
+}
+
+// A model writes these and they run long. The task is stated up front, so the head is enough, and
+// a bounded input keeps the child inside its deadline.
+const SUBAGENT_PROMPT_CAP = 20_000;
+
+// Same isolated child as above under the subagent codebook. Only the label comes back.
+export async function classifySubagentLocally(prompt: string): Promise<string | undefined> {
+  const run = await runClaude(SUBAGENT_ARGS, {
+    input: prompt.slice(0, SUBAGENT_PROMPT_CAP),
+    cwd: tmpdir(),
+    env: childEnv(),
+  });
+  const label = run?.code === 0 ? structuredOutput(run.stdout)?.label : undefined;
+  return typeof label === "string" && SUBAGENT_LABELS.includes(label) ? label : undefined;
 }
 
 // Only whether `claude` starts here. A provider whose model ids differ still fails per prompt.

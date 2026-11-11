@@ -33,8 +33,11 @@ let input = "";
 process.stdin.on("data", (chunk) => { input += chunk; });
 process.stdin.on("end", () => {
   setTimeout(() => {
-    process.stdout.write(JSON.stringify({ type: "result", structured_output: {
-      label: input ? "repair" : "unclassified", requests_verification: false, task_scope: "bounded" } }));
+    const subagent = process.argv.includes("--json-schema") &&
+      process.argv[process.argv.indexOf("--json-schema") + 1].includes("research");
+    process.stdout.write(JSON.stringify({ type: "result", structured_output: subagent
+      ? { label: "review" }
+      : { label: input ? "repair" : "unclassified", requests_verification: false, task_scope: "bounded" } }));
   }, Number(process.env.FAKE_CLAUDE_DELAY_MS ?? 0));
 });
 `;
@@ -102,6 +105,87 @@ describe.skipIf(process.platform === "win32")("classify local through the built 
     expect(realpathSync(cwd)).toBe(realpathSync(tmpdir()));
     expect(stripped).toEqual([]);
     expect(guard).toBe("1");
+  });
+
+  it("labels the prompt of an Agent call, never storing it or anything else the call carries", () => {
+    rmSync(calls, { force: true });
+    const rows = runHookRows(
+      ["hook", "tool_use_completed"],
+      {
+        session_id: "s1",
+        tool_name: "Agent",
+        tool_input: { subagent_type: "general-purpose", prompt: "check the diff in module A" },
+        tool_response: { resolvedModel: "claude-haiku-5-5", prompt: "check the diff in module A" },
+      },
+      undefined,
+      {
+        path: `${join(dir, "bin")}${delimiter}${process.env.PATH}`,
+        extraEnv: { FAKE_CLAUDE_CALLS: calls },
+        setupHome: (home) => {
+          mkdirSync(join(home, ".pheebs"));
+          writeFileSync(
+            join(home, ".pheebs", "config.json"),
+            JSON.stringify({ classify: false, classifyLocally: true }),
+          );
+        },
+      },
+    );
+    const [row] = rows.filter((r) => r.event === "tool_use_completed");
+    expect(row).toMatchObject({
+      subagent_prompt_intent: "review",
+      subagent_classifier_version: "claude-code:claude-haiku-5-5@sb1",
+      agent_type: "general-purpose",
+    });
+    expect(JSON.stringify(row)).not.toContain("module A");
+    const [call] = readFileSync(calls, "utf-8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+    expect(call.argv).not.toContain("check the diff in module A");
+    expect(call.guard).toBe("1");
+  });
+
+  it("starts no classifier for an Agent call when classification is not local", () => {
+    rmSync(calls, { force: true });
+    const rows = runHookRows(
+      ["hook", "tool_use_completed"],
+      { session_id: "s1", tool_name: "Agent", tool_input: { prompt: "check the diff" } },
+      undefined,
+      {
+        path: `${join(dir, "bin")}${delimiter}${process.env.PATH}`,
+        extraEnv: { FAKE_CLAUDE_CALLS: calls },
+      },
+    );
+    const [row] = rows.filter((r) => r.event === "tool_use_completed");
+    expect(row).not.toHaveProperty("subagent_prompt_intent");
+    expect(existsSync(calls)).toBe(false);
+  });
+
+  it("starts no classifier for another tool that happens to carry a prompt field", () => {
+    rmSync(calls, { force: true });
+    const rows = runHookRows(
+      ["hook", "tool_use_completed"],
+      {
+        session_id: "s1",
+        tool_name: "Skill",
+        tool_input: { skill: "x", prompt: "check the diff" },
+      },
+      undefined,
+      {
+        path: `${join(dir, "bin")}${delimiter}${process.env.PATH}`,
+        extraEnv: { FAKE_CLAUDE_CALLS: calls },
+        setupHome: (home) => {
+          mkdirSync(join(home, ".pheebs"));
+          writeFileSync(
+            join(home, ".pheebs", "config.json"),
+            JSON.stringify({ classify: false, classifyLocally: true }),
+          );
+        },
+      },
+    );
+    const [row] = rows.filter((r) => r.event === "tool_use_completed");
+    expect(row).not.toHaveProperty("subagent_prompt_intent");
+    expect(existsSync(calls)).toBe(false);
   });
 
   it("stamps the prompt when it was submitted, not when classification finished", () => {

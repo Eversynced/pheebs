@@ -45,6 +45,15 @@ privacy line.
 
 ## Findings
 
+### 2026-11-11: The Agent call's prompt rides `PreToolUse` and `PostToolUse` as `tool_input.prompt`; the developer codebook cannot tell a review from a build [Status: CONFIRMED]
+
+- **Tool(s):** claude_code (2.1.322)
+- **Hook / event:** `PreToolUse` (unregistered) and `PostToolUse` → `tool_use_completed`, with `tool_name: "Agent"`; `SubagentStart` / `SubagentStop` for contrast.
+- **Claim (doc/assumption):** the subagent's task text is out of reach of the hooks, so a review done through a `general-purpose` agent cannot be told from a build.
+- **Finding:** an Agent call's `tool_input` is `{description: string, prompt: string, subagent_type: string}`. The same `prompt` string is echoed in `tool_response`, which also carries `agentId`, `resolvedModel`, `status` and `isAsync`. `PostToolUse` for a backgrounded Agent fires at launch (`status: "async_launched"`, `isAsync: true`), within about 50 ms of `PreToolUse`, well before the subagent finishes. `SubagentStart` carries `agent_id`, `agent_type` and no prompt; `SubagentStop` carries the same ids plus `last_assistant_message`. The subagent's own tool calls carry `agent_id` and `agent_type` at the top level. A synchronous Agent call was not captured. The developer-prompt codebook (`cb3`) labels all 12 synthetic review, build and research prompts `task`. A separate four-label codebook (`review`, `build`, `research`, `other`) labelled 17 of 18 synthetic prompts as intended; the miss was a mixed explain-and-judge prompt, which fell to `other`. One local classify call (the call alone, not the hook path) took 2.4 to 7.1 s (median about 3 s over 18 calls) on `claude-haiku-5-5`.
+- **Method:** `claude -p --settings <throwaway>` with tee hooks on a throwaway project and one synthetic Agent call; shape read with `jq` on key names and types only. Classifier runs through the built `classifySubagentLocally` on synthetic prompts.
+- **Impact:** a label can come from `PostToolUse` already registered, no new hook. Whether the classified prompt may leave the machine is a consent decision, not a payload one. EV2 is unchanged until that is decided.
+
 ### 2026-11-04: Cursor runs the hooks in a project's `.claude/settings.json`, with Cursor-shaped payloads [Status: CONFIRMED]
 
 - **Tool(s):** cursor, claude_code

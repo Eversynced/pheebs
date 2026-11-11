@@ -1,4 +1,5 @@
 import { classifyMode } from "./backend-config.js";
+import { MODEL, SUBAGENT_CODEBOOK_VERSION } from "./codebook.js";
 import { AI_TOOLS, type AiTool } from "./hooks/types.js";
 import { optOutStatus, readStoredToken } from "./token.js";
 import { type ClassifyResult, getTransport } from "./transport.js";
@@ -65,4 +66,31 @@ async function classifyOnMachine(
   // Imported here so hooks outside local mode never load the spawn path and the codebook.
   const { classifyLocally } = await import("./classify-local.js");
   return classifyLocally(prompt);
+}
+
+// Kept here, not imported from the spawn path, so a hook outside local mode never loads it.
+const SUBAGENT_CLASSIFIER_VERSION = `claude-code:${MODEL}@${SUBAGENT_CODEBOOK_VERSION}`;
+
+export interface SubagentClassification {
+  label: string;
+  classifier_version: string;
+}
+
+/**
+ * Label the prompt a model wrote when it spawned a subagent, or undefined when it may not or
+ * cannot be labeled. Unlike `classifyPrompt` there is no `unclassified` stand-in: a gated or
+ * failed run leaves the field absent, so a missing label is never read as the classifier's own
+ * `other`. Only `classify local` runs this, on Claude Code, under the same opt-out check as a
+ * developer prompt. The remote classifier has no subagent codebook, so `on` sends nothing.
+ */
+export async function classifySubagentPrompt(
+  prompt: string,
+  tool: AiTool,
+): Promise<SubagentClassification | undefined> {
+  if (classifyMode() !== "local" || !prompt || tool !== AI_TOOLS.CLAUDE_CODE) return undefined;
+  const optOut = optOutStatus();
+  if (optOut === "opted_out" || optOut === "unknown") return undefined;
+  const { classifySubagentLocally } = await import("./classify-local.js");
+  const label = await classifySubagentLocally(prompt);
+  return label ? { label, classifier_version: SUBAGENT_CLASSIFIER_VERSION } : undefined;
 }

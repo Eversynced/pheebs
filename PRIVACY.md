@@ -130,7 +130,9 @@ never the surrounding cache or cost estimates the same payload carries), and on 
 `task_id`, `task_subject`, `teammate_name`, and on the Agent tool's `tool_use_completed` the model the
 subagent ran on (`subagent_model`, read from the result's `resolvedModel`), the call's own `model`
 (`requested_model`) and its `agent_type`. Each model id is kept only if it is a short model-id token,
-and the subagent's prompt and output in the same response are never read.
+and the subagent's output in the same response is never read. The subagent's prompt is read only
+under `classify local`, to derive one label, `subagent_prompt_intent`, and is then discarded (see
+below).
 
 **Cursor also:** `conversation_id`, `generation_id`, `composer_mode`, `cursor_version`, `sandbox`,
 `status`, `loop_count`, token counts (`input_tokens`, `output_tokens`, `cache_read_tokens`,
@@ -225,6 +227,11 @@ gets `prompt_intent: "unclassified"` and nothing is run ([`src/classify-local.ts
   too, so a managed hook or a managed telemetry `env` block runs there as it does in your session.
 - **Windows needs the native `claude.exe`.** An npm-installed `claude.cmd` cannot be started
   without a shell, so every prompt records `unclassified`.
+- **Subagent prompts too.** The prompt Claude writes when it hands work to a subagent is sent to
+  the same child, under the same opt-out check, and yields one label, `subagent_prompt_intent`
+  (`review`, `build`, `research` or `other`), on the Agent tool's event. You did not type that
+  prompt, but it is derived from your session. Only `classify local` does this; with `classify on`
+  nothing is sent.
 - **The label still reaches your backend**, as `prompt_intent` on the event, with a
   `classifier_version` that starts `claude-code:`.
 

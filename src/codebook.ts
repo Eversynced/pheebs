@@ -59,3 +59,29 @@ export const INTENT_SCHEMA = {
   required: ["label", "requests_verification", "task_scope"],
   additionalProperties: false,
 };
+
+// A second, client-owned codebook for the prompt a model writes when it spawns a subagent. The
+// developer-prompt codebook above cannot tell a review from a build, because both are `task`, so
+// this one answers a different question: what kind of work was the subagent asked to do.
+export const SUBAGENT_CODEBOOK_VERSION = "sb1";
+
+export const SUBAGENT_CODEBOOK = `You classify a single prompt that one AI coding agent wrote to hand work to a sub-agent into exactly one kind of work.
+
+Assign exactly one label from this closed set:
+- review: asks the sub-agent to judge existing work (code, a diff, a design, a plan, tests, a migration) for correctness, security, risk or quality, and to report findings. Nothing is to be changed.
+- build: asks the sub-agent to change something (implement, add, fix, refactor, write or update tests, migrate, rename, generate).
+- research: asks the sub-agent to find or explain something (locate code, list callers, summarize how a thing works, look up a fact) without judging its quality and without changing anything.
+- other: fits none of these, or the prompt is too thin to tell.
+
+A prompt that asks for a review and also for the problems to be fixed is build. A prompt that mentions reviewing only as background to a change is build. Prefer other over forcing a fit; never choose review unless judging existing work is the whole request.
+
+Respond only via the structured output schema.`;
+
+export const SUBAGENT_LABELS: readonly string[] = ["review", "build", "research", "other"];
+
+export const SUBAGENT_SCHEMA = {
+  type: "object",
+  properties: { label: { type: "string", enum: SUBAGENT_LABELS } },
+  required: ["label"],
+  additionalProperties: false,
+};
