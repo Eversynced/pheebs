@@ -6,6 +6,37 @@ Pheebs was developed privately before this repository was opened. That history i
 so this changelog starts at the first public release rather than linking commits that cannot
 be resolved.
 
+## [1.4.0](https://github.com/Eversynced/pheebs/compare/v1.3.0...v1.4.0) (2026-11-11)
+
+
+### Features
+
+* **hooks:** record the model a Claude Code subagent ran on ([9b632a7](https://github.com/Eversynced/pheebs/commit/9b632a779864fca5651e2d2b399b95ca0157bc1f))
+* **hooks:** record the model a Claude Code subagent ran on ([a684f65](https://github.com/Eversynced/pheebs/commit/a684f657330b126ea30a48a3b64f368e90cac222))
+* **intent:** record the order and operators of a chained shell command ([2823f37](https://github.com/Eversynced/pheebs/commit/2823f370c1d6f687b974698c11ccd37f8adae728))
+* **repertoire:** credit a ship gated by a test in its own row ([7a71bd9](https://github.com/Eversynced/pheebs/commit/7a71bd97b13b9ae06ba11e87849cbe5833f2f8f1))
+
+
+### Bug Fixes
+
+* **hooks:** bound the agent type read from an Agent call to an identifier shape ([cb5dacf](https://github.com/Eversynced/pheebs/commit/cb5dacfe4a2395c2eb64ff5b34488d1f8347a552))
+* **hooks:** count a subagent model only when someone chose it ([5269fe9](https://github.com/Eversynced/pheebs/commit/5269fe9450713da4523745e879ba3377f2860266))
+* **hooks:** ignore Cursor payloads on the Claude Code hook path ([cbe1640](https://github.com/Eversynced/pheebs/commit/cbe16403b17c372f29c5ab202b53ef41d23e526c))
+* **hooks:** ignore Cursor payloads on the Claude Code hook path ([1579dc7](https://github.com/Eversynced/pheebs/commit/1579dc7e893eb5a5e1b4d9de912978650b28128f))
+* **intent:** classify every segment of a chained shell command ([4b07db6](https://github.com/Eversynced/pheebs/commit/4b07db62d76644c3332d3ffc649096740eff56bd))
+* **intent:** classify every segment of a chained shell command ([183bdd5](https://github.com/Eversynced/pheebs/commit/183bdd5bedfcb3795d221cda0f545715b365112d))
+* **intent:** derive vcs_action from shell tools only ([ec3eace](https://github.com/Eversynced/pheebs/commit/ec3eacea78bed0c07e4dab7035fce8298de77bb8))
+* **intent:** do not read an arithmetic shift as a heredoc ([b76c962](https://github.com/Eversynced/pheebs/commit/b76c9623f3065089da8fbbcd35ab21ba3590322a))
+* **intent:** ignore separators inside quoted text and heredocs ([f3c3ac9](https://github.com/Eversynced/pheebs/commit/f3c3ac9e7d8c10cfa71b3ed68ee86469981afaf0))
+* **intent:** match multi-word commands across tabs and repeated spaces ([6653b11](https://github.com/Eversynced/pheebs/commit/6653b11554ce88822755e8190e2693919654e918))
+* **intent:** read comments, control keywords and background jobs, and keep write actions in chains ([6490e36](https://github.com/Eversynced/pheebs/commit/6490e36bf4271f174312f9c1af0cc40d36885d7d))
+* **repertoire:** count every subagent model toward multi-model use ([1011c8b](https://github.com/Eversynced/pheebs/commit/1011c8b4e35f6ecabf37885b8815ca9e87479a6c))
+
+
+### Performance Improvements
+
+* **intent:** mask quoted text in one pass ([325defe](https://github.com/Eversynced/pheebs/commit/325defe153906fbdb5bf7d3d085b475e4c7bc104))
+
 ## [1.3.0](https://github.com/Eversynced/pheebs/compare/v1.2.0...v1.3.0) (2026-11-02)
 
 
