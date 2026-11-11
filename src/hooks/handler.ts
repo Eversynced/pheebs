@@ -600,6 +600,15 @@ const EXTRACTORS: Record<AiTool, Extractor> = {
   [AI_TOOLS.CODEX]: extractCodexExtra,
 };
 
+// Claude Code names its hook events in PascalCase and never sends `cursor_version`.
+function isCursorPayload(payload: Record<string, unknown>): boolean {
+  // Valid JSON that is not an object (`42`, `null`) is no Cursor payload; the `in` check would throw.
+  if (typeof payload !== "object" || payload === null) return false;
+  if ("cursor_version" in payload) return true;
+  const hookName = payload.hook_event_name;
+  return typeof hookName === "string" && /^[a-z]/.test(hookName);
+}
+
 export async function handleHookEvent(
   tool: AiTool,
   eventName: string,
@@ -633,6 +642,10 @@ export async function handleHookEvent(
     console.error("pheebs: failed to parse hook stdin JSON, ignoring");
     return;
   }
+
+  // Cursor also runs the hooks in a project's `.claude/settings.json`; its own install already
+  // logs those events, so taking them here would record each one twice as `claude_code`.
+  if (tool === AI_TOOLS.CLAUDE_CODE && isCursorPayload(payload)) return;
 
   if (process.env.PHEEBS_DEBUG) {
     console.error(`pheebs debug [${tool}/${eventName}]: ${JSON.stringify(payload, null, 2)}`);
