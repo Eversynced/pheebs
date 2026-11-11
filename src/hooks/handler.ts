@@ -37,6 +37,21 @@ function readCommand(value: unknown): string | undefined {
   return undefined;
 }
 
+// Model ids and agent types are short tokens. A value outside this shape, such as a
+// Bedrock inference-profile ARN carrying an account id or a path, is dropped rather than logged.
+const ID_TOKEN = /^[A-Za-z0-9._:@[\]-]{1,100}$/;
+
+function readIdToken(value: unknown): string | undefined {
+  return typeof value === "string" && ID_TOKEN.test(value) ? value : undefined;
+}
+
+// The Agent tool's result names the model the subagent ran on. Only that token
+// is read, so the subagent's prompt and output in the same response stay out.
+function readResolvedModel(toolResponse: unknown): string | undefined {
+  if (typeof toolResponse !== "object" || toolResponse === null) return undefined;
+  return readIdToken((toolResponse as Record<string, unknown>).resolvedModel);
+}
+
 // Claude Code's Skill tool carries the skill name as `tool_input.skill`. Only
 // that token is captured, keeping the rest of the input out of telemetry.
 function readSkillName(value: unknown): string | undefined {
@@ -270,6 +285,20 @@ export function extractClaudeExtra(
     if (eventName === "tool_use_completed") {
       const linesChanged = readLinesChanged(toolName, payload.tool_response);
       if (linesChanged !== undefined) extra.lines_changed = linesChanged;
+      // SubagentStart carries no model, but the Agent call's result names the one
+      // the subagent resolved to. The type and the call's own model ride beside it
+      // as facts only: Claude fills in `model` itself, so neither shows who picked.
+      if (toolName === "Agent") {
+        const resolved = readResolvedModel(payload.tool_response);
+        if (resolved) extra.subagent_model = resolved;
+        const input = payload.tool_input as Record<string, unknown> | null | undefined;
+        if (typeof input === "object" && input !== null) {
+          const agentType = readIdToken(input.subagent_type);
+          if (agentType) extra.agent_type = agentType;
+          const requested = readIdToken(input.model);
+          if (requested) extra.requested_model = requested;
+        }
+      }
     }
   }
 

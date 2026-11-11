@@ -58,6 +58,13 @@ Clients written against contract 1.6.0 send `event_id` on every envelope, a UUID
 same across resends; older clients omit it. Store it as a unique key if you can; a backend that
 ignores it keeps it as an extra field.
 
+Contract 1.7.0 adds the model a Claude Code subagent ran on. An `Agent` call's
+`tool_use_completed` carries `subagent_model`, with `requested_model` and `agent_type` beside it.
+Claude fills in the call's `model` itself, so `requested_model` does not show that a person chose
+the model; count `subagent_model` for every subagent. `agent_type` now also rides on that event,
+so count subagents on `subagent_spawned`, never on `agent_type` being set, or each one counts
+twice.
+
 ## `/ingest/batch` (optional)
 
 `{ "events": [envelope, ...], "droppedSinceLastSend": n }`, at most 500 events. The client writes

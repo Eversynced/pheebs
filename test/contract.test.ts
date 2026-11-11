@@ -21,8 +21,13 @@ describe("openapi.yaml", () => {
     expect(envelopeEventEnum().sort()).toEqual(Object.values(EVENTS).sort());
   });
 
-  it("carries the version that introduced the batch route", () => {
-    expect(spec).toContain('\n  version: "1.6.0"\n');
+  it("carries the version that introduced the subagent model fields", () => {
+    expect(spec).toContain('\n  version: "1.7.0"\n');
+  });
+
+  it("documents the subagent model fields an Agent call carries", () => {
+    expect(spec).toContain("\n        subagent_model:\n");
+    expect(spec).toContain("\n        requested_model:\n");
   });
 
   it("documents the batch route and the id it deduplicates on", () => {
