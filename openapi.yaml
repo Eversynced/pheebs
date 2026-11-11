@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.8.0"
+  version: "1.9.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -540,11 +540,13 @@ components:
             `build`) anywhere in the chain wins, so `npm test && git push` is `test_run`, not `vcs`.
         vcs_action:
           type: string
-          enum: [commit, push, pr_create, other]
+          enum: [worktree, commit, push, pr_create, other]
           description: |
             On a `vcs` row, and on any shell row where a write action ran, whatever its
             `tool_intent`. A chain reports its strongest write. Find writes by this field, never
-            by `tool_intent = 'vcs'`, or chained writes are missed.
+            by `tool_intent = 'vcs'`, or chained writes are missed. `worktree` is `git worktree add`
+            only. It is not a ship: count commits, pushes and PRs by listing `commit`, `push` and
+            `pr_create`, never as `vcs_action != 'other'`.
         command_sequence:
           type: string
           description: |
