@@ -134,6 +134,8 @@ interface Practice {
   cells: Record<Harness, Cell>;
   /** Whether the span holds an occurrence the detector could not decide either way. */
   open?: (days: PracticeDay[]) => boolean;
+  /** Whether the whole window holds nothing the detector reads, so its silence says nothing. */
+  blind?: (days: PracticeDay[]) => boolean;
 }
 
 const flag = (name: Flag) => (days: PracticeDay[]) => days.some((d) => d.flags.has(name));
@@ -168,7 +170,11 @@ const all = (since: string): Record<Harness, Cell> => ({
 });
 
 const PRACTICES: Record<string, Practice> = {
-  MD1: { fired: distinct("md1_models"), cells: all("0.3.0") },
+  MD1: {
+    fired: distinct("md1_models"),
+    blind: (days) => days.every((d) => d.md1_models.size === 0),
+    cells: all("0.3.0"),
+  },
   MD2: { fired: (days) => new Set(days.map((d) => d.ai_tool)).size >= 2, cells: all("0.2.4") },
   MD3: {
     fired: distinct("md3_efforts"),
@@ -551,7 +557,7 @@ function practiceStates(
       if (firedWeeks.length + undecided.length >= 3) return "insufficient_data";
     }
     if (practice.fired(days)) return "adopted";
-    return open?.(days) ? "insufficient_data" : "unobserved";
+    return open?.(days) || practice.blind?.(days) ? "insufficient_data" : "unobserved";
   };
 
   return Object.fromEntries(Object.entries(PRACTICES).map(([id, p]) => [id, stateOf(id, p)]));
