@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.6.0"
+  version: "1.7.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -497,6 +497,25 @@ components:
           description: On `command_expanded`, e.g. `slash_command`.
         agent_type:
           type: string
+          description: |
+            On `subagent_spawned` and `subagent_completed` for every tool, and for
+            `ai_tool: claude_code` also on an `Agent` call's `tool_use_completed`, from the call's
+            `subagent_type`. Count subagents on `subagent_spawned`, never on `agent_type` being
+            set, or each Claude Code subagent counts twice.
+        subagent_model:
+          type: string
+          description: |
+            The model a subagent ran on. For `ai_tool: claude_code`, on an `Agent` call's
+            `tool_use_completed`, from the result's `resolvedModel`, a full model id. Cursor sets it
+            on `subagent_spawned`, passed through verbatim, and reports `default` on Auto. Kept only
+            when it is a short id token.
+        requested_model:
+          type: string
+          description: |
+            `ai_tool: claude_code` only, beside `subagent_model`: the Agent call's own `model`, as
+            passed (e.g. `haiku`). Claude fills it in itself, so it is a fact about the call, not
+            evidence that a person chose the model. Absent when the model came from the agent's
+            definition or the parent session.
         agent_id:
           type: string
         is_interrupt:

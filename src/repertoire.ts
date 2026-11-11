@@ -301,6 +301,11 @@ function addFacts(day: PracticeDay, row: Row): void {
   const model = filled(row, "model");
   const canonical = canonicalModel(model);
   if (canonical) day.md1_models.add(canonical);
+  const subagentModel = filled(row, "subagent_model");
+  if (subagentModel && event === "tool_use_completed") {
+    const canonicalSubagent = canonicalModel(subagentModel);
+    if (canonicalSubagent) day.md1_models.add(canonicalSubagent);
+  }
   const effort = filled(row, "effort");
   if (effort) day.md3_efforts.add(effort);
   const mode = filled(row, "permission_mode");

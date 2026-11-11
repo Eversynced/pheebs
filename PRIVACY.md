@@ -125,7 +125,10 @@ hook payload by the three extractors in [`src/hooks/handler.ts`](./src/hooks/han
 `background_task_count`, `session_cron_count`, on a mid-session model switch `from_model`,
 `to_model` and `switch_source` (two model ids and the vendor's own coarse reason for the switch —
 never the surrounding cache or cost estimates the same payload carries), and on background tasks
-`task_id`, `task_subject`, `teammate_name`.
+`task_id`, `task_subject`, `teammate_name`, and on the Agent tool's `tool_use_completed` the model the
+subagent ran on (`subagent_model`, read from the result's `resolvedModel`), the call's own `model`
+(`requested_model`) and its `agent_type`. Each model id is kept only if it is a short model-id token,
+and the subagent's prompt and output in the same response are never read.
 
 **Cursor also:** `conversation_id`, `generation_id`, `composer_mode`, `cursor_version`, `sandbox`,
 `status`, `loop_count`, token counts (`input_tokens`, `output_tokens`, `cache_read_tokens`,
