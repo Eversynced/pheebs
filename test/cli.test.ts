@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -97,6 +98,124 @@ describe("hook stdin", () => {
     );
     const toolRow = rows.find((r) => r.event === "tool_use_completed");
     expect(toolRow?.tool_intent).toBe("test_run");
+  });
+});
+
+describe("Claude Code hook given a Cursor payload", () => {
+  const cursorStart = {
+    hook_event_name: "sessionStart",
+    conversation_id: "c-1",
+    generation_id: "g-1",
+    cursor_version: "9.9.9",
+    model: "synthetic-model",
+  };
+
+  it("logs nothing for a Cursor session start", () => {
+    expect(runHookRows(["hook", "session_started"], cursorStart)).toEqual([]);
+  });
+
+  it("logs nothing for a Cursor tool event", () => {
+    const rows = runHookRows(["hook", "tool_use_completed"], {
+      hook_event_name: "postToolUse",
+      conversation_id: "c-1",
+      cursor_version: "9.9.9",
+      tool_name: "Shell",
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it("drops a camelCase event name even without cursor_version", () => {
+    const rows = runHookRows(["hook", "session_started"], {
+      ...cursorStart,
+      cursor_version: undefined,
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it("drops a payload with cursor_version even if the event name is PascalCase", () => {
+    const rows = runHookRows(["hook", "session_started"], {
+      hook_event_name: "SessionStart",
+      session_id: "s-1",
+      cursor_version: "9.9.9",
+    });
+    expect(rows).toEqual([]);
+  });
+
+  // A configured backend that nothing listens on, with the debug sink off, so a hook that
+  // does not drop the event leaves a file in the send queue.
+  function queuedFiles(payload: Record<string, unknown>): string[] {
+    const home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
+    try {
+      runHookRows(["hook", "session_started"], payload, undefined, {
+        home,
+        extraEnv: { PHEEBS_DEBUG: "" },
+        setupHome: (dir) => {
+          mkdirSync(join(dir, ".pheebs"), { recursive: true });
+          writeFileSync(
+            join(dir, ".pheebs", "config.json"),
+            JSON.stringify({ baseUrl: "http://127.0.0.1:1" }),
+          );
+          writeFileSync(
+            join(dir, ".pheebs", ".token"),
+            JSON.stringify({ token: "pheebs_e2e", id: "tok-e2e" }),
+          );
+        },
+      });
+      const root = join(home, ".pheebs", "outbox");
+      if (!existsSync(root)) return [];
+      const files = readdirSync(root, { recursive: true, withFileTypes: true }).filter((e) =>
+        e.isFile(),
+      );
+      // A flusher outlives its hook by design; stop the one this run started.
+      for (const lock of files.filter((e) => e.name === "flush.lock")) {
+        try {
+          process.kill(
+            Number(readFileSync(join(lock.parentPath, lock.name), "utf-8").split("\n")[0]),
+          );
+        } catch {}
+      }
+      return files.filter((e) => e.name.endsWith(".json")).map((e) => e.name);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }
+
+  it("queues nothing for a Cursor payload, but does for a Claude Code one", () => {
+    expect(queuedFiles({ ...cursorStart })).toEqual([]);
+    expect(
+      queuedFiles({ hook_event_name: "SessionStart", session_id: "s-3" }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("does not throw on JSON stdin that is not an object", () => {
+    for (const input of ["42", "true", '"x"']) {
+      expect(() => runHookRows(["hook", "session_started"], undefined, input)).not.toThrow();
+    }
+  });
+
+  it("still logs a Claude Code payload", () => {
+    const rows = runHookRows(["hook", "session_started"], {
+      hook_event_name: "SessionStart",
+      session_id: "s-1",
+      source: "startup",
+    });
+    expect(rows.some((r) => r.event === "session_started" && r.ai_tool === "claude_code")).toBe(
+      true,
+    );
+  });
+
+  it("still logs a PascalCase payload that carries no cursor_version", () => {
+    const rows = runHookRows(["hook", "tool_use_completed"], {
+      hook_event_name: "PostToolUse",
+      session_id: "s-2",
+      tool_name: "Bash",
+    });
+    expect(rows.some((r) => r.event === "tool_use_completed")).toBe(true);
+  });
+
+  it("does not drop Cursor's own hook path", () => {
+    const rows = runHookRows(["hook-cursor", "session_started"], cursorStart);
+    expect(rows.some((r) => r.event === "session_started" && r.ai_tool === "cursor")).toBe(true);
   });
 });
 

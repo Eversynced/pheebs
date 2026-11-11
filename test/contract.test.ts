@@ -21,6 +21,11 @@ describe("openapi.yaml", () => {
     expect(envelopeEventEnum().sort()).toEqual(Object.values(EVENTS).sort());
   });
 
+  it("documents the subagent model fields an Agent call carries", () => {
+    expect(spec).toContain("\n        subagent_model:\n");
+    expect(spec).toContain("\n        requested_model:\n");
+  });
+
   it("carries the version that introduced command_sequence", () => {
     expect(spec).toContain('\n  version: "1.8.0"\n');
   });
