@@ -226,7 +226,7 @@ Spawn events never feed Artifacts. A custom sub-agent definition is an artifact 
 | EV2 | Review pass | `role = review` sub-agent spawns | 🟡 table-only | 🟡 | 🟡 | Stat | Live |
 | EV3 | Eval harness present | Scan `eval_harness` | 🟢 presence | 🟢 | 🟢 | Stat, feeds TS3 | Live |
 | EV4 | Fix loop: failing `test_run`, then edit, then passing `test_run`, one session | Event sequence over `test_run` outcomes | 🟡 Windows unverified, see below | 🟡 | 🟡 | Pattern | Live |
-| EV5 | Test-gated ship: `test_run` shortly before `vcs_action` in {commit, push, pr_create}, same session | Event sequence over `test_run` + `vcs_action` | 🟡 Windows unverified, see below | 🟡 | 🟡 | Pattern | Live |
+| EV5 | Test-gated ship: `test_run` shortly before `vcs_action` in {commit, push, pr_create}, same session | Event sequence over `test_run` + `vcs_action`, or one row whose `command_sequence` shows a test linked to the ship by `&&` only | 🟡 Windows unverified, see below | 🟡 | 🟡 | Pattern | Live |
 
 EV1 stays 🟡 by nature: shell commands are an open world, so the keyword table undercounts newer and bespoke runners. It undercounts, it never fabricates, and Layer 2's verification coverage runs on the same intent table. The boundary in one sentence: **Layer 1 counts whether a practice occurs, Layer 2 rates the judgement behind what ships, on both the output and the input side.** Same events, different math.
 

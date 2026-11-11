@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.7.0"
+  version: "1.8.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -534,10 +534,25 @@ components:
         tool_intent:
           type: string
           enum: [test_run, build, typecheck, lint, vcs, read, edit, other]
-          description: Derived locally from the command; the command itself is never sent.
+          description: |
+            Derived locally from the command; the command itself is never sent. Every segment of
+            a chained shell command is classified, and a check (`test_run`, `typecheck`, `lint`,
+            `build`) anywhere in the chain wins, so `npm test && git push` is `test_run`, not `vcs`.
         vcs_action:
           type: string
           enum: [commit, push, pr_create, other]
+          description: |
+            On a `vcs` row, and on any shell row where a write action ran, whatever its
+            `tool_intent`. A chain reports its strongest write. Find writes by this field, never
+            by `tool_intent = 'vcs'`, or chained writes are missed.
+        command_sequence:
+          type: string
+          description: |
+            On a shell row with two or more segments: each segment's tag, joined by the operators
+            that separated them (`&&`, `||`, `;`, `|`, `&`; a newline reads as `;`), e.g.
+            `test_run && push`. A segment's tag is its write action when it is one, else its
+            intent. Absent for a single command, stops at 32 segments, and never holds command
+            text. Whether a chain gated a write is the reader's call.
         command_name:
           type: string
           description: A slash command or skill name.
