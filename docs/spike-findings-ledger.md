@@ -45,6 +45,41 @@ privacy line.
 
 ## Findings
 
+### 2026-11-11: Claude Code ignores OTel exporter variables in a repository's settings files, so a project-local install exports nothing [Status: CONFIRMED for the two repository files on Claude Code 2.1.322, headless; user-level export is DOCUMENTED only]
+
+- **Tool(s):** claude_code
+- **Hook / event:** none; the OTLP exporter configured by `syncClaudeOtelEnv` in `src/otel.ts`
+- **Claim (doc/assumption):** the `env` block `pheebs init` writes into the project-local `.claude/settings.local.json` turns on OTel export for that repo.
+- **Finding:** it does not. With the same `env` (telemetry switch, `OTEL_*` exporters, an OTLP/HTTP endpoint on localhost) a local receiver saw 0 requests when the block sat in the project's `.claude/settings.local.json` or `.claude/settings.json`, and 6 requests (`/v1/logs`, `/v1/metrics`) when the same block was passed through `--settings`. The vendor doc states the rule: exporter variables in a repository's `.claude/settings.json` and `.claude/settings.local.json` are ignored, so a repo cannot turn telemetry on or choose where it goes ([monitoring usage](https://code.claude.com/docs/en/monitoring-usage)). Per the doc only the user-level file, the shell or managed settings carry it; no run here used the real user-level file, so that half is DOCUMENTED, not verified.
+- **Method:** throwaway git repo under the scratchpad, `claude -p --input-format stream-json --output-format stream-json` with `CLAUDE_CODE_ENTRYPOINT=claude-desktop`, `--setting-sources project` (or `project,local`) against `--setting-sources "" --settings <file>`; a stdlib HTTP receiver counted POSTs by path. Request counts and paths only, no bodies read. No user-level settings were touched.
+- **Impact:** capped-by-tool for the default scope. `init` defaults to project-local, so a project-scoped Claude Code install gets hooks but, per the doc, no `token.usage` or `cost.usage`; user-level installs are the ones expected to export. Whether `init`, `doctor` and the README should say so is a follow-up, not decided here. Not re-checked on other Claude Code versions.
+
+### 2026-11-11: Claude desktop app: session model and OTel [Status: UNVERIFIED for the app; the CLI paths it shares were checked, see Finding]
+
+- **Tool(s):** claude_code (desktop app Code tab)
+- **Hook / event:** `SessionStart` → `session_started.model`; OTel `claude_code.token.usage` / `cost.usage` `model` attribute
+- **Claim (doc/assumption):** the desktop app can send a session model on `SessionStart` and export OTel usage like the CLI.
+- **Finding, VERIFIED here by CLI proxy only (no desktop app on this machine; the stream-json run with the desktop entrypoint is the CLI's SDK path, not the app's launcher):**
+  - `SessionStart` carried no `model` in three runs on Claude Code 2.1.322: `claude -p`, `claude -p --model sonnet`, and `claude -p --input-format stream-json --output-format stream-json` with `CLAUDE_CODE_ENTRYPOINT=claude-desktop`. Keys were `cwd`, `hook_event_name`, `session_id`, `source`, `transcript_path`; the stream-json run added `scratchpad_dir`. So an explicit `--model` does not put it back.
+  - Settings `env` carrying the telemetry switch and `OTEL_*` exports from a non-repository source: with `--setting-sources "" --settings <file>` the receiver got `/v1/logs` and `/v1/metrics` under the desktop entrypoint, with no hook involved. Under the repository files it gets nothing (entry above). That the desktop app itself honors `env` is DOCUMENTED below, not verified.
+- **Finding, DOCUMENTED:**
+  - `SessionStart` `model` is "the active model identifier. It can be omitted, for example after `/clear` or when a session is restored through conversation recovery"; "Claude Code doesn't always include it" ([hooks](https://code.claude.com/docs/en/hooks)). The doc names no surface where it is guaranteed, and no desktop-specific rule. The same page says the Desktop app and the VS Code extension host Claude Code and fire the same hook events.
+  - The desktop Code tab reads `env` from `~/.claude/settings.json` for local sessions, but ignores a variable already in the environment Desktop starts the session with, and Desktop sets some itself (`API_TIMEOUT_MS`, `ANTHROPIC_BASE_URL`); SSH sessions read the remote host's file ([desktop](https://code.claude.com/docs/en/desktop)). It reads managed settings and passes its own policy down.
+  - The OpenTelemetry form under Monitoring in the admin console applies to Cowork sessions only: "neither the terminal CLI nor the Code tab exports to a collector you set there". Code tab sessions export through managed settings or `~/.claude/settings.json`, and report `app.entrypoint` `claude-desktop` when `OTEL_METRICS_INCLUDE_ENTRYPOINT` is on. `model` is an attribute on `token.usage`, `cost.usage` and `lines_of_code.count`, not on `session.count` ([monitoring usage](https://code.claude.com/docs/en/monitoring-usage)).
+  - Backend counts from the 2026-11-04 entry below: 0 of 210 desktop `session_started` rows carried `model`. That is an observation, not proof of a vendor cap: it narrows the 2026-11-04 claim below to "seen on the backend for one user". A report of no OTel usage rows for the same user has no source in this ledger. Read with the repository-settings rule above, a project-local pheebs install would explain missing OTel without any desktop cap.
+- **UNKNOWN:**
+  - Whether the desktop app ever sends `model` on `SessionStart` (the proxy is the CLI's SDK path, not the app's own launcher), and whether the app reads user-level `settings.json` `env` for `OTEL_*` on a desktop user's machine.
+  - Whether that user's pheebs install is project-local or `--global`.
+  - Whether the changelog records a change; the visible part of it (to 2.1.311) has no entry on either point.
+- **Method:** `claude -p` x2 and one stream-json run on 2.1.322 with a `SessionStart` capture hook in a throwaway repo; the OTLP receiver from the entry above; vendor pages read in full for the sections cited. Key names and request counts only.
+- **Steps for a desktop user (synthetic only, about 10 minutes):**
+  1. Set a backend endpoint and token (`pheebs config set base-url <url>`, `pheebs config set token <token>`), then `pheebs init --global` without `--no-otel`, so `~/.claude/settings.json` holds the hooks and the OTel `env`. Back that file up first, and remove any project-local pheebs install (`pheebs doctor` flags a double install), or every hook fires twice.
+  2. Quit and reopen the desktop app, open the Code tab, start a new local session in an empty throwaway folder, and send `reply with the word ok`. Then switch the model once with the model picker or `/model`; "no way to switch" is a valid answer.
+  3. Run `ls -t ~/.pheebs/logs/*.jsonl | head -1`, then `grep session_started <that file>`. Look at the line: is a `model` field present, and what shape (a model id string, e.g. `claude-sonnet-5`)? Then look for a `model_switched` line with `from_model` and `to_model`.
+  4. Wait a few minutes, then ask whoever runs the backend whether OTel rows arrived for that session id and carry a `model` (`pheebs insights` does not show them).
+  5. Report three facts only: `session_started` has `model` yes/no; `model_switched` fired yes/no; usage rows arrived yes/no. Send no file contents. Then restore the settings backup.
+- **Impact:** none yet; `session_started.model` stays absent-not-zero, and MD1 for a desktop user rests on `model_switched` and tokens-by-model. Neither cap is confirmed for the app itself. If step 3 shows no `model` even with a global install, it is a vendor cap to document; if step 4 shows usage rows, the earlier gap was the install scope.
+
 ### 2026-11-04: Cursor runs the hooks in a project's `.claude/settings.json`, with Cursor-shaped payloads [Status: CONFIRMED]
 
 - **Tool(s):** cursor, claude_code
