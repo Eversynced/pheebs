@@ -71,6 +71,12 @@ any row where a write ran. Find commits and pushes by `vcs_action`: a query on
 `tool_intent = 'vcs'` misses every chained one. A chain also carries `command_sequence`, its
 segments' tags and operators in order, such as `test_run && push`.
 
+Contract 1.9.0 adds `worktree` to `vcs_action`, set when a shell command runs `git worktree add`.
+It is not a ship. Count commits, pushes and PRs by listing `commit`, `push` and `pr_create`, never
+as `vcs_action != 'other'`, or every worktree creation reads as shipped work. A chain reports its
+strongest action, so `git worktree add ../x && git commit` is `commit`, and `command_sequence`
+still shows the `worktree` segment.
+
 ## `/ingest/batch` (optional)
 
 `{ "events": [envelope, ...], "droppedSinceLastSend": n }`, at most 500 events. The client writes

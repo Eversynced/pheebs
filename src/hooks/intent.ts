@@ -20,7 +20,7 @@ export type ToolIntent =
 // gate. `tool_intent` stays coarse; this rides alongside it on `vcs`, and on any
 // other intent when a write action ran in the chain, since a check in the same
 // chain wins `tool_intent` and would otherwise hide the commit or push.
-export type VcsAction = "commit" | "push" | "pr_create" | "other";
+export type VcsAction = "worktree" | "commit" | "push" | "pr_create" | "other";
 
 // Tool names that map directly to an intent without inspecting any input.
 const TOOL_NAME_INTENTS: Record<string, ToolIntent> = {
@@ -275,9 +275,18 @@ const VCS_WRITE_ACTIONS: ReadonlyArray<{ action: VcsAction; prefixes: string[] }
   { action: "pr_create", prefixes: ["gh pr create"] },
   { action: "push", prefixes: ["git push"] },
   { action: "commit", prefixes: ["git commit"] },
+  // Creating one is the fact; list, remove and prune stay `other`. Ranked below the ship
+  // actions and never a ship itself, so a consumer counting ships by an explicit list skips it.
+  { action: "worktree", prefixes: ["git worktree add"] },
 ];
 
-const VCS_ACTION_RANK: Record<VcsAction, number> = { other: 0, commit: 1, push: 2, pr_create: 3 };
+const VCS_ACTION_RANK: Record<VcsAction, number> = {
+  other: 0,
+  worktree: 1,
+  commit: 2,
+  push: 3,
+  pr_create: 4,
+};
 
 function segmentVcsWrite(normalized: string): VcsAction {
   for (const { action, prefixes } of VCS_WRITE_ACTIONS) {

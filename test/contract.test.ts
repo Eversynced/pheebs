@@ -26,8 +26,8 @@ describe("openapi.yaml", () => {
     expect(spec).toContain("\n        requested_model:\n");
   });
 
-  it("carries the version that introduced command_sequence", () => {
-    expect(spec).toContain('\n  version: "1.8.0"\n');
+  it("carries the version that introduced the worktree vcs_action", () => {
+    expect(spec).toContain('\n  version: "1.9.0"\n');
   });
 
   it("documents command_sequence beside the fields a chain changes", () => {
