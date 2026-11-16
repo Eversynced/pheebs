@@ -2082,7 +2082,7 @@
       ],
       "expected": {
         "enabled": true,
-        "sessions": 3,
+        "sessions": 6,
         "active_weeks": 3,
         "coverage_index": {
           "recurring": 3,
