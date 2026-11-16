@@ -1975,6 +1975,17 @@
           "agent_type": "implementer"
         },
         {
+          "timestamp": "2026-10-06T11:00:00.000Z",
+          "source": "hook",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "version": "1.4.0",
+          "event": "session_started",
+          "session_id": "t0",
+          "model": "claude-sonnet-5"
+        },
+        {
           "timestamp": "2026-10-13T10:00:00.000Z",
           "source": "hook",
           "developer": "local-dev",
@@ -2011,6 +2022,17 @@
           "agent_type": "implementer"
         },
         {
+          "timestamp": "2026-10-13T11:00:00.000Z",
+          "source": "hook",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "version": "1.4.0",
+          "event": "session_started",
+          "session_id": "t1",
+          "model": "claude-sonnet-5"
+        },
+        {
           "timestamp": "2026-10-20T10:00:00.000Z",
           "source": "hook",
           "developer": "local-dev",
@@ -2045,6 +2067,17 @@
           "permission_mode": "acceptEdits",
           "subagent_model": "claude-sonnet-5",
           "agent_type": "implementer"
+        },
+        {
+          "timestamp": "2026-10-20T11:00:00.000Z",
+          "source": "hook",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "claude_code",
+          "version": "1.4.0",
+          "event": "session_started",
+          "session_id": "t2",
+          "model": "claude-sonnet-5"
         }
       ],
       "expected": {
