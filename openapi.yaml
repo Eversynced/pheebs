@@ -546,7 +546,9 @@ components:
             `tool_intent`. A chain reports its strongest write. Find writes by this field, never
             by `tool_intent = 'vcs'`, or chained writes are missed. `worktree` is `git worktree add`
             only. It is not a ship: count commits, pushes and PRs by listing `commit`, `push` and
-            `pr_create`, never as `vcs_action != 'other'`.
+            `pr_create`, never as `vcs_action != 'other'`. It is seen only when `git worktree add`
+            is typed in a shell, so Claude Code `--worktree`, Cursor parallel agents and Codex app
+            worktrees never set it. A count is a lower bound; absence does not mean no worktree use.
         command_sequence:
           type: string
           description: |

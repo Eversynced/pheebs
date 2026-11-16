@@ -77,6 +77,10 @@ as `vcs_action != 'other'`, or every worktree creation reads as shipped work. A 
 strongest action, so `git worktree add ../x && git commit` is `commit`, and `command_sequence`
 still shows the `worktree` segment.
 
+`worktree` is seen only when `git worktree add` is typed in a shell. Claude Code `--worktree`,
+Cursor parallel agents and Codex app worktrees create worktrees without a shell command, so they
+never set it. Any count is a lower bound: read its absence as unknown, never as no worktree use.
+
 ## `/ingest/batch` (optional)
 
 `{ "events": [envelope, ...], "droppedSinceLastSend": n }`, at most 500 events. The client writes
