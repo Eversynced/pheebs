@@ -45,6 +45,15 @@ privacy line.
 
 ## Findings
 
+### 2026-11-16: `subagentStart` did not fire under `cursor-agent -p` 2026.11.13, so `subagent_model` is unobserved [Status: OBSERVED on the CLI, UNVERIFIED on the IDE]
+
+- **Tool(s):** cursor
+- **Hook / event:** `subagentStart` / `subagentStop` → `subagent_spawned` / `subagent_completed`; `preToolUse` / `postToolUse` on `Task`
+- **Claim (doc/assumption):** a Cursor subagent run fires `subagentStart` with a `subagent_model` string, which MD1 could count.
+- **Finding:** in a scratch project with all five hooks registered, `cursor-agent -p` ran `Task` subagents (`generalPurpose`, `explore`, and a project subagent whose definition names `gpt-5.3-codex-low`) and each run completed, yet `subagentStart` and `subagentStop` did not fire in any of five runs that showed a `Task` call (eight runs in all; `sessionStart`, `preToolUse` and `postToolUse` fired from the same hooks file, so it was loaded). `preToolUse` and `postToolUse` fired on `Task` with `tool_input` keys `description`, `prompt`, `subagent_type`, and `run_in_background` on some runs: no `model`. The model was visible only in the `--output-format stream-json` `taskToolCall.args.model` (a plain model id, `composer-2.5` when inherited and `gpt-5.3-codex-low` when set by the subagent definition), which is request-side and not a hook surface, so those ids are not evidence of the hook value. The CLI bundle contains a `subagent_model` field in its `subagentStart` hook payload construction, so the IDE may populate it. Whether that value is a real model id or a placeholder is still unknown.
+- **Method:** raw payload capture hook writing key names, value types and model fields only; `--output-format stream-json` for the Task args; a string search of the installed CLI bundle for the `subagentStart` hook payload fields; cursor-agent 2026.11.13, synthetic prompts, several runs with session models `composer-2.5` and `gpt-5.3-codex-low`.
+- **Impact:** unobserved on the CLI 2026.11.13, not shown to be a vendor cap. Cursor `subagent_spawned.subagent_model` stays captured and uncounted in MD1: no value has been observed. Recheck on the IDE; the question of the value's format stays open until a `subagentStart` payload is captured.
+
 ### 2026-11-04: Cursor runs the hooks in a project's `.claude/settings.json`, with Cursor-shaped payloads [Status: CONFIRMED]
 
 - **Tool(s):** cursor, claude_code
