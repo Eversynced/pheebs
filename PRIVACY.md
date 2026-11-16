@@ -98,12 +98,14 @@ value is read in-process, a short tag is derived, and only the tag is persisted.
 |---|---|---|
 | `tool_intent` | the shell command or tool name | `test_run`, `build`, `typecheck`, `lint`, `vcs`, `read`, `edit`, `other` |
 | `vcs_action` | a `vcs` command | `commit`, `push`, `pr_create`, `other` |
+| `command_sequence` | a chained shell command | each segment's tag joined by its operators, such as `test_run && push`; absent for a single command |
 | `command_name` | a leading `/command`, or `tool_input.skill` | the command or skill name |
 | `mcp_server_name` | the `mcp__<server>__<method>` tool name (Claude Code, Codex), or Cursor's own field | the server name only |
 | `role` | the sub-agent's `agent_type` | `review`, `generate` |
 
 `git commit -m "fix the auth bug"` records `tool_intent: "vcs"` and `vcs_action: "commit"`. The
-message is not recorded.
+message is not recorded. `npm test && git push` also records `command_sequence: "test_run && push"`.
+That is tags and the operators between them, never the command text.
 
 ## The repo scan
 

@@ -142,12 +142,13 @@ Coordinating more than one agent or session: sub-agents for parallel or isolated
 - **A state is held, not awarded.** Placement moves in both directions as the window trails.
 - **Weeks with no sessions don't count.** Recurring is judged over active weeks only.
 
-*Insufficient data* is therefore produced by four conditions, all of them statements about the measurement:
+*Insufficient data* is therefore produced by five conditions, all of them statements about the measurement:
 
 1. fewer than 2 active weeks in the window;
 2. a detector not yet observable to the engineer for a full window;
 3. a practice whose support on the engineer's harness has not been established — the detector exists there but has never produced the value the practice needs;
-4. a competency with no judgeable anchor on the engineer's harness mix, whether its anchors are n/a or unverified.
+4. a competency with no judgeable anchor on the engineer's harness mix, whether its anchors are n/a or unverified;
+5. multi-model use (MD1) when no event in the window carries a model: one model is a fact, no model is a gap, so the engineer is not read as having used one.
 
 ## Engineer view
 

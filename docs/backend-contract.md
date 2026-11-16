@@ -65,6 +65,12 @@ the model; count `subagent_model` for every subagent. `agent_type` now also ride
 so count subagents on `subagent_spawned`, never on `agent_type` being set, or each one counts
 twice.
 
+Contract 1.8.0 classifies every segment of a chained shell command. A check anywhere in the
+chain sets `tool_intent`, so `npm test && git push` is `test_run`, and `vcs_action` now rides on
+any row where a write ran. Find commits and pushes by `vcs_action`: a query on
+`tool_intent = 'vcs'` misses every chained one. A chain also carries `command_sequence`, its
+segments' tags and operators in order, such as `test_run && push`.
+
 ## `/ingest/batch` (optional)
 
 `{ "events": [envelope, ...], "droppedSinceLastSend": n }`, at most 500 events. The client writes
