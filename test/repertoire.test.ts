@@ -233,6 +233,105 @@ describe("practiceStatesOf", () => {
     });
   });
 
+  describe("split-phase delivery through a subagent", () => {
+    const session = (...steps: [string, Fields][]) => [
+      ...base(),
+      ...steps.map(([event, fields], i) =>
+        ev(WEEKS[3], event, { session_id: "split", ...fields }, `1${i}:00:00`),
+      ),
+    ];
+    const plan: [string, Fields] = ["prompt_submitted", { permission_mode: "plan" }];
+    const start = (fields: Fields = { model: "claude-opus-5[1m]" }): [string, Fields] => [
+      "session_started",
+      fields,
+    ];
+    const agent = (fields: Fields = {}): [string, Fields] => [
+      "tool_use_completed",
+      {
+        tool_name: "Agent",
+        permission_mode: "acceptEdits",
+        subagent_model: "claude-sonnet-5",
+        agent_type: "implementer",
+        ...fields,
+      },
+    ];
+
+    it("counts a plan on one model, then a subagent on another, with no model switch", () => {
+      const rows = session(start(), plan, agent());
+      expect(practiceStatesOf(rows, TODAY).MD6).toBe("adopted");
+      expect(repertoireSection(rows, TODAY)).not.toHaveProperty("unknown_model_sessions");
+    });
+
+    it("does not count a subagent on the planning model, under any of its spellings", () => {
+      for (const subagent_model of [
+        "claude-opus-5",
+        "claude-opus-5-20260101",
+        "claude-opus-5[1m]",
+      ]) {
+        const rows = session(start(), plan, agent({ subagent_model }));
+        expect(practiceStatesOf(rows, TODAY).MD6).toBe("unobserved");
+      }
+    });
+
+    it("compares the subagent with the model the planning ended on", () => {
+      const toSonnet: [string, Fields] = [
+        "model_switched",
+        { from_model: "claude-opus-5", to_model: "claude-sonnet-5", switch_source: "command" },
+      ];
+      const same = session(start(), plan, toSonnet, plan, agent());
+      expect(practiceStatesOf(same, TODAY).MD6).toBe("unobserved");
+      const other = session(
+        start(),
+        plan,
+        toSonnet,
+        plan,
+        agent({ subagent_model: "claude-opus-5" }),
+      );
+      expect(practiceStatesOf(other, TODAY).MD6).toBe("adopted");
+    });
+
+    it("compares the subagent with the planning segment, not the segment the call ran in", () => {
+      // A switch Claude Code made is no split by itself, so only the subagent can decide these.
+      const fallback: [string, Fields] = [
+        "model_switched",
+        { from_model: "claude-opus-5", to_model: "claude-sonnet-5", switch_source: "auto" },
+      ];
+      const onSonnet = session(start(), plan, fallback, agent());
+      expect(practiceStatesOf(onSonnet, TODAY).MD6).toBe("adopted");
+      const onOpus = session(start(), plan, fallback, agent({ subagent_model: "claude-opus-5" }));
+      expect(practiceStatesOf(onOpus, TODAY).MD6).toBe("unobserved");
+    });
+
+    it("needs an execution-mode Agent call after a plan in the same session", () => {
+      const cases = [
+        session(start(), agent(), plan),
+        session(start(), plan, agent({ permission_mode: "plan" })),
+        session(start(), plan, agent({ permission_mode: undefined })),
+        session(start(), plan, ["tool_use_failed", agent()[1]]),
+        session(start(), plan, agent({ tool_name: "Bash" })),
+        session(start(), plan, agent({ subagent_model: "default" })),
+        session(start(), plan, agent({ subagent_model: "" })),
+        session(start(), plan, agent({ subagent_model: undefined })),
+        [...session(start(), plan), ev(WEEKS[3], ...agent({ session_id: "other" }), "20:00:00")],
+      ];
+      for (const rows of cases) expect(practiceStatesOf(rows, TODAY).MD6).toBe("unobserved");
+    });
+
+    it("counts a subagent after a plan on a model nothing names as undecided, never Unobserved", () => {
+      const rows = session(start({ start_source: "resume" }), plan, agent());
+      expect(practiceStatesOf(rows, TODAY).MD6).toBe("insufficient_data");
+      expect(repertoireSection(rows, TODAY).unknown_model_sessions).toBe(1);
+    });
+
+    it("names the planning model from a later switch's from_model", () => {
+      const rows = session(start({ start_source: "resume" }), plan, agent(), [
+        "model_switched",
+        { from_model: "claude-opus-5", to_model: "claude-haiku-5", switch_source: "auto" },
+      ]);
+      expect(practiceStatesOf(rows, TODAY).MD6).toBe("adopted");
+    });
+  });
+
   it("reads one model under its date and context-window suffixes", () => {
     const rows = [
       ...base(),

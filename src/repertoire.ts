@@ -402,6 +402,8 @@ export function bySession(timed: Timed[]): Timed[][] {
 // reads as not deliberate.
 const DELIBERATE_SWITCHES = new Set(["command", "picker", "sdk"]);
 
+type Verdict = "split" | "none" | "open";
+
 /** A stretch of a session on one model, which is undefined until something names it. */
 interface Segment {
   model?: string;
@@ -413,7 +415,7 @@ interface Segment {
 // models that differ. The plan segment is the last one planned in: a switch made while still
 // planning moved the plan to that model, so an earlier segment is not what the execution left. A
 // model nothing named leaves it undecided rather than not a split.
-function splitBetween(segments: Segment[], plans: number[], at: number): "split" | "none" | "open" {
+function splitBetween(segments: Segment[], plans: number[], at: number): Verdict {
   const plan = Math.max(...plans);
   if (plan >= at || !segments.slice(plan + 1, at + 1).some((s) => s.deliberate)) return "none";
   const before = segments[plan].model;
@@ -422,9 +424,18 @@ function splitBetween(segments: Segment[], plans: number[], at: number): "split"
   return before !== after ? "split" : "none";
 }
 
+// A subagent's model is the execution's model without any switch, so it is read against the
+// planning segment alone. Who picked it is not in the payload, which the registry accepts.
+function subagentSplit(segments: Segment[], plans: number[], subagent: string): Verdict {
+  const before = segments[Math.max(...plans)].model;
+  if (before === undefined) return "open";
+  return before !== subagent ? "split" : "none";
+}
+
 /**
  * Split-phase delivery: an execution-mode event after a plan-mode one in the same session, on an
- * effort no plan event used, or on another model reached by a deliberate switch. The model is a
+ * effort no plan event used, on another model reached by a deliberate switch, or an Agent call
+ * whose subagent ran on a model other than the planning one. The model is a
  * timeline: `session_started.model`, then each `model_switched`, with a later switch's
  * `from_model` naming a segment whose start went unrecorded, which is how a resumed session's
  * begins. A change that stays unresolved marks its day open. Returns how many sessions in the
@@ -437,7 +448,7 @@ function markSplitPhase(sessions: Timed[][], days: Map<string, PracticeDay>): nu
     const segments: Segment[] = [{ deliberate: false }];
     const planSegments = new Set<number>();
     const planEfforts = new Set<string>();
-    const pending: { at: number; plans: number[]; day?: PracticeDay }[] = [];
+    const pending: { at: number; plans: number[]; day?: PracticeDay; subagent?: string }[] = [];
     let started = false;
     let split = false;
 
@@ -478,13 +489,20 @@ function markSplitPhase(sessions: Timed[][], days: Map<string, PracticeDay>): nu
         } else {
           pending.push({ at, plans: [...planSegments], day: target });
         }
+        const subagent =
+          event === "tool_use_completed" && field(row, "tool_name") === "Agent"
+            ? canonicalModel(filled(row, "subagent_model"))
+            : undefined;
+        if (subagent) pending.push({ at, plans: [...planSegments], day: target, subagent });
       }
     }
 
     // Read at the end, because a switch after the execution can still name a segment's model.
     let open = false;
-    for (const { at, plans, day } of pending) {
-      const verdict = splitBetween(segments, plans, at);
+    for (const { at, plans, day, subagent } of pending) {
+      const verdict = subagent
+        ? subagentSplit(segments, plans, subagent)
+        : splitBetween(segments, plans, at);
       if (verdict === "split") day?.flags.add("md6");
       if (verdict === "split" && day) split = true;
       if (verdict === "open" && day) {
