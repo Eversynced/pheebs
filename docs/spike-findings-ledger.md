@@ -354,3 +354,26 @@ privacy line.
 - **Impact:** MCP T2 moved 🟠 → 🟡 for Cursor, and the T2 evidence path is now the same
   `mcp_server_name` field on all three tools. "Across task types" still needs task
   semantics we don't capture, so the cell stays capped at 🟡.
+
+### 2026-11 — Cursor CLI `afterMCPExecution` carries `mcp_server_name`; MC1 and MC2 already count [Status: VERIFIED]
+
+- **Tool(s):** cursor (`cursor-agent` CLI 2026.10.22)
+- **Hook / event:** `beforeMCPExecution` → `tool_invoked`; `afterMCPExecution` → `tool_use_completed`
+- **Claim (doc/assumption):** Cursor sends a bare tool name (`get_issue`), so MC1's `mcp__` prefix
+  check never matches and a Cursor MCP call goes uncounted.
+- **Finding:** the bare tool name is real, but both MCP hooks also carry a string
+  `mcp_server_name` (synthetic example: `tool_name: "echo_word"`, `mcp_server_name: "spikesrv"`).
+  `afterMCPExecution` keys: `conversation_id`, `generation_id`, `model`, `tool_name`,
+  `tool_input` (string), `result_json` (string), `duration` (number), `tool_use_id`,
+  `mcp_server_name`, `session_id`, `hook_event_name`, `cursor_version`, `workspace_roots`
+  (array), `user_email`, `transcript_path`. `beforeMCPExecution` has the same identity fields plus a
+  string `command` and no `result_json` or `duration`. The generic `preToolUse` and `postToolUse`
+  hooks fire for the same call but carry no `mcp_server_name` and a `tool_input` object. Replayed
+  through the built handler, the event is written with `tool_name` and `mcp_server_name`, so MC1
+  counts through the server field and MC2 through the same field. No code change was needed.
+- **Method:** throwaway project with a stub stdio MCP server and a project-level `.cursor/hooks.json`
+  capture hook that wrote key names and value types only; `cursor-agent -p --approve-mcps --force
+  --trust` with a synthetic prompt; the captured synthetic payload replayed with `pheebs hook-cursor
+  tool_use_completed`.
+- **Impact:** none to schema or registry (MC1 and MC2 Cursor cells stay 🟢). Not checked: the Cursor
+  desktop IDE, whose payloads may differ from the CLI's.
