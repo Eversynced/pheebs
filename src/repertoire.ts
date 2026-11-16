@@ -4,6 +4,8 @@
 // (docs/ai-proficiency-model-practice-and-signal-registry.md); the states, the window and placement
 // are the model's (docs/ai-proficiency-model.md). Pure: the caller reads the log and passes `today`.
 
+import { GATED_SHIP_SEQUENCE } from "./hooks/intent.js";
+
 export type Row = Record<string, unknown>;
 
 export type PracticeState = "unobserved" | "adopted" | "recurring" | "insufficient_data" | "n/a";
@@ -134,6 +136,8 @@ interface Practice {
   cells: Record<Harness, Cell>;
   /** Whether the span holds an occurrence the detector could not decide either way. */
   open?: (days: PracticeDay[]) => boolean;
+  /** Whether the whole window holds nothing the detector reads, so its silence says nothing. */
+  blind?: (days: PracticeDay[]) => boolean;
 }
 
 const flag = (name: Flag) => (days: PracticeDay[]) => days.some((d) => d.flags.has(name));
@@ -168,7 +172,11 @@ const all = (since: string): Record<Harness, Cell> => ({
 });
 
 const PRACTICES: Record<string, Practice> = {
-  MD1: { fired: distinct("md1_models"), cells: all("0.3.0") },
+  MD1: {
+    fired: distinct("md1_models"),
+    blind: (days) => days.every((d) => d.md1_models.size === 0),
+    cells: all("0.3.0"),
+  },
   MD2: { fired: (days) => new Set(days.map((d) => d.ai_tool)).size >= 2, cells: all("0.2.4") },
   MD3: {
     fired: distinct("md3_efforts"),
@@ -366,13 +374,16 @@ function markPatterns(sessions: Timed[][], days: Map<string, PracticeDay>): void
       const isFail = event === "tool_use_failed" && intent === "test_run";
       const isEdit = completed && intent === "edit";
       const isShip = completed && SHIPS.has(field(row, "vcs_action") ?? "");
+      const gatesItself = GATED_SHIP_SEQUENCE.test(field(row, "command_sequence") ?? "");
 
       const target = days.get(`${field(row, "ai_tool") ?? ""}|${day}`);
       if (target) {
         if (isPass && firstFail !== undefined && lastEdit !== undefined && firstFail < lastEdit) {
           target.flags.add("ev4");
         }
-        if (isShip && lastTest !== undefined && (lastEdit === undefined || lastTest > lastEdit)) {
+        const testedBefore =
+          lastTest !== undefined && (lastEdit === undefined || lastTest > lastEdit);
+        if (isShip && (testedBefore || gatesItself)) {
           target.flags.add("ev5");
         }
       }
@@ -551,7 +562,7 @@ function practiceStates(
       if (firedWeeks.length + undecided.length >= 3) return "insufficient_data";
     }
     if (practice.fired(days)) return "adopted";
-    return open?.(days) ? "insufficient_data" : "unobserved";
+    return open?.(days) || practice.blind?.(days) ? "insufficient_data" : "unobserved";
   };
 
   return Object.fromEntries(Object.entries(PRACTICES).map(([id, p]) => [id, stateOf(id, p)]));

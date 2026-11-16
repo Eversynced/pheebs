@@ -458,7 +458,7 @@
         "active_weeks": 5,
         "coverage_index": {
           "recurring": 1,
-          "applicable": 23
+          "applicable": 22
         },
         "artifact_breadth": 0,
         "compaction": {
@@ -468,7 +468,7 @@
         "competencies": [
           {
             "name": "Models",
-            "state": "unobserved",
+            "state": "insufficient_data",
             "recurring_share": 0
           },
           {
@@ -688,7 +688,7 @@
         "active_weeks": 3,
         "coverage_index": {
           "recurring": 0,
-          "applicable": 15
+          "applicable": 14
         },
         "artifact_breadth": 0,
         "compaction": {
@@ -698,7 +698,7 @@
         "competencies": [
           {
             "name": "Models",
-            "state": "unobserved",
+            "state": "insufficient_data",
             "recurring_share": 0
           },
           {
@@ -1086,7 +1086,7 @@
         "active_weeks": 3,
         "coverage_index": {
           "recurring": 3,
-          "applicable": 22
+          "applicable": 21
         },
         "artifact_breadth": 0,
         "compaction": {
@@ -1096,8 +1096,8 @@
         "competencies": [
           {
             "name": "Models",
-            "state": "unobserved",
-            "recurring_share": 0.3333333333333333
+            "state": "insufficient_data",
+            "recurring_share": 0.4
           },
           {
             "name": "Artifacts",
@@ -1415,6 +1415,111 @@
           {
             "name": "Models",
             "state": "adopted",
+            "recurring_share": 0
+          },
+          {
+            "name": "Artifacts",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "MCP",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Evals",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Context management",
+            "state": "unobserved",
+            "recurring_share": 0
+          },
+          {
+            "name": "Orchestration",
+            "state": "unobserved",
+            "recurring_share": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "multi-model use: no model observed in the window reads Insufficient data, not Unobserved",
+      "today": "2026-10-21T12:00:00.000Z",
+      "events": [
+        {
+          "timestamp": "2026-08-03T10:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "cursor",
+          "session_id": "pre",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-09-29T09:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "cursor",
+          "session_id": "m0",
+          "version": "1.4.0",
+          "model": "default"
+        },
+        {
+          "timestamp": "2026-10-06T09:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "cursor",
+          "session_id": "m1",
+          "version": "1.4.0",
+          "model": "unknown"
+        },
+        {
+          "timestamp": "2026-10-13T09:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "cursor",
+          "session_id": "m2",
+          "version": "1.4.0"
+        },
+        {
+          "timestamp": "2026-10-20T09:00:00.000Z",
+          "source": "hook",
+          "event": "session_started",
+          "developer": "local-dev",
+          "codebase": "acme/app",
+          "ai_tool": "cursor",
+          "session_id": "m3",
+          "version": "1.4.0",
+          "model": ""
+        }
+      ],
+      "expected": {
+        "enabled": true,
+        "sessions": 4,
+        "active_weeks": 4,
+        "coverage_index": {
+          "recurring": 0,
+          "applicable": 16
+        },
+        "artifact_breadth": 0,
+        "compaction": {
+          "auto": 0,
+          "manual": 0
+        },
+        "competencies": [
+          {
+            "name": "Models",
+            "state": "insufficient_data",
             "recurring_share": 0
           },
           {

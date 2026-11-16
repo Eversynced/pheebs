@@ -269,6 +269,49 @@ describe("practiceStatesOf", () => {
     expect(practiceStatesOf(rows, TODAY).MD1).toBe("unobserved");
   });
 
+  describe("multi-model use with no model observed", () => {
+    it("reads Insufficient data when no session carries a model", () => {
+      expect(practiceStatesOf(base(), TODAY).MD1).toBe("insufficient_data");
+    });
+
+    it("reads Insufficient data when every model is default or unknown", () => {
+      const rows = [
+        ...base(),
+        ev(WEEKS[3], "session_started", { model: "default" }),
+        ev(WEEKS[3], "prompt_submitted", { model: "Unknown" }),
+      ];
+      expect(practiceStatesOf(rows, TODAY).MD1).toBe("insufficient_data");
+    });
+
+    it("still reads Unobserved for one real model, and Adopted for two", () => {
+      const one = [...base(), ev(WEEKS[3], "session_started", { model: "claude-opus-5" })];
+      expect(practiceStatesOf(one, TODAY).MD1).toBe("unobserved");
+      const two = [...one, ev(WEEKS[3], "prompt_submitted", { model: "claude-sonnet-5" })];
+      expect(practiceStatesOf(two, TODAY).MD1).toBe("adopted");
+    });
+
+    it("leaves the Models competency and the index denominator when no model is seen", () => {
+      const applicable = (rows: Fields[]) =>
+        (repertoireSection(rows, TODAY).coverage_index as { applicable: number }).applicable;
+      const section = repertoireSection(base(), TODAY);
+      const models = (section.competencies as { name: string; state: string }[]).find(
+        (c) => c.name === "Models",
+      );
+      expect(models?.state).toBe("insufficient_data");
+      const withModel = [...base(), ev(WEEKS[3], "session_started", { model: "claude-opus-5" })];
+      expect(applicable(base())).toBe(applicable(withModel) - 1);
+    });
+
+    it("does not let a week without a model undo an adopted engineer", () => {
+      const rows = [
+        ...base(),
+        ev(WEEKS[1], "prompt_submitted", { model: "claude-opus-5" }),
+        ev(WEEKS[1], "prompt_submitted", { model: "claude-sonnet-5" }),
+      ];
+      expect(practiceStatesOf(rows, TODAY).MD1).toBe("adopted");
+    });
+  });
+
   it("reads Insufficient data on Windows Claude Code where it cannot see test runs or ships", () => {
     const rows = base();
     expect(practiceStatesOf(rows, TODAY).EV1).toBe("unobserved");
@@ -291,6 +334,26 @@ describe("practiceStatesOf", () => {
 
     expect(practiceStatesOf(ship([edit, test, commit]), TODAY).EV5).toBe("adopted");
     expect(practiceStatesOf(ship([test, edit, commit]), TODAY).EV5).toBe("unobserved");
+  });
+
+  it("credits a ship whose own row shows a test linked to it by && only", () => {
+    const ship = (command_sequence: string) => [
+      ...base(),
+      ev(
+        WEEKS[3],
+        "tool_use_completed",
+        { tool_intent: "test_run", vcs_action: "push", command_sequence, session_id: "ship" },
+        "11:00:00",
+      ),
+    ];
+    const ev5 = (sequence: string) => practiceStatesOf(ship(sequence), TODAY).EV5;
+
+    expect(ev5("test_run && push")).toBe("adopted");
+    expect(ev5("other && test_run && other && push")).toBe("adopted");
+    expect(ev5("push && test_run")).toBe("unobserved");
+    expect(ev5("test_run ; push")).toBe("unobserved");
+    expect(ev5("test_run | other && push")).toBe("unobserved");
+    expect(ev5("test_run || push")).toBe("unobserved");
   });
 
   it("reads a sequence across the whole session, even when it began before the window", () => {
