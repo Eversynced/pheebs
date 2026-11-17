@@ -2414,8 +2414,8 @@
       }
     },
     {
-      "name": "split-phase delivery: a subagent after a plan on a model nothing names reads Unobserved",
-      "known_divergence": true,
+      "name": "split-phase delivery: a subagent after a plan on a model nothing names is undecided",
+      "client_only": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -2576,7 +2576,7 @@
         "active_weeks": 3,
         "coverage_index": {
           "recurring": 3,
-          "applicable": 22
+          "applicable": 21
         },
         "artifact_breadth": 0,
         "compaction": {
@@ -2587,7 +2587,7 @@
           {
             "name": "Models",
             "state": "unobserved",
-            "recurring_share": 0.3333333333333333
+            "recurring_share": 0.4
           },
           {
             "name": "Artifacts",
@@ -2614,7 +2614,8 @@
             "state": "unobserved",
             "recurring_share": 0
           }
-        ]
+        ],
+        "unknown_model_sessions": 3
       }
     }
   ]
