@@ -166,6 +166,42 @@ describe("classifyVcsAction", () => {
   });
 });
 
+describe("classifyVcsAction on git worktree", () => {
+  it("tags only worktree creation", () => {
+    expect(classifyVcsAction("git worktree add ../feature -b feature")).toBe("worktree");
+    expect(classifyVcsAction("git worktree list")).toBe("other");
+    expect(classifyVcsAction("git worktree remove ../feature")).toBe("other");
+    expect(classifyVcsAction("git worktree prune")).toBe("other");
+  });
+
+  it("finds it behind a cd and in a chain", () => {
+    expect(classifyVcsAction("cd repo && git worktree add ../x")).toBe("worktree");
+    expect(classifyVcsAction("git fetch && git worktree add ../x origin/main")).toBe("worktree");
+  });
+
+  it("follows the same prefix rules as the other writes, so git -C is not matched", () => {
+    expect(classifyVcsAction("git -C repo commit -m x")).toBe("other");
+    expect(classifyVcsAction("git -C repo worktree add ../x")).toBe("other");
+  });
+
+  it("ranks below commit, push and pr_create", () => {
+    expect(classifyVcsAction("git worktree add ../x && git commit -m y")).toBe("commit");
+    expect(classifyVcsAction("git commit -m y && git worktree add ../x")).toBe("commit");
+    expect(classifyVcsAction("git worktree add ../x && git push")).toBe("push");
+    expect(classifyVcsAction("git worktree add ../x && gh pr create --fill")).toBe("pr_create");
+  });
+
+  it("stays in command_sequence when a commit outranks it", () => {
+    expect(classifyCommandSequence("git worktree add ../x && git commit -m y")).toBe(
+      "worktree && commit",
+    );
+  });
+
+  it("matches on token boundaries", () => {
+    expect(classifyVcsAction("git worktree addx")).toBe("other");
+  });
+});
+
 describe("classifyShellCommand on chained commands", () => {
   it("finds a check after a cd", () => {
     expect(classifyShellCommand("cd /repo && npm test")).toBe("test_run");

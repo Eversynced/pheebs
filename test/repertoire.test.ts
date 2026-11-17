@@ -356,6 +356,27 @@ describe("practiceStatesOf", () => {
     expect(ev5("test_run || push")).toBe("unobserved");
   });
 
+  it("never credits a worktree as a test-gated ship", () => {
+    const rows = (fields: Fields) => [
+      ...base(),
+      ev(WEEKS[3], "tool_use_completed", { tool_intent: "edit", session_id: "wt" }, "10:00:00"),
+      ev(WEEKS[3], "tool_use_completed", { tool_intent: "test_run", session_id: "wt" }, "11:00:00"),
+      ev(WEEKS[3], "tool_use_completed", { ...fields, session_id: "wt" }, "12:00:00"),
+    ];
+    expect(practiceStatesOf(rows({ vcs_action: "worktree" }), TODAY).EV5).toBe("unobserved");
+    expect(
+      practiceStatesOf(
+        rows({
+          tool_intent: "test_run",
+          vcs_action: "worktree",
+          command_sequence: "test_run && worktree",
+        }),
+        TODAY,
+      ).EV5,
+    ).toBe("unobserved");
+    expect(practiceStatesOf(rows({ vcs_action: "commit" }), TODAY).EV5).toBe("adopted");
+  });
+
   it("reads a sequence across the whole session, even when it began before the window", () => {
     const rows = [
       ...base(),
