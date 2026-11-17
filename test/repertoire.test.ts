@@ -290,16 +290,34 @@ describe("practiceStatesOf", () => {
       expect(practiceStatesOf(other, TODAY).MD6).toBe("adopted");
     });
 
-    it("compares the subagent with the planning segment, not the segment the call ran in", () => {
-      // A switch Claude Code made is no split by itself, so only the subagent can decide these.
+    it("does not count a subagent on the model of the segment the call ran in", () => {
+      // A switch Claude Code made is no split by itself, and a subagent with no model of its own
+      // inherits the fallback, so neither of these is a model anyone chose.
       const fallback: [string, Fields] = [
         "model_switched",
         { from_model: "claude-opus-5", to_model: "claude-sonnet-5", switch_source: "auto" },
       ];
       const onSonnet = session(start(), plan, fallback, agent());
-      expect(practiceStatesOf(onSonnet, TODAY).MD6).toBe("adopted");
+      expect(practiceStatesOf(onSonnet, TODAY).MD6).toBe("unobserved");
+      const onHaiku = session(start(), plan, fallback, agent({ subagent_model: "claude-haiku-5" }));
+      expect(practiceStatesOf(onHaiku, TODAY).MD6).toBe("adopted");
       const onOpus = session(start(), plan, fallback, agent({ subagent_model: "claude-opus-5" }));
       expect(practiceStatesOf(onOpus, TODAY).MD6).toBe("unobserved");
+    });
+
+    it("still counts a deliberate switch before the subagent call", () => {
+      const chosen: [string, Fields] = [
+        "model_switched",
+        { from_model: "claude-opus-5", to_model: "claude-sonnet-5", switch_source: "command" },
+      ];
+      const rows = session(start(), plan, chosen, agent());
+      expect(practiceStatesOf(rows, TODAY).MD6).toBe("adopted");
+    });
+
+    it("leaves a subagent undecided when the segment the call ran in has no model", () => {
+      const rows = session(start(), plan, start({ start_source: "resume" }), agent());
+      expect(practiceStatesOf(rows, TODAY).MD6).toBe("insufficient_data");
+      expect(repertoireSection(rows, TODAY).unknown_model_sessions).toBe(1);
     });
 
     it("needs an execution-mode Agent call after a plan in the same session", () => {

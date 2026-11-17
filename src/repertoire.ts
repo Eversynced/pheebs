@@ -436,11 +436,18 @@ function splitBetween(segments: Segment[], plans: number[], at: number): Verdict
 }
 
 // A subagent's model is the execution's model without any switch, so it is read against the
-// planning segment alone. Who picked it is not in the payload, which the registry accepts.
-function subagentSplit(segments: Segment[], plans: number[], subagent: string): Verdict {
+// planning segment. It must also differ from the segment the call ran in: an Agent call with no
+// model inherits that one, so a subagent on it is indistinguishable from a choice nobody made.
+function subagentSplit(
+  segments: Segment[],
+  plans: number[],
+  at: number,
+  subagent: string,
+): Verdict {
   const before = segments[Math.max(...plans)].model;
-  if (before === undefined) return "open";
-  return before !== subagent ? "split" : "none";
+  const current = segments[at].model;
+  if (subagent === before || subagent === current) return "none";
+  return before === undefined || current === undefined ? "open" : "split";
 }
 
 /**
@@ -512,7 +519,7 @@ function markSplitPhase(sessions: Timed[][], days: Map<string, PracticeDay>): nu
     let open = false;
     for (const { at, plans, day, subagent } of pending) {
       const verdict = subagent
-        ? subagentSplit(segments, plans, subagent)
+        ? subagentSplit(segments, plans, at, subagent)
         : splitBetween(segments, plans, at);
       if (verdict === "split") day?.flags.add("md6");
       if (verdict === "split" && day) split = true;
