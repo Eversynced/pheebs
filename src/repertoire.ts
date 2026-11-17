@@ -74,10 +74,25 @@ const filled = (row: Row, key: string): string | undefined => {
   return value ? value : undefined;
 };
 
-// Date and context-window suffixes are stripped, so claude-opus-5[1m] and claude-opus-5-20260101
-// are one model rather than three.
-function canonicalModel(model: string): string {
-  return model.replace(/\[[^\]]*\]$/, "").replace(/-[0-9]{8}$/, "");
+// Cursor reports "default" for Auto.
+const NO_MODEL = new Set(["default", "unknown"]);
+
+// Tokens a harness adds to a model's slug without naming another model: Cursor appends the effort
+// tier and speed (`-high`, `-fast`) and a quantization (`-mxfp8`), and prefixes its own `cursor-`.
+const SLUG_PREFIX = /^cursor-/;
+const SLUG_SUFFIXES = /(-(low|medium|high|xhigh|fast|mxfp8))+$/;
+
+// One model's spellings are one model: context-window and date suffixes and the vendor tokens
+// above are stripped, so claude-opus-5[1m] and claude-opus-5-20260101 are one model, and so are
+// grok-4.7 and cursor-grok-4.7-high. A name that is no model at all gives undefined.
+export function canonicalModel(model: string | undefined): string | undefined {
+  if (!model || NO_MODEL.has(model.trim().toLowerCase())) return undefined;
+  const name = model
+    .replace(/\[[^\]]*\]$/, "")
+    .replace(/-[0-9]{8}$/, "")
+    .replace(SLUG_PREFIX, "")
+    .replace(SLUG_SUFFIXES, "");
+  return name || undefined;
 }
 
 /** The Monday that starts a date's UTC week. */
@@ -121,6 +136,8 @@ interface Practice {
   cells: Record<Harness, Cell>;
   /** Whether the span holds an occurrence the detector could not decide either way. */
   open?: (days: PracticeDay[]) => boolean;
+  /** Whether the whole window holds nothing the detector reads, so its silence says nothing. */
+  blind?: (days: PracticeDay[]) => boolean;
 }
 
 const flag = (name: Flag) => (days: PracticeDay[]) => days.some((d) => d.flags.has(name));
@@ -155,7 +172,11 @@ const all = (since: string): Record<Harness, Cell> => ({
 });
 
 const PRACTICES: Record<string, Practice> = {
-  MD1: { fired: distinct("md1_models"), cells: all("0.3.0") },
+  MD1: {
+    fired: distinct("md1_models"),
+    blind: (days) => days.every((d) => d.md1_models.size === 0),
+    cells: all("0.3.0"),
+  },
   MD2: { fired: (days) => new Set(days.map((d) => d.ai_tool)).size >= 2, cells: all("0.2.4") },
   MD3: {
     fired: distinct("md3_efforts"),
@@ -286,10 +307,12 @@ function addFacts(day: PracticeDay, row: Row): void {
   };
 
   const model = filled(row, "model");
-  if (model) day.md1_models.add(canonicalModel(model));
+  const canonical = canonicalModel(model);
+  if (canonical) day.md1_models.add(canonical);
   const subagentModel = filled(row, "subagent_model");
   if (subagentModel && event === "tool_use_completed") {
-    day.md1_models.add(canonicalModel(subagentModel));
+    const canonicalSubagent = canonicalModel(subagentModel);
+    if (canonicalSubagent) day.md1_models.add(canonicalSubagent);
   }
   const effort = filled(row, "effort");
   if (effort) day.md3_efforts.add(effort);
@@ -437,16 +460,18 @@ function markSplitPhase(sessions: Timed[][], days: Map<string, PracticeDay>): nu
         // A resume restores the session's model without a switch event, so it starts a segment
         // whose model is unknown until a start or a switch names it.
         if (started) segments.push({ deliberate: false });
-        if (model) segments[segments.length - 1].model = canonicalModel(model);
+        const canonical = canonicalModel(model);
+        if (canonical) segments[segments.length - 1].model = canonical;
         started = true;
       }
       if (event === "model_switched") {
         const current = segments[segments.length - 1];
         const from = filled(row, "from_model");
-        if (current.model === undefined && from) current.model = canonicalModel(from);
+        const canonicalFrom = canonicalModel(from);
+        if (current.model === undefined && canonicalFrom) current.model = canonicalFrom;
         const to = filled(row, "to_model");
         segments.push({
-          model: to ? canonicalModel(to) : undefined,
+          model: canonicalModel(to),
           deliberate: DELIBERATE_SWITCHES.has(field(row, "switch_source") ?? ""),
         });
       }
@@ -537,7 +562,7 @@ function practiceStates(
       if (firedWeeks.length + undecided.length >= 3) return "insufficient_data";
     }
     if (practice.fired(days)) return "adopted";
-    return open?.(days) ? "insufficient_data" : "unobserved";
+    return open?.(days) || practice.blind?.(days) ? "insufficient_data" : "unobserved";
   };
 
   return Object.fromEntries(Object.entries(PRACTICES).map(([id, p]) => [id, stateOf(id, p)]));

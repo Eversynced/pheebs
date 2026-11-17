@@ -202,7 +202,7 @@ timestamps instead of one.
 - **`command_sequence` keeps the order a chain collapses.** A shell row with two
   or more segments carries each segment's tag, joined by the operators that
   separated them: `test_run && push`, `test_run ; push`, `test_run | other && push`.
-  A segment's tag is its write action (`commit`, `push`, `pr_create`) when it is
+  A segment's tag is its write action (`worktree`, `commit`, `push`, `pr_create`) when it is
   one, else its intent. The operators are `&&`, `||`, `;`, `|` and `&`, and a
   newline reads as `;`. It is absent for a single command, and stops at 32
   segments. It holds tags and operators, never command text. Pheebs does not
