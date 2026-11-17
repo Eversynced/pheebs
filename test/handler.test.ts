@@ -85,6 +85,21 @@ describe("extractClaudeExtra", () => {
     expect(extra.vcs_action).toBe("push");
   });
 
+  it("keeps the worktree action under a check's intent without persisting the command", () => {
+    const extra = extractClaudeExtra(
+      {
+        tool_name: "Bash",
+        tool_input: { command: "npm test && git worktree add ../scratch-tree" },
+      },
+      [],
+      "tool_use_completed",
+    );
+    expect(extra.tool_intent).toBe("test_run");
+    expect(extra.vcs_action).toBe("worktree");
+    expect(extra.command_sequence).toBe("test_run && worktree");
+    expect(JSON.stringify(extra)).not.toContain("scratch-tree");
+  });
+
   it("records the chain's order and operators without the command text", () => {
     const sequenceOf = (command: string) =>
       extractClaudeExtra({ tool_name: "Bash", tool_input: { command } }, [], "tool_use_completed")
