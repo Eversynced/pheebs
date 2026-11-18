@@ -1,5 +1,6 @@
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { AI_TOOLS, type AiTool } from "../hooks/definitions.js";
 
 type Level = "project-level" | "user-level";
@@ -50,11 +51,29 @@ export function resolveSettingsPath(
  *  the two resolve to one file. Callers that contrast the scopes need to know, or they warn
  *  about a second install that does not exist and offer to remove the file they just wrote. */
 export function scopesCollide(tool: AiTool): boolean {
-  const project = resolveSettingsPath(tool, true).path;
-  const user = resolveSettingsPath(tool, false).path;
+  const project = canonical(resolveSettingsPath(tool, true).path);
+  const user = canonical(resolveSettingsPath(tool, false).path);
   // Windows paths are case-insensitive, and the two can differ only in case: an editor terminal
   // reports the drive as `c:` where homedir() says `C:`.
   return process.platform === "win32"
     ? project.toLowerCase() === user.toLowerCase()
     : project === user;
+}
+
+// cwd is always the resolved path while homedir() is $HOME as given, so a $HOME that reaches
+// through a symlink (macOS's /var, a relocated home) would never match. The config file and
+// its folder may not exist yet, so resolve the nearest ancestor that does.
+function canonical(path: string): string {
+  const rest: string[] = [];
+  let dir = path;
+  for (;;) {
+    try {
+      return join(realpathSync(dir), ...rest);
+    } catch {
+      const parent = dirname(dir);
+      if (parent === dir) return path;
+      rest.unshift(basename(dir));
+      dir = parent;
+    }
+  }
 }

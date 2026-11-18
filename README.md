@@ -420,7 +420,7 @@ pheebs hook-codex <event_name>
 
 ## ✅ Requirements
 
-- macOS, Linux or Windows. CI runs on Linux and Windows. One Windows capture question is still
+- macOS, Linux or Windows. CI runs on all three. One Windows capture question is still
   open: whether Claude Code's `PowerShell` tool carries its command where Pheebs reads it, so test
   and commit detection there is unconfirmed (see the [findings ledger](./docs/spike-findings-ledger.md)).
 - Node.js >= 20

@@ -6,8 +6,10 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -574,6 +576,22 @@ describe("init from $HOME", () => {
     expect(result.stderr).not.toContain("trust this project");
   });
 
+  it("treats a $HOME reached through a symlink as the folder it points to", () => {
+    const parent = mkdtempSync(join(tmpdir(), "pheebs-link-"));
+    const link = join(parent, "home");
+    // A junction needs no elevation on Windows; elsewhere the type is ignored.
+    symlinkSync(home, link, "junction");
+    try {
+      runIn(home, link, ["init", "--codex", "--no-otel"]);
+      const again = runIn(home, link, ["init", "--codex", "--no-otel"]);
+
+      expect(again.stderr).not.toContain("fires twice");
+      expect(again.stderr).not.toContain("trust this project");
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
   it("still reports the doubled install for Claude Code, whose paths differ", () => {
     runFromHome("init", "--global", "--no-otel");
     const result = runFromHome("init", "--no-otel");
@@ -607,8 +625,10 @@ describe("installs outside the current directory", () => {
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
-    repoA = mkdtempSync(join(tmpdir(), "pheebs-repo-a-"));
-    repoB = mkdtempSync(join(tmpdir(), "pheebs-repo-b-"));
+    // Resolved, because the CLI records the path it runs in and the platform temp folder can
+    // sit behind a symlink (macOS's /var).
+    repoA = realpathSync(mkdtempSync(join(tmpdir(), "pheebs-repo-a-")));
+    repoB = realpathSync(mkdtempSync(join(tmpdir(), "pheebs-repo-b-")));
   });
 
   afterEach(() => {
