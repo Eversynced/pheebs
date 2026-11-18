@@ -73,7 +73,7 @@ Which AI models are run for a task: the models, effort settings, and autonomy mo
 | Effort variation | 2+ distinct effort settings in the window |
 | Plan-mode use | Plan-mode segments in sessions |
 | Autonomy variation | 2+ distinct permission modes in the window |
-| Split-phase delivery (pattern) | A plan segment on one model or effort, then an execution segment on another, same session |
+| Split-phase delivery (pattern) | A plan segment on one model or effort, then an execution segment, or a subagent it starts, on another, same session |
 
 ### Artifacts
 

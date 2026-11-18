@@ -5,6 +5,8 @@ import { DEFAULT_DAYS, localInsights } from "../src/insights-local.js";
 interface ParityCase {
   name: string;
   known_divergence?: boolean;
+  /** A state only this client can report, such as undecided, so other implementations skip it. */
+  client_only?: boolean;
   today: string;
   events: Record<string, unknown>[];
   expected: Record<string, unknown>;
