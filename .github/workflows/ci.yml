@@ -9,10 +9,10 @@ on:
 jobs:
   ci:
     strategy:
-      # A Windows failure must not cancel the Ubuntu run, or one platform hides the other's result.
+      # A failure on one platform must not cancel the others, or one hides the others' results.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
