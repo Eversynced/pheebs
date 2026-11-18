@@ -176,7 +176,9 @@ describe("Claude Code hook given a Cursor payload", () => {
       }
       return files.filter((e) => e.name.endsWith(".json")).map((e) => e.name);
     } finally {
-      rmSync(home, { recursive: true, force: true });
+      // The detached flusher can still be writing to the outbox here, which fails with
+      // ENOTEMPTY or EBUSY on Windows until it lets go.
+      rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   }
 
