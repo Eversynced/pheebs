@@ -103,6 +103,14 @@ describe("practiceStatesOf", () => {
     expect(states.OR1).toBe("unobserved");
   });
 
+  it("counts a Cursor MCP call that carries a bare tool_name and a server field", () => {
+    const rows = [
+      ...base(),
+      ev(WEEKS[3], "tool_use_completed", { tool_name: "get_issue", mcp_server_name: "linear" }),
+    ];
+    expect(practiceStatesOf(rows, TODAY).MC1).toBe("adopted");
+  });
+
   it("does not judge a detector the client has not carried for a full window", () => {
     const recent = [
       ev("2026-10-01", "session_started", { session_id: "new" }),
