@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.9.0"
+  version: "1.10.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -434,6 +434,7 @@ components:
             - session_end
             - permission_requested
             - artifact_found
+            - session_token_usage
         codebase:
           type: string
           description: |
@@ -612,12 +613,35 @@ components:
           description: Free text, as above.
         input_tokens:
           type: integer
+          description: |
+            On `session_token_usage`, the tokens a session sent in, not counting cache reads. On
+            Codex that is its input total minus its cached input, so input plus `cache_read_tokens`
+            is everything the model read. Cursor and Codex hook events carry their own counts under
+            these names too.
         output_tokens:
           type: integer
+          description: On `session_token_usage`, includes `reasoning_tokens`.
         cache_read_tokens:
           type: integer
         cache_write_tokens:
           type: integer
+          description: Absent on a Codex `session_token_usage`, whose transcript has no such count.
+        reasoning_tokens:
+          type: integer
+          description: |
+            On `session_token_usage`, the part of `output_tokens` spent reasoning. Absent when the
+            transcript carries none, which is not a measured zero.
+        from_subagent:
+          type: boolean
+          description: |
+            On `session_token_usage`, true for the usage of the session's subagents, which the
+            client reads from separate transcript files, and false for the main agent.
+        usage_source:
+          type: string
+          const: transcript
+          description: |
+            On `session_token_usage`: where the counts were read. Only `transcript` exists, and the
+            field leaves room for a source that is not.
         status:
           type: string
           description: Cursor — how a turn or sub-agent run ended.

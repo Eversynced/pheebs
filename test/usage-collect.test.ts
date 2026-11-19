@@ -1,0 +1,214 @@
+// Target: test/usage-collect.test.ts
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { newEventId, usageEventId } from "../src/event-id.js";
+import { listPending } from "../src/outbox.js";
+import { collectUsage } from "../src/usage-collect.js";
+import { noteSession } from "../src/usage-sessions.js";
+
+const CANARY = "CANARY-prompt-text /home/dev/secret/app.ts";
+const NOW = 1_800_000_000_000;
+const IDLE = 30 * 60 * 1000;
+
+let base: string;
+let queue: string;
+let root: string;
+let transcript: string;
+
+beforeEach(() => {
+  base = mkdtempSync(join(tmpdir(), "pheebs-collect-"));
+  queue = join(base, "queue");
+  root = join(base, "sessions");
+  transcript = join(base, "proj", "sess-1.jsonl");
+  mkdirSync(join(base, "proj"), { recursive: true });
+});
+afterEach(() => rmSync(base, { recursive: true, force: true }));
+
+function turn(id: string, model: string, input: number, output: number): string {
+  return `${JSON.stringify({
+    type: "assistant",
+    requestId: `r-${id}`,
+    message: {
+      id,
+      model,
+      content: [{ type: "text", text: CANARY }],
+      usage: { input_tokens: input, output_tokens: output },
+    },
+  })}\n`;
+}
+
+function note(ended: boolean, now = NOW) {
+  noteSession(
+    {
+      tool: "claude_code",
+      session_id: "sess-1",
+      codebase: "acme/api",
+      transcript_path: transcript,
+      ended,
+    },
+    { root, now },
+  );
+}
+
+function collect(now = NOW, dir = queue) {
+  return collectUsage({ dir, root, now, idleMs: IDLE, version: "9.9.9" });
+}
+
+function queued(): Record<string, unknown>[] {
+  return listPending(queue).map((p) => JSON.parse(readFileSync(p.path, "utf-8")));
+}
+
+describe("collectUsage", () => {
+  it("queues one delta event per model and scope for an ended session, then nothing", async () => {
+    writeFileSync(
+      transcript,
+      turn("m1", "claude-opus-5-5", 10, 5) + turn("m2", "claude-haiku-5-5", 1, 1),
+    );
+    note(true);
+    expect(await collect()).toBe(2);
+    const events = queued();
+    expect(events.map((e) => e.model).sort()).toEqual(["claude-haiku-5-5", "claude-opus-5-5"]);
+    expect(events[0]).toMatchObject({
+      event: "session_token_usage",
+      source: "hook",
+      ai_tool: "claude_code",
+      session_id: "sess-1",
+      codebase: "acme/api",
+      version: "9.9.9",
+      usage_source: "transcript",
+      from_subagent: false,
+    });
+    expect(typeof events[0].event_id).toBe("string");
+    expect(typeof events[0].timestamp).toBe("string");
+    expect(await collect()).toBe(0);
+    expect(queued()).toHaveLength(2);
+  });
+
+  it("leaves a live session alone and sweeps one idle past the window that never ended", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 1, 1));
+    note(false);
+    expect(await collect(NOW + 1000)).toBe(0);
+    expect(await collect(NOW + IDLE + 1)).toBe(1);
+  });
+
+  it("sends a resumed session's new work as a delta, not a running total", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 10, 10));
+    note(true);
+    await collect();
+    appendFileSync(transcript, turn("m2", "claude-opus-5-5", 3, 4));
+    note(true, NOW + 5000);
+    expect(await collect(NOW + 6000)).toBe(1);
+    const latest = queued().filter((e) => e.input_tokens === 3);
+    expect(latest).toHaveLength(1);
+    expect(latest[0]).toMatchObject({ input_tokens: 3, output_tokens: 4 });
+  });
+
+  it("does not advance the mark when the queue refuses the event", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 2, 2));
+    note(true);
+    const blocked = join(base, "blocked");
+    writeFileSync(blocked, "a file where the queue directory should be");
+    await collect(NOW, blocked).catch(() => {});
+    expect(await collect()).toBe(1);
+  });
+
+  it("names a pass the same way when the mark was lost, so a resend is one event", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 2, 2));
+    note(true);
+    await collect();
+    for (const name of readdirSync(root)) {
+      if (name.endsWith(".mark.json")) rmSync(join(root, name));
+    }
+    await collect(NOW + 1000);
+    const ids = queued().map((e) => e.event_id);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(1);
+  });
+
+  it("gives two passes over different bytes different ids, even when the file time is unchanged", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 2, 2));
+    const at = new Date(NOW - 10_000);
+    utimesSync(transcript, at, at);
+    note(true);
+    await collect();
+    appendFileSync(transcript, turn("m2", "claude-opus-5-5", 3, 3));
+    utimesSync(transcript, at, at);
+    note(true, NOW + 5000);
+    await collect(NOW + 6000);
+    const ids = queued().map((e) => e.event_id);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it("writes each queued event to the log it is given", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 2, 2));
+    note(true);
+    const logged: Record<string, unknown>[] = [];
+    await collectUsage({
+      dir: queue,
+      root,
+      now: NOW,
+      version: "9.9.9",
+      log: (e) => logged.push(e),
+    });
+    expect(logged.map((e) => e.event_id)).toEqual(queued().map((e) => e.event_id));
+  });
+
+  it("keeps the transcript path and its content out of every queued event", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 2, 2));
+    note(true);
+    await collect();
+    for (const p of listPending(queue)) {
+      const text = readFileSync(p.path, "utf-8");
+      expect(text).not.toContain(base);
+      expect(text).not.toContain("CANARY");
+      expect(text).not.toContain("transcript_path");
+    }
+  });
+
+  it("does nothing for a transcript that is gone", async () => {
+    note(true);
+    expect(await collect()).toBe(0);
+  });
+});
+
+describe("noteSession", () => {
+  it("writes an owner-only record and never touches the flusher's mark", async () => {
+    note(false);
+    const files = readdirSync(root);
+    expect(files.filter((f) => f.endsWith(".mark.json"))).toEqual([]);
+    expect(files).toHaveLength(1);
+    if (process.platform !== "win32") {
+      expect(statSync(join(root, files[0])).mode & 0o077).toBe(0);
+    }
+  });
+
+  it("reopens an ended session when it starts again", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 1, 1));
+    note(true);
+    note(false, NOW + 1);
+    expect(await collect(NOW + 2)).toBe(0);
+  });
+});
+
+describe("usageEventId", () => {
+  it("is a UUIDv7 that is stable for one key and differs between keys", () => {
+    const V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    expect(usageEventId(NOW, "a")).toMatch(V7);
+    expect(usageEventId(NOW, "a")).toBe(usageEventId(NOW, "a"));
+    expect(usageEventId(NOW, "a")).not.toBe(usageEventId(NOW, "b"));
+    expect(newEventId()).toMatch(V7);
+  });
+});

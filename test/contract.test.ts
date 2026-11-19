@@ -26,8 +26,14 @@ describe("openapi.yaml", () => {
     expect(spec).toContain("\n        requested_model:\n");
   });
 
-  it("carries the version that introduced the worktree vcs_action", () => {
-    expect(spec).toContain('\n  version: "1.9.0"\n');
+  it("carries the version that introduced session_token_usage", () => {
+    expect(spec).toContain('\n  version: "1.10.0"\n');
+  });
+
+  it("documents the fields a session_token_usage event carries", () => {
+    for (const field of ["reasoning_tokens", "from_subagent", "usage_source"]) {
+      expect(spec).toContain(`\n        ${field}:\n`);
+    }
   });
 
   it("documents command_sequence beside the fields a chain changes", () => {

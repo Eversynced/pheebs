@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 let lastMs = 0;
 let counter = 0;
@@ -28,6 +28,20 @@ export function newEventId(now: number = Date.now()): string {
   bytes[7] = counter & 0xff;
   bytes[8] = 0x80 | (bytes[8] & 0x3f);
 
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * A UUIDv7 that is the same every time it is asked for the same `key`, for an event the client may
+ * produce twice from the same source, so a backend that stores one id once stores it once. The
+ * timestamp is the caller's, and the other 74 bits come from a hash of the key.
+ */
+export function usageEventId(at: number, key: string): string {
+  const bytes = createHash("sha256").update(key).digest().subarray(0, 16);
+  bytes.writeUIntBE(Math.max(0, Math.floor(at)), 0, 6);
+  bytes[6] = 0x70 | (bytes[6] & 0x0f);
+  bytes[8] = 0x80 | (bytes[8] & 0x3f);
   const hex = bytes.toString("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
