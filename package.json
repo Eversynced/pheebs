@@ -1,7 +1,7 @@
 {
   "name": "pheebs",
   "version": "1.4.0",
-  "description": "Local-first telemetry for AI coding agents. See how Claude Code, Cursor, and Codex are actually used, without capturing code or prompts.",
+  "description": "Open-source, local-first telemetry for AI coding agents. See how Claude Code, Cursor, and Codex are actually used, without capturing code or prompts.",
   "type": "module",
   "bin": {
     "pheebs": "./dist/cli.js"
