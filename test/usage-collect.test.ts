@@ -56,15 +56,17 @@ function note(ended: boolean, now = NOW) {
       tool: "claude_code",
       session_id: "sess-1",
       codebase: "acme/api",
+      scope: "scope-a",
       ended,
     },
     { root, now },
   );
 }
 
-function collect(now = NOW, dir = queue) {
+function collect(now = NOW, dir = queue, scope = "scope-a") {
   return collectUsage({
     dir,
+    scope,
     root,
     now,
     idleMs: IDLE,
@@ -193,6 +195,35 @@ describe("collectUsage", () => {
     expect(await collect(NOW + 11 * 60_000)).toBe(1);
   });
 
+  it("never sends a record captured under another backend, and forgets it", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 2, 2));
+    note(true);
+    expect(await collect(NOW, queue, "scope-b")).toBe(0);
+    expect(readdirSync(root)).toEqual([]);
+    expect(await collect()).toBe(0);
+  });
+
+  it("waits for a session with no SessionEnd while its transcript is still being written", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 2, 2));
+    note(false, NOW);
+    const justWritten = new Date(NOW + IDLE);
+    utimesSync(transcript, justWritten, justWritten);
+    expect(await collect(NOW + IDLE + 1000)).toBe(0);
+    expect(await collect(NOW + 2 * IDLE + 1000)).toBe(1);
+  });
+
+  it("keeps a session's offsets when its record expires and the session resumes", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 10, 10));
+    note(true);
+    await collect();
+    const later = NOW + 40 * 24 * 60 * 60 * 1000;
+    expect(await collect(later)).toBe(0);
+    appendFileSync(transcript, turn("m2", "claude-opus-5-5", 3, 4));
+    note(true, later + 1);
+    expect(await collect(later + 2)).toBe(1);
+    expect(queued().filter((e) => e.input_tokens === 3)).toHaveLength(1);
+  });
+
   it("does nothing for a transcript that is gone", async () => {
     note(true);
     expect(await collect()).toBe(0);
@@ -207,7 +238,7 @@ describe("noteSession", () => {
     const record = JSON.parse(readFileSync(join(root, file), "utf-8"));
     expect(record).toMatchObject({ started_at: NOW, touched_at: NOW + 5000, ended: true });
     expect(Object.keys(record).sort()).toEqual(
-      ["codebase", "ended", "session_id", "started_at", "tool", "touched_at"].sort(),
+      ["codebase", "ended", "scope", "session_id", "started_at", "tool", "touched_at"].sort(),
     );
   });
 
@@ -219,6 +250,16 @@ describe("noteSession", () => {
     if (process.platform !== "win32") {
       expect(statSync(join(root, files[0])).mode & 0o077).toBe(0);
     }
+  });
+
+  it("keeps an ended session ended when a late Stop touches it", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 1, 1));
+    note(true);
+    noteSession(
+      { tool: "claude_code", session_id: "sess-1", codebase: "acme/api", scope: "scope-a" },
+      { root, now: NOW + 1 },
+    );
+    expect(await collect(NOW + 2)).toBe(1);
   });
 
   it("reopens an ended session when it starts again", async () => {

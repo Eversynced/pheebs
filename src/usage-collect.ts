@@ -5,7 +5,7 @@ import { EVENTS } from "./hooks/types.js";
 import { enqueue } from "./outbox.js";
 import { locateTranscript } from "./transcript-locate.js";
 import { readClaudeUsage, readCodexUsage } from "./transcript-usage.js";
-import { listSessions, pruneSessions, writeMark } from "./usage-sessions.js";
+import { forgetSession, listSessions, pruneSessions, writeMark } from "./usage-sessions.js";
 import type { SessionRecord, UsageRead } from "./usage-types.js";
 
 // A session that never sent SessionEnd, or whose tool has no such hook, is read once it has been
@@ -15,6 +15,8 @@ export const IDLE_MS = 30 * 60 * 1000;
 export interface CollectOptions {
   /** The outbox scope directory the events are queued into. */
   dir: string;
+  /** The configured backend and token. A record from any other scope is dropped, never sent. */
+  scope: string;
   root?: string;
   now?: number;
   idleMs?: number;
@@ -41,6 +43,7 @@ const read = (path: string, record: SessionRecord, cursors: UsageRead["cursors"]
  */
 export async function collectUsage({
   dir,
+  scope,
   root,
   now = Date.now(),
   idleMs = IDLE_MS,
@@ -53,21 +56,29 @@ export async function collectUsage({
   let queued = 0;
   for (const { key, record, mark } of listSessions(root)) {
     if (refresh && !refresh()) break;
+    if (record.scope !== scope) {
+      forgetSession(key, root);
+      continue;
+    }
     const due = record.ended || now - record.touched_at >= idleMs;
     const settled = `${record.touched_at}:${record.ended}`;
     if (!due || mark.settled === settled || now < (mark.retryAt ?? 0)) continue;
     try {
-      const path = locate(record);
+      const startedAt = Math.min(record.started_at, mark.startedAt ?? Number.POSITIVE_INFINITY);
+      const path = locate({ ...record, started_at: startedAt });
       if (!path) {
         // Not found yet, or not findable: look again later, until the record expires.
         writeMark(key, { ...mark, retryAt: now + NOT_FOUND_RETRY_MS }, root);
         continue;
       }
-      const result = await read(path, record, mark.cursors);
       let stamp = now;
       try {
         stamp = Math.floor(statSync(path).mtimeMs);
       } catch {}
+      // A session with no SessionEnd is read only once its transcript has gone quiet: the record
+      // is touched by the hooks, so a long turn can outlast the window while still being written.
+      if (!record.ended && now - stamp < idleMs) continue;
+      const result = await read(path, record, mark.cursors);
       const pass = createHash("sha256").update(JSON.stringify(result.ranges)).digest("hex");
       for (const row of result.rows) {
         const id = usageEventId(
@@ -92,7 +103,7 @@ export async function collectUsage({
         } catch {}
         queued += 1;
       }
-      writeMark(key, { cursors: result.cursors, settled }, root);
+      writeMark(key, { cursors: result.cursors, settled, startedAt }, root);
     } catch {
       // An unreadable file or a queue that refuses leaves the mark where it was, and the next pass
       // reads the same bytes again.

@@ -149,8 +149,9 @@ queues one `session_token_usage` event per model with `model`, `from_subagent`, 
 `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens` and
 `usage_source`. Only integers and the model id leave the transcript; its text, tool output and
 paths are read past and dropped. No transcript path is stored: a hook records only the session id,
-tool, codebase and timestamps in `~/.pheebs/sessions/` (owner-only, local, never sent, removed after
-30 idle days), only when a backend and token are set, and the background process finds the file
+tool, codebase, timestamps and a hash of the backend and token in `~/.pheebs/sessions/` (owner-only on
+macOS and Linux, your profile folder's permissions on Windows, local, never sent, removed after 30
+idle days, and by `pheebs uninstall`), only when a backend and token are set, and the background process finds the file
 from the session id. Cursor's transcripts carry no usage, so Cursor sends none.
 
 **Codex also:** `input_tokens`, `output_tokens`, `permission_type`, `approved`.

@@ -55,6 +55,8 @@ export interface SessionRecord {
   session_id: string;
   codebase: string;
   ended: boolean;
+  /** The backend and token the hook saw (`scopeKey`), so usage is only ever sent to that one. */
+  scope: string;
   /** ms epoch of the first hook that recorded the session, and of the last one that touched it. */
   started_at: number;
   touched_at: number;
@@ -67,6 +69,8 @@ export interface SessionMark {
   settled?: string;
   /** ms epoch before which a transcript that could not be found is not searched for again. */
   retryAt?: number;
+  /** The earliest `started_at` seen, kept past the record's expiry so a resumed Codex session still finds its date folder. */
+  startedAt?: number;
 }
 
 /** The fields the new event carries beside the envelope. */

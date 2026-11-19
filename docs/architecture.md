@@ -64,7 +64,15 @@ The lookup searches `CLAUDE_CONFIG_DIR`, `~/.claude` and each `~/.claude-*` dire
 `projects` folder for Claude Code, and `CODEX_HOME` or `~/.codex` for Codex, a few dates either side
 of the session's own. A transcript in a config directory outside those is not found, and its
 usage is never sent: a known limit. A transcript not found yet is searched for again every 10
-minutes until the record expires after 30 days.
+minutes until the record expires after 30 days. A session record carries a hash of the backend and
+token it was recorded under, and the flusher drops one recorded under any other, so usage never
+goes to a backend it was not captured for. A session with no `session_end` is read only when its
+transcript has also gone quiet for 30 minutes. A mark outlives its record by 180 days, so a
+resumed session carries on from its old offsets.
+
+Known limit: if the flusher dies after queuing a session's events and before writing its mark, and
+the transcript grows before the next read, the overlap is sent again under new ids and counted
+twice.
 
 ## The client's job, and where it stops
 

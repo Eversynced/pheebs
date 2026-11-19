@@ -1,11 +1,12 @@
 import { maybeAutoUpdate } from "../auto-update.js";
-import { ensureConfig, hasBackend } from "../backend-config.js";
+import { baseUrl, ensureConfig, hasBackend } from "../backend-config.js";
 import { stripBom } from "../bom.js";
 import { classifyPrompt } from "../classify.js";
 import { getConfig } from "../config.js";
 import { getDeveloperHandle } from "../developer-id.js";
 import { appendLogEntry } from "../logger.js";
 import { resyncOtelConfigs } from "../otel-resync.js";
+import { scopeKey } from "../outbox.js";
 import { runArtifactScan } from "../scanner.js";
 import { readStoredToken, revalidateStoredTokenIfStale } from "../token.js";
 import { noteSession } from "../usage-sessions.js";
@@ -646,12 +647,14 @@ function noteTranscript(
   if (tool === AI_TOOLS.CURSOR || !TRANSCRIPT_EVENTS.has(eventName)) return;
   if (!sessionId) return;
   try {
-    if (process.env.PHEEBS_DEBUG || !hasBackend() || !readStoredToken()) return;
+    const stored = readStoredToken();
+    if (process.env.PHEEBS_DEBUG || !hasBackend() || !stored) return;
     noteSession({
       tool,
       session_id: sessionId,
       codebase,
-      ended: eventName === EVENTS.SessionEnd,
+      scope: scopeKey(baseUrl(), stored.token),
+      ended: eventName === EVENTS.TurnEnded ? undefined : eventName === EVENTS.SessionEnd,
     });
   } catch {}
 }
