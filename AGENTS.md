@@ -53,6 +53,11 @@ change.
    token across repos. It stays on disk owner-only (0600, an ACL on Windows),
    never enters an event, and never crosses the network. Nothing else may join
    it: a path that came from a payload is still read-and-discard.
+
+   The one other path kept is a transcript's, in `~/.pheebs/sessions/`: the detached flusher
+   reads token counts from it after the session, and the agent's config directory differs per
+   account, so it cannot be found again from the session id. It is owner-only, written only with a
+   backend and token set, never enters an event, and goes after 30 idle days.
 2. **Hooks never break or slow the user's session.** Remote failures degrade
    silently, never throw into the hook. Only Claude Code registers hooks with
    `"async": true`; Cursor and Codex wait for the hook process to exit, so any
@@ -152,6 +157,8 @@ so run `npm run build` before the CLI tests mean anything.
 | `src/insights-team-normalize.ts`, `src/insights-team-render.ts` | The same two halves for `/insights/team`, reusing the engineer report's primitives. Availability is per view, so a view that is off prints its reason; counts print beside the denominator the report states; the heatmap and the engineer table withhold opted-out developers by count, never by name. |
 | `src/commands/insights.ts` | `pheebs insights [--days N] [--json] [--team \| --local]`. Argument parsing (both `--days` spellings) and render options (terminal width, falling back to 80 off a TTY). Computes nothing itself: the backend produces the numbers, or the local log does when there is no backend or `--local` is given. |
 | `src/insights-local.ts`, `src/repertoire.ts`, `src/verification.ts` | The report without a backend: the log read from disk, the `repertoire` section computed under the registry's practice definitions and the model's window and placement rules, and verification coverage, in the contract's shape so normalize and render draw it unchanged. Split-phase delivery reads the session's model timeline and counts a change whose model it cannot resolve as undecided, never as a miss. Verification coverage is withheld when a session could be verified only by a classifier-labeled request, since the log does not record which classifier versions a backend accepts. The other four judgement signals need a backend. |
+| `src/usage-sessions.ts` | `~/.pheebs/sessions/`: one record per Claude Code or Codex session the hook has seen, holding the transcript path the flusher needs, and one mark per session holding byte offsets and Codex totals. Written owner-only, local only, never part of an event. |
+| `src/transcript-usage.ts`, `src/usage-collect.ts` | The readers that sum a transcript's tokens by model into integers, and the flusher step that queues `session_token_usage` for sessions that ended or went quiet. The transcript is read in-process and discarded; Cursor has no reader because its transcripts carry no usage. |
 | `src/config.ts` | Codebase id resolution: env override, git remote `org/repo`, then `local/<folder-name>`. Directory name only, never a full path. |
 | `src/developer-id.ts` | The local `developer` label: the stored token id, falling back to a hashed git email, cached per session in `~/.pheebs/.developer-handles.json` so `git` is not spawned on every event. Resolved without a network call. |
 

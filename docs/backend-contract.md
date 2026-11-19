@@ -81,6 +81,23 @@ still shows the `worktree` segment.
 Cursor parallel agents and Codex app worktrees create worktrees without a shell command, so they
 never set it. Any count is a lower bound: read its absence as unknown, never as no worktree use.
 
+Contract 1.10.0 adds the `session_token_usage` event: the tokens a session used, summed by model
+from the agent's transcript after the session ends, so cost and session fit do not need the OTel
+exporter. It carries `model`, `from_subagent`, `input_tokens`, `output_tokens`, and when the
+transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning_tokens`, plus
+`usage_source: "transcript"`. Three rules for reading it:
+
+- **Each event is a delta, never a running total.** One session sends several events for the same
+  model: a resumed session adds one per resume, and a session whose end was never seen is read
+  after it goes quiet. Sum them. The `event_id` of one read is the same every time it is produced,
+  so a resend is stored once.
+- **Absent is not zero.** `cache_write_tokens` is absent on Codex and `reasoning_tokens` when the
+  transcript has none. `input_tokens` excludes cache reads on both tools.
+- **It is a floor, and some sessions send nothing.** Cursor transcripts carry no usage. Codex runs
+  that wrote no totals send nothing, and a forked Codex rollout is not read. Claude Code calls that
+  write no transcript line are not counted, so a session's total can sit below what the agent's own
+  cost line reports. A session that never ended and never went quiet long enough is not read yet.
+
 ## `/ingest/batch` (optional)
 
 `{ "events": [envelope, ...], "droppedSinceLastSend": n }`, at most 500 events. The client writes

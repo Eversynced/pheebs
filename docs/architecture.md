@@ -47,6 +47,20 @@ Each backend and token gets its own queue, and pointing Pheebs elsewhere discard
 rather than send it to a backend the events were never meant for
 ([`src/outbox.ts`](../src/outbox.ts)). The local log keeps every event either way.
 
+### Token usage
+
+Claude Code and Codex transcripts carry the tokens a session used. No hook reads one: a hook that
+sees `transcript_path` on a session start, a turn end or a session end only records the session in
+`~/.pheebs/sessions/` ([`src/usage-sessions.ts`](../src/usage-sessions.ts)). The detached flusher
+reads the transcript of every recorded session that has ended, or has been quiet for 30 minutes,
+which is the sweep for sessions that never sent `session_end` and for Codex, which has no such hook
+([`src/usage-collect.ts`](../src/usage-collect.ts)). It sums the tokens by model and queues one
+`session_token_usage` event per model and scope, as a delta since the last read, then moves the
+session's byte offsets forward. The readers are in [`src/transcript-usage.ts`](../src/transcript-usage.ts):
+Claude Code counts each `message.id` and `requestId` once and adds the subagent files below the
+transcript, and Codex takes differences between its cumulative totals. Cursor has no reader, because its
+transcripts carry no usage (see the [ledger](./spike-findings-ledger.md)).
+
 ## The client's job, and where it stops
 
 Pheebs emits generic facts about an interaction: a tool ran with intent

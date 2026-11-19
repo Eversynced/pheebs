@@ -143,6 +143,15 @@ setting), `session_duration_ms`, `is_background_agent`, and compaction detail
 (`context_usage_percent`, `context_tokens`, `context_window_size`, `messages_to_compact`,
 `is_first_compaction`).
 
+**Session token usage:** for Claude Code and Codex, after a session ends or goes quiet, the
+background process reads the agent's transcript on your machine, adds up the tokens by model, and
+queues one `session_token_usage` event per model with `model`, `from_subagent`, `input_tokens`,
+`output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens` and
+`usage_source`. Only integers and the model id leave the transcript; its text, tool output and
+paths are read past and dropped. To find the file later, a hook records its path in
+`~/.pheebs/sessions/` (owner-only, local, never sent, removed after 30 idle days), only when a
+backend and token are set. Cursor's transcripts carry no usage, so Cursor sends none.
+
 **Codex also:** `input_tokens`, `output_tokens`, `permission_type`, `approved`.
 
 > **Two of these are free text.** `task_subject` and `teammate_name` (Claude Code background
