@@ -46,8 +46,13 @@ function isRecord(value: unknown): value is SessionRecord {
 // Staged and renamed, so a reader never sees half a file.
 function writeAtomic(path: string, value: unknown): void {
   const staged = `${path}.${process.pid}.tmp`;
-  writeFileSync(staged, `${JSON.stringify(value)}\n`, { mode: 0o600 });
-  renameSync(staged, path);
+  try {
+    writeFileSync(staged, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+    renameSync(staged, path);
+  } catch (err) {
+    rmSync(staged, { force: true });
+    throw err;
+  }
 }
 
 /**

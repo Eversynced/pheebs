@@ -157,6 +157,17 @@ describe("readClaudeUsage", () => {
     expect(text).not.toContain(dir);
   });
 
+  it("drops usage whose model is not shaped like a model id", async () => {
+    const path = write(
+      join(dir, "s.jsonl"),
+      lines(
+        assistant("m1", "r1", "text that is not a model id", { input: 5, output: 5 }),
+        assistant("m2", "r2", "claude-opus-5-5", { input: 1, output: 1 }),
+      ),
+    );
+    expect((await readClaudeUsage(path)).rows).toMatchObject([{ model: "claude-opus-5-5" }]);
+  });
+
   it("reads a missing file as nothing, without throwing", async () => {
     expect((await readClaudeUsage(join(dir, "gone.jsonl"))).rows).toEqual([]);
   });

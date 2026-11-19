@@ -7,6 +7,12 @@ import type { Cursors, UsageRead, UsageRow } from "./usage-types.js";
 const MAX_LINE_BYTES = 32 * 1024 * 1024;
 const NEWLINE = 0x0a;
 
+// A model id is the one string read out of a transcript, so it has to look like one: anything else
+// could be text, and is dropped with its usage rather than sent. Same shape the hook accepts.
+const MODEL_ID = /^[A-Za-z0-9._:@[\]-]{1,100}$/;
+const isModelId = (value: unknown): value is string =>
+  typeof value === "string" && MODEL_ID.test(value);
+
 /**
  * Calls `onLine` for each complete line from `from` that contains one of `needles`, and returns the
  * offset just past the last complete line. A half-written last line is left for the next read.
@@ -152,7 +158,7 @@ export async function readClaudeUsage(
       const usage = message?.usage as Record<string, unknown> | undefined;
       if (entry.type !== "assistant" || !message || !usage) return;
       const { id, model } = message;
-      if (typeof id !== "string" || typeof model !== "string" || model === "<synthetic>") return;
+      if (typeof id !== "string" || !isModelId(model) || model === "<synthetic>") return;
       if (!isCount(usage.input_tokens) || !isCount(usage.output_tokens)) return;
       const key = `${id}:${typeof entry.requestId === "string" ? entry.requestId : ""}`;
       const thinking = (usage.output_tokens_details as Record<string, unknown> | undefined)
@@ -232,7 +238,7 @@ export async function readCodexUsage(
     if (entry.type === "session_meta") {
       if (payload.forked_from_id !== undefined) skip = true;
     } else if (entry.type === "turn_context") {
-      if (typeof payload.model === "string") state.model = payload.model;
+      if (isModelId(payload.model)) state.model = payload.model;
     } else if (entry.type === "event_msg" && payload.type === "token_count") {
       const totals = (payload.info as { total_token_usage?: Record<string, unknown> } | null)
         ?.total_token_usage;
