@@ -224,6 +224,28 @@ describe("collectUsage", () => {
     expect(queued().filter((e) => e.input_tokens === 3)).toHaveLength(1);
   });
 
+  it("searches for a resumed session from the day it first started", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 1, 1));
+    note(true);
+    await collect();
+    const later = NOW + 40 * 24 * 60 * 60 * 1000;
+    await collect(later);
+    note(true, later + 1);
+    const seen: number[] = [];
+    await collectUsage({
+      dir: queue,
+      scope: "scope-a",
+      root,
+      now: later + 2,
+      version: "9.9.9",
+      locate: (record) => {
+        seen.push(record.started_at);
+        return transcript;
+      },
+    });
+    expect(seen).toEqual([NOW]);
+  });
+
   it("does nothing for a transcript that is gone", async () => {
     note(true);
     expect(await collect()).toBe(0);
