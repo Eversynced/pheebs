@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { baseUrl, hasBackend, ingestBatchUrl, ingestUrl } from "./backend-config.js";
+import { resolveLogPath } from "./config.js";
+import { getDeveloperHandle } from "./developer-id.js";
 import { readCapped } from "./insights.js";
+import { appendLocalLogEntry, type LogEntry } from "./logger.js";
 import {
   discardOtherScopes,
   hasSendNow,
@@ -21,6 +24,8 @@ import {
 } from "./outbox.js";
 import { readStoredToken } from "./token.js";
 import { writeMarker } from "./transports/http.js";
+import { collectUsage } from "./usage-collect.js";
+import { PHEEBS_VERSION } from "./version.js";
 
 // How long the oldest queued event waits before a send, so one request carries what a burst of
 // hooks produced. It also bounds how late an event reaches the backend. The variable exists for
@@ -33,6 +38,11 @@ const LINGER_MS = (() => {
 // How often a lingering flusher looks for an event that asks to be sent now. The hook that queued it
 // saw this flusher live and started no other, so nothing else would cut the linger short.
 const SEND_NOW_CHECK_MS = 1_000;
+
+// How often a flusher looks for sessions whose transcripts are due. Short enough that a session
+// that just ended is read within the linger, long enough that a backlog of records is not rescanned
+// on every pass.
+const COLLECT_EVERY_MS = 2_000;
 
 const MAX_BATCH_EVENTS = 500;
 const MAX_BATCH_BYTES = 512 * 1024;
@@ -510,6 +520,29 @@ function stillScoped(scope: string): boolean {
   return hasBackend() && stored !== undefined && scopeKey(baseUrl(), stored.token) === scope;
 }
 
+// Transcripts are read here and never in a hook: it can take seconds on a long session, and
+// the flusher is detached. A failure leaves the session's mark where it was for the next pass.
+let lastCollectAt = 0;
+async function collectSessionUsage(dir: string, lock: Lock): Promise<void> {
+  const at = Date.now();
+  if (at - lastCollectAt < COLLECT_EVERY_MS) return;
+  lastCollectAt = at;
+  try {
+    await collectUsage({
+      dir,
+      version: PHEEBS_VERSION,
+      refresh: () => lock.refresh(),
+      log: (event) => {
+        const entry = event as LogEntry;
+        appendLocalLogEntry(
+          { ...entry, developer: getDeveloperHandle(entry.session_id) },
+          { codebaseId: entry.codebase, logPath: resolveLogPath() },
+        );
+      },
+    });
+  } catch {}
+}
+
 // Returns true when it stopped on an empty queue, so the caller re-checks after letting go of the
 // lock: an event queued in between saw the lock held and started no flusher of its own.
 async function drain(ctx: FlushContext, lock: Lock, linger: boolean) {
@@ -517,6 +550,7 @@ async function drain(ctx: FlushContext, lock: Lock, linger: boolean) {
   let honourBackoff = linger;
   for (;;) {
     if (!lock.refresh() || !ctx.stillScoped?.()) return false;
+    await collectSessionUsage(dir, lock);
     trimToCaps(dir);
     const pending = listPending(dir);
     if (pending.length === 0) return true;

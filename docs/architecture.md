@@ -47,6 +47,25 @@ Each backend and token gets its own queue, and pointing Pheebs elsewhere discard
 rather than send it to a backend the events were never meant for
 ([`src/outbox.ts`](../src/outbox.ts)). The local log keeps every event either way.
 
+### Token usage
+
+Claude Code and Codex transcripts carry the tokens a session used. No hook reads one: a hook on a session start, a turn end or a session end only records the session
+(id, tool, codebase, timestamps, never a path) in `~/.pheebs/sessions/` ([`src/usage-sessions.ts`](../src/usage-sessions.ts)). The detached flusher
+finds and reads the transcript of every recorded session that has ended, or has been quiet for 30 minutes,
+which is the sweep for sessions that never sent `session_end` and for Codex, which has no such hook
+([`src/usage-collect.ts`](../src/usage-collect.ts)). It sums the tokens by model and queues one
+`session_token_usage` event per model and scope, as a delta since the last read, then moves the
+session's byte offsets forward. The readers are in [`src/transcript-usage.ts`](../src/transcript-usage.ts):
+Claude Code counts each `message.id` and `requestId` once and adds the subagent files below the
+transcript, and Codex takes differences between its cumulative totals. Cursor has no reader, because its
+transcripts carry no usage (see the [ledger](./spike-findings-ledger.md)).
+
+The lookup searches `CLAUDE_CONFIG_DIR`, `~/.claude` and each `~/.claude-*` directory with a
+`projects` folder for Claude Code, and `CODEX_HOME` or `~/.codex` for Codex, a few dates either side
+of the session's own. A transcript in a config directory outside those is not found, and its
+usage is never sent: a known limit. A transcript not found yet is searched for again every 10
+minutes until the record expires after 30 days.
+
 ## The client's job, and where it stops
 
 Pheebs emits generic facts about an interaction: a tool ran with intent
