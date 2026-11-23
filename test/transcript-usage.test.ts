@@ -1,4 +1,3 @@
-// Target: test/transcript-usage.test.ts
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -168,6 +167,23 @@ describe("readClaudeUsage", () => {
     expect((await readClaudeUsage(path)).rows).toMatchObject([{ model: "claude-opus-5-5" }]);
   });
 
+  it("drops a line whose counts are not whole non-negative integers, and keeps a hostile model name inert", async () => {
+    const path = write(
+      join(dir, "s.jsonl"),
+      lines(
+        assistant("m1", "r1", "__proto__", { input: 5, output: 5 }),
+        assistant("m2", "r2", "claude-opus-5-5", { input: 1.5, output: 2 }),
+        assistant("m3", "r3", "claude-opus-5-5", { input: Number.MAX_VALUE, output: 3 }),
+        assistant("m4", "r4", "claude-opus-5-5", { input: -4, output: 4 }),
+        assistant("m5", "r5", "x".repeat(101), { input: 9, output: 9 }),
+      ),
+    );
+    const { rows } = await readClaudeUsage(path);
+    expect(rows).toMatchObject([{ model: "__proto__", input_tokens: 5, output_tokens: 5 }]);
+    expect(rows).toHaveLength(1);
+    expect(({} as Record<string, unknown>).input_tokens).toBeUndefined();
+  });
+
   it("reads a missing file as nothing, without throwing", async () => {
     expect((await readClaudeUsage(join(dir, "gone.jsonl"))).rows).toEqual([]);
   });
@@ -322,6 +338,21 @@ describe("readCodexUsage", () => {
     );
     expect((await readCodexUsage(path)).rows).toMatchObject([
       { input_tokens: 120, output_tokens: 25 },
+    ]);
+  });
+
+  it("counts a replaced, shorter rollout from zero instead of against the old totals", async () => {
+    const path = write(
+      join(dir, "r.jsonl"),
+      codexLines(turn("gpt-5.5"), total(1000, 0, 200, 0), total(2000, 0, 400, 0)),
+    );
+    const first = await readCodexUsage(path);
+    write(path, codexLines(turn("gpt-5.5"), total(10, 0, 2, 0)));
+    const reset = await readCodexUsage(path, first.cursors);
+    expect(reset.rows).toEqual([]);
+    appendFileSync(path, codexLines(total(30, 0, 6, 0)));
+    expect((await readCodexUsage(path, reset.cursors)).rows).toMatchObject([
+      { input_tokens: 30, output_tokens: 6 },
     ]);
   });
 

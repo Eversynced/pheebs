@@ -1,4 +1,3 @@
-// Target: src/usage-types.ts
 import type { AiTool } from "./hooks/types.js";
 
 /** The tools whose transcripts carry usage. Cursor's carry none (ledger 2026-11-19). */

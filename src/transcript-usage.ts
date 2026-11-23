@@ -59,7 +59,7 @@ async function scanLines(
 }
 
 const isCount = (value: unknown): value is number =>
-  typeof value === "number" && Number.isFinite(value) && value >= 0;
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
 interface Tally {
   model: string;
@@ -122,7 +122,9 @@ const CLAUDE_NEEDLE = [Buffer.from('"usage"')];
 /**
  * Sums a Claude Code session's usage by model: the parent transcript plus every subagent file below
  * it, from the offsets in `cursors`. A streamed response repeats its line, so each `message.id` and
- * `requestId` counts once at its largest value per field. Nothing is persisted here.
+ * `requestId` counts once at its largest value per field. Nothing is persisted here. The dedup
+ * holds within one read: a read that ends between two lines of one streamed response counts that
+ * response again on the next read, so the caller reads a transcript only once it has gone quiet.
  */
 export async function readClaudeUsage(
   transcriptPath: string,
@@ -220,9 +222,18 @@ export async function readCodexUsage(
   if (size === undefined || prior?.codex?.skip)
     return { rows: [], cursors: { ...cursors }, ranges: {} };
   const from = prior?.offset ?? 0;
-  if (size < from) return { rows: [], cursors: { "": { ...prior, offset: size } }, ranges: {} };
+  const zero = { input: 0, cached: 0, output: 0, reasoning: 0 };
+  // A rollout that shrank is a different file under the same name, so its old totals no longer
+  // apply.
+  if (size < from)
+    return {
+      rows: [],
+      cursors: { "": { ...prior, offset: size, codex: { ...prior?.codex, ...zero } } },
+      ranges: {},
+    };
 
-  const state = { input: 0, cached: 0, output: 0, reasoning: 0, ...prior?.codex };
+  const state = { ...zero, ...prior?.codex };
+  if (!isModelId(state.model)) state.model = undefined;
   let skip = false;
   const tallies = new Map<string, Tally>();
 
