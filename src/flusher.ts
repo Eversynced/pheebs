@@ -548,7 +548,9 @@ async function collectSessionUsage(
         );
       },
     });
-  } catch {}
+  } catch {
+    // Usage is best effort beside the send: a failed pass leaves the marks where they were.
+  }
 }
 
 // Returns true when it stopped on an empty queue, so the caller re-checks after letting go of the

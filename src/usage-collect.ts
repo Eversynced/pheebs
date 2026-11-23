@@ -9,7 +9,7 @@ import { forgetSession, listSessions, pruneSessions, writeMark } from "./usage-s
 import type { SessionRecord, UsageRead } from "./usage-types.js";
 
 // A session that never sent SessionEnd, or whose tool has no such hook, is read once it has been
-// quiet this long. A transcript is complete at SessionEnd and not at Stop (ledger 2026-11-19).
+// quiet this long. A transcript is complete at SessionEnd and not at Stop (ledger: Claude Code transcripts carry per-response usage).
 export const IDLE_MS = 30 * 60 * 1000;
 
 export interface CollectOptions {
@@ -105,8 +105,11 @@ export async function collectUsage({
       }
       writeMark(key, { cursors: result.cursors, settled, startedAt }, root);
     } catch {
-      // An unreadable file or a queue that refuses leaves the mark where it was, and the next pass
-      // reads the same bytes again.
+      // An unreadable file or a queue that refuses leaves the cursors where they were, and a later
+      // pass reads the same bytes again, not every 2 seconds.
+      try {
+        writeMark(key, { ...mark, retryAt: now + NOT_FOUND_RETRY_MS }, root);
+      } catch {}
     }
   }
   return queued;

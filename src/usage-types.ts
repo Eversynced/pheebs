@@ -1,6 +1,6 @@
 import type { AiTool } from "./hooks/types.js";
 
-/** The tools whose transcripts carry usage. Cursor's carry none (ledger 2026-11-19). */
+/** The tools whose transcripts carry usage. Cursor's carry none (ledger: Cursor transcripts carry no token usage). */
 export type UsageTool = Extract<AiTool, "claude_code" | "codex">;
 
 /** Integers only. An optional field is absent, never 0, when the transcript does not carry it. */
@@ -68,7 +68,8 @@ export interface SessionMark {
   settled?: string;
   /** ms epoch before which a transcript that could not be found is not searched for again. */
   retryAt?: number;
-  /** The earliest `started_at` seen, kept past the record's expiry so a resumed Codex session still finds its date folder. */
+  /** The earliest `started_at` seen, kept past the record's expiry so a resumed session still
+   *  finds its date folder. */
   startedAt?: number;
 }
 

@@ -61,8 +61,8 @@ transcript, and Codex takes differences between its cumulative totals. Cursor ha
 transcripts carry no usage (see the [ledger](./spike-findings-ledger.md)).
 
 The lookup searches `CLAUDE_CONFIG_DIR`, `~/.claude` and each `~/.claude-*` directory with a
-`projects` folder for Claude Code, and `CODEX_HOME` or `~/.codex` for Codex, a few dates either side
-of the session's own. A transcript in a config directory outside those is not found, and its
+`projects` folder for Claude Code, and `CODEX_HOME` or `~/.codex` for Codex, a day either side of the
+session's first and last hook. A transcript in a config directory outside those is not found, and its
 usage is never sent: a known limit. A transcript not found yet is searched for again every 10
 minutes until the record expires after 30 days. A session record carries a hash of the backend and
 token it was recorded under, and the flusher drops one recorded under any other, so usage never

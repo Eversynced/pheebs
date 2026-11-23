@@ -19,6 +19,7 @@ function record(over: Partial<SessionRecord> = {}): SessionRecord {
     tool: "claude_code",
     session_id: ID,
     codebase: "acme/api",
+    scope: "scope-a",
     ended: true,
     started_at: AT,
     touched_at: AT,

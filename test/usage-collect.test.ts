@@ -1,4 +1,3 @@
-// Target: test/usage-collect.test.ts
 import {
   appendFileSync,
   existsSync,
@@ -130,7 +129,8 @@ describe("collectUsage", () => {
     const blocked = join(base, "blocked");
     writeFileSync(blocked, "a file where the queue directory should be");
     await collect(NOW, blocked).catch(() => {});
-    expect(await collect()).toBe(1);
+    expect(await collect(NOW + 1000)).toBe(0);
+    expect(await collect(NOW + 11 * 60_000)).toBe(1);
   });
 
   it("names a pass the same way when the mark was lost, so a resend is one event", async () => {
