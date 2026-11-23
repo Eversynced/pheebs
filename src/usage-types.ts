@@ -20,7 +20,7 @@ export interface UsageRow extends TokenCounts {
   from_subagent: boolean;
 }
 
-/** Where the last read of one transcript file stopped. Offsets and counters, never content. */
+/** Where the last read of one transcript file stopped. A byte offset, never content. */
 export interface FileCursor {
   /** Byte offset just past the last complete line read. */
   offset: number;
