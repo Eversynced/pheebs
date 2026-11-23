@@ -618,19 +618,20 @@ components:
           description: |
             On `session_token_usage`, the tokens a session sent in, apart from cache reads. Each
             `session_token_usage` event is a delta since the last send: sum the events per session
-            and model, as docs/backend-contract.md describes. On Codex this is its input total
-            minus its cached input, so input plus `cache_read_tokens` is everything the model read. Cursor and Codex hook events carry their own counts under
-            these names too.
+            and model, as docs/backend-contract.md describes. Cursor and Codex hook events carry
+            their own counts under these names too.
         output_tokens:
           type: integer
           description: |
-            On `session_token_usage`, as the transcript reports it. On Codex `reasoning_tokens` is
-            part of this count. Whether a Claude Code thinking count is inside it is not verified.
+            On `session_token_usage`, as the transcript reports it. Whether `reasoning_tokens` is
+            part of this count is not verified.
         cache_read_tokens:
           type: integer
         cache_write_tokens:
           type: integer
-          description: Absent on a Codex `session_token_usage`, whose transcript has no such count.
+          description: |
+            Absent on a `session_token_usage` whose transcript carries none, which is not a
+            measured zero.
         reasoning_tokens:
           type: integer
           description: |
