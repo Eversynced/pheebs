@@ -34,6 +34,8 @@ describe("openapi.yaml", () => {
     for (const field of ["reasoning_tokens", "from_subagent", "usage_source"]) {
       expect(spec).toContain(`\n        ${field}:\n`);
     }
+    expect(spec).toContain("\n            - session_token_usage\n");
+    expect(spec).toContain("\n          const: transcript\n");
   });
 
   it("documents command_sequence beside the fields a chain changes", () => {

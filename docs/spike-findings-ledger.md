@@ -65,7 +65,7 @@ privacy line.
 - **Impact:** partial. Codex usage can be summed from the rollout at session end as integers by model, but not for the 0.136.0 runs that wrote `info: null`, and fork and subagent handling would need a spike with real fork and subagent rollouts first.
 - **Ref:** none
 
-### 2026-11-19: Claude Code transcripts carry per-response usage and a session `cost-state` line; subagents are separate files; `SessionEnd` sees a complete file, `Stop` does not [Status: CONFIRMED]
+### 2026-11-19: Claude Code transcripts carry per-response usage and a session `cost-state` line; subagents are separate files; `SessionEnd` sees a complete file, `Stop` does not [Status: CONFIRMED, the `cost-state` line's stability and the cause of its gap to the transcript sum UNVERIFIED]
 
 - **Tool(s):** claude_code (2.1.303 to 2.1.328 in the local files; live runs on 2.1.328)
 - **Hook / event:** `SessionStart`, `Stop`, `SubagentStart`, `SubagentStop`, `SessionEnd`, all carry `transcript_path` (live capture); `SubagentStop` adds `agent_transcript_path`

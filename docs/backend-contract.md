@@ -95,8 +95,8 @@ transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning_tok
   transcript has none. `input_tokens` excludes cache reads on both tools.
 - **It is a floor, and some sessions send nothing.** Cursor transcripts carry no usage. Codex runs
   that wrote no totals send nothing, and a forked Codex rollout is not read. Claude Code calls that
-  write no transcript line are not counted, so a session's total can sit below what the agent's own
-  cost line reports. A session that never ended and never went quiet long enough is not read yet.
+  write no transcript line are not counted, and a session's total can sit below what the agent's own
+  cost line reports (the cause is not established). A session that never ended and never went quiet long enough is not read yet.
 
 ## `/ingest/batch` (optional)
 
