@@ -81,8 +81,8 @@ still shows the `worktree` segment.
 Cursor parallel agents and Codex app worktrees create worktrees without a shell command, so they
 never set it. Any count is a lower bound: read its absence as unknown, never as no worktree use.
 
-Contract 1.10.0 adds the `session_token_usage` event: the tokens a session used, summed by model
-from the agent's transcript after the session ends, so cost and session fit do not need the OTel
+Contract 1.10.0 adds the `session_token_usage` event: the tokens a Claude Code session used,
+summed by model from the transcript after the session ends, so cost and session fit do not need the OTel
 exporter. It carries `model`, `from_subagent`, `input_tokens`, `output_tokens`, and when the
 transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning_tokens`, plus
 `usage_source: "transcript"`. Three rules for reading it:
@@ -91,11 +91,10 @@ transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning_tok
   model: a resumed session adds one per resume, and a session whose end was never seen is read
   after it goes quiet. Sum them. The `event_id` is derived from the transcript range a read covers, so
   a resend of the same read carries the same id and is stored once.
-- **Absent is not zero.** `cache_write_tokens` is absent on Codex and `reasoning_tokens` when the
-  transcript has none. On Codex, `input_tokens` is its input total minus its cached input.
-- **It is a floor, and some sessions send nothing.** Cursor transcripts carry no usage. Codex runs
-  that wrote no totals send nothing, and a forked Codex rollout is not read, because fork handling
-  is unverified. A session's total can sit below what the agent's own cost line reports (the cause
+- **Absent is not zero.** `cache_write_tokens` and `reasoning_tokens` are absent when the
+  transcript has none. `input_tokens` is the count the transcript reports, apart from cache reads.
+- **It is a floor, and some sessions send nothing.** Only Claude Code sessions are read: Cursor
+  transcripts carry no usage, and Codex is not read. A session's total can sit below what the agent's own cost line reports (the cause
   is not established). A session that never ended and never went quiet long enough is not read yet.
 
 ## `/ingest/batch` (optional)
