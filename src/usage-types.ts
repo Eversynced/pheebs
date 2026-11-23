@@ -1,16 +1,15 @@
 import type { AiTool } from "./hooks/types.js";
 
-/** The tools whose transcripts carry usage. Cursor's carry none (ledger: Cursor transcripts carry no token usage). */
-export type UsageTool = Extract<AiTool, "claude_code" | "codex">;
+/** The tool whose transcripts carry usage here. Cursor's carry none (ledger: Cursor transcripts carry no token usage). */
+export type UsageTool = Extract<AiTool, "claude_code">;
 
 /** Integers only. An optional field is absent, never 0, when the transcript does not carry it. */
 export interface TokenCounts {
-  /** Excludes cache reads. On Codex it is `input_tokens - cached_input_tokens`. */
+  /** Excludes cache reads. */
   input_tokens: number;
   /** Includes reasoning tokens. */
   output_tokens: number;
   cache_read_tokens?: number;
-  /** Absent on Codex. */
   cache_write_tokens?: number;
   /** A subset of output_tokens. Absent when no line of the read carried it. */
   reasoning_tokens?: number;
@@ -25,16 +24,6 @@ export interface UsageRow extends TokenCounts {
 export interface FileCursor {
   /** Byte offset just past the last complete line read. */
   offset: number;
-  /** Codex only: the cumulative totals at that offset, and the model of the turn in force.
-   *  `skip` marks a rollout that is never read (a fork, whose totals start non-zero). */
-  codex?: {
-    input: number;
-    cached: number;
-    output: number;
-    reasoning: number;
-    model?: string;
-    skip?: true;
-  };
 }
 
 /** Keyed by file name relative to the transcript: "" for the parent, "agent-<id>.jsonl" below it. */
