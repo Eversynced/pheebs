@@ -8,20 +8,21 @@ const MAX_LINE_BYTES = 32 * 1024 * 1024;
 const NEWLINE = 0x0a;
 
 // A model id is the one string read out of a transcript, so it has to look like one: anything else
-// could be text, and is dropped with its usage rather than sent. Same shape the hook accepts.
+// could be text, and is dropped with its usage rather than sent. Same shape the hook accepts, so
+// Claude's `<synthetic>` placeholder fails it too.
 const MODEL_ID = /^[A-Za-z0-9._:@[\]-]{1,100}$/;
 const isModelId = (value: unknown): value is string =>
   typeof value === "string" && MODEL_ID.test(value);
 
 /**
- * Calls `onLine` for each complete line from `from` that contains one of `needles`, and returns the
+ * Calls `onLine` for each complete line from `from` that contains `needle`, and returns the
  * offset just past the last complete line. A half-written last line is left for the next read.
  * Matching is done on the raw bytes, so the many lines that carry no usage are never decoded.
  */
 async function scanLines(
   path: string,
   from: number,
-  needles: Buffer[],
+  needle: Buffer,
   onLine: (line: string) => void,
 ): Promise<number> {
   let pending: Buffer[] = [];
@@ -33,7 +34,7 @@ async function scanLines(
     consumed += lineBytes + 1;
     if (!oversized) {
       const line = pending.length ? Buffer.concat([...pending, tail]) : tail;
-      if (needles.some((needle) => line.includes(needle))) onLine(line.toString("utf-8"));
+      if (line.includes(needle)) onLine(line.toString("utf-8"));
     }
     pending = [];
     pendingBytes = 0;
@@ -117,7 +118,7 @@ function subagentFiles(parent: string): string[] {
   return found.sort();
 }
 
-const CLAUDE_NEEDLE = [Buffer.from('"usage"')];
+const CLAUDE_NEEDLE = Buffer.from('"usage"');
 
 /**
  * Sums a Claude Code session's usage by model: the parent transcript plus every subagent file below
@@ -160,7 +161,7 @@ export async function readClaudeUsage(
       const usage = message?.usage as Record<string, unknown> | undefined;
       if (entry.type !== "assistant" || !message || !usage) return;
       const { id, model } = message;
-      if (typeof id !== "string" || !isModelId(model) || model === "<synthetic>") return;
+      if (typeof id !== "string" || !isModelId(model)) return;
       if (!isCount(usage.input_tokens) || !isCount(usage.output_tokens)) return;
       const key = `${id}:${typeof entry.requestId === "string" ? entry.requestId : ""}`;
       const thinking = (usage.output_tokens_details as Record<string, unknown> | undefined)
