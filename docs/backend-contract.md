@@ -89,8 +89,8 @@ transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning_tok
 
 - **Each event is a delta, never a running total.** One session sends several events for the same
   model: a resumed session adds one per resume, and a session whose end was never seen is read
-  after it goes quiet. Sum them. The `event_id` of one read is the same every time it is produced,
-  so a resend is stored once.
+  after it goes quiet. Sum them. The `event_id` is derived from the transcript range a read covers, so
+  a resend of the same read carries the same id and is stored once.
 - **Absent is not zero.** `cache_write_tokens` is absent on Codex and `reasoning_tokens` when the
   transcript has none. On Codex, `input_tokens` is its input total minus its cached input.
 - **It is a floor, and some sessions send nothing.** Cursor transcripts carry no usage. Codex runs

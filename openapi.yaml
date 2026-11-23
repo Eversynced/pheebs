@@ -467,7 +467,7 @@ components:
           type: string
           description: |
             For `ai_tool: claude_code`, present on `session_started` and `session_token_usage`
-            only — recurring hooks do not carry it. Cursor and Codex copy it off any payload that
+            only; recurring hooks do not carry it. Cursor and Codex copy it off any payload that
             has it, on any event. On `session_token_usage`, the model the counts belong to (a
             Claude Code id has its context suffix stripped).
         from_model:
