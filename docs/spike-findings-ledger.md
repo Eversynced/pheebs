@@ -55,7 +55,7 @@ privacy line.
 - **Impact:** capped-by-tool. Cursor token usage is not obtainable from the transcript. Cost and session fit for Cursor stay out of scope, as the registry already says for auto-routed models. No schema change.
 - **Ref:** none
 
-### 2026-11-19: A Codex rollout carries cumulative `token_count` totals; model comes from `turn_context`, and 0.136.0 headless runs report none [Status: CONFIRMED on 15 local rollouts, subagents and forks UNVERIFIED]
+### 2026-11-19: A Codex rollout carries cumulative `token_count` totals; model comes from `turn_context`, and 0.136.0 runs report none [Status: CONFIRMED on 15 local rollouts, subagents and forks UNVERIFIED]
 
 - **Tool(s):** codex (`codex-cli` 0.136.0 and 0.154.0)
 - **Hook / event:** any Codex hook (all carry `transcript_path`, ledger 2026-09-11); the rollout file under `~/.codex/sessions/YYYY/MM/DD/`

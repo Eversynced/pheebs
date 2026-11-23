@@ -36,6 +36,9 @@ describe("openapi.yaml", () => {
     }
     expect(spec).toContain("\n            - session_token_usage\n");
     expect(spec).toContain("\n          const: transcript\n");
+    expect(
+      readFileSync(join(import.meta.dirname, "..", "docs", "backend-contract.md"), "utf-8"),
+    ).toContain("Contract 1.10.0");
   });
 
   it("documents command_sequence beside the fields a chain changes", () => {
