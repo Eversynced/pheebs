@@ -466,8 +466,10 @@ components:
         model:
           type: string
           description: |
-            For `ai_tool: claude_code`, present on `session_started` only — recurring hooks do
-            not carry it. Cursor and Codex copy it off any payload that has it, on any event.
+            For `ai_tool: claude_code`, present on `session_started` and `session_token_usage`
+            only; recurring hooks do not carry it. Cursor and Codex copy it off any payload that
+            has it, on any event. On `session_token_usage`, the model the counts belong to (a
+            Claude Code id has its context suffix stripped).
         from_model:
           type: string
           description: |
@@ -614,13 +616,16 @@ components:
         input_tokens:
           type: integer
           description: |
-            On `session_token_usage`, the tokens a session sent in, not counting cache reads. On
-            Codex that is its input total minus its cached input, so input plus `cache_read_tokens`
-            is everything the model read. Cursor and Codex hook events carry their own counts under
+            On `session_token_usage`, the tokens a session sent in, apart from cache reads. Each
+            `session_token_usage` event is a delta since the last send: sum the events per session
+            and model, as docs/backend-contract.md describes. On Codex this is its input total
+            minus its cached input, so input plus `cache_read_tokens` is everything the model read. Cursor and Codex hook events carry their own counts under
             these names too.
         output_tokens:
           type: integer
-          description: On `session_token_usage`, includes `reasoning_tokens`.
+          description: |
+            On `session_token_usage`, as the transcript reports it. On Codex `reasoning_tokens` is
+            part of this count. Whether a Claude Code thinking count is inside it is not verified.
         cache_read_tokens:
           type: integer
         cache_write_tokens:
@@ -629,8 +634,8 @@ components:
         reasoning_tokens:
           type: integer
           description: |
-            On `session_token_usage`, the part of `output_tokens` spent reasoning. Absent when the
-            transcript carries none, which is not a measured zero.
+            On `session_token_usage`, the reasoning tokens the transcript reports. Absent when it
+            carries none, which is not a measured zero.
         from_subagent:
           type: boolean
           description: |

@@ -55,7 +55,7 @@ privacy line.
 - **Impact:** capped-by-tool. Cursor token usage is not obtainable from the transcript. Cost and session fit for Cursor stay out of scope, as the registry already says for auto-routed models. No schema change.
 - **Ref:** none
 
-### 2026-11-19: A Codex rollout carries cumulative `token_count` totals; model comes from `turn_context`, and 0.136.0 headless runs report none [Status: CONFIRMED on 15 local rollouts, subagents and forks UNVERIFIED]
+### 2026-11-19: A Codex rollout carries cumulative `token_count` totals; model comes from `turn_context`, and 0.136.0 runs report none [Status: CONFIRMED on 15 local rollouts, subagents and forks UNVERIFIED]
 
 - **Tool(s):** codex (`codex-cli` 0.136.0 and 0.154.0)
 - **Hook / event:** any Codex hook (all carry `transcript_path`, ledger 2026-09-11); the rollout file under `~/.codex/sessions/YYYY/MM/DD/`
@@ -65,7 +65,7 @@ privacy line.
 - **Impact:** partial. Codex usage can be summed from the rollout at session end as integers by model, but not for the 0.136.0 runs that wrote `info: null`, and fork and subagent handling would need a spike with real fork and subagent rollouts first.
 - **Ref:** none
 
-### 2026-11-19: Claude Code transcripts carry per-response usage and a session `cost-state` line; subagents are separate files; `SessionEnd` sees a complete file, `Stop` does not [Status: CONFIRMED]
+### 2026-11-19: Claude Code transcripts carry per-response usage and a session `cost-state` line; subagents are separate files; `SessionEnd` sees a complete file, `Stop` does not [Status: CONFIRMED, the `cost-state` line's stability and the cause of its gap to the transcript sum UNVERIFIED]
 
 - **Tool(s):** claude_code (2.1.303 to 2.1.328 in the local files; live runs on 2.1.328)
 - **Hook / event:** `SessionStart`, `Stop`, `SubagentStart`, `SubagentStop`, `SessionEnd`, all carry `transcript_path` (live capture); `SubagentStop` adds `agent_transcript_path`
