@@ -618,8 +618,8 @@ components:
           description: |
             On `session_token_usage`, the tokens a session sent in, apart from cache reads. Each
             `session_token_usage` event is a delta since the last send: sum the events per session
-            and model, as docs/backend-contract.md describes. Cursor and Codex hook events carry
-            their own counts under these names too.
+            and model, as docs/backend-contract.md describes. Other events may carry the same
+            field name with their own meaning.
         output_tokens:
           type: integer
           description: |
@@ -627,6 +627,9 @@ components:
             part of this count is not verified.
         cache_read_tokens:
           type: integer
+          description: |
+            Absent on a `session_token_usage` whose transcript carries none, which is not a
+            measured zero.
         cache_write_tokens:
           type: integer
           description: |
@@ -646,8 +649,7 @@ components:
           type: string
           const: transcript
           description: |
-            On `session_token_usage`: where the counts were read. Only `transcript` exists, and the
-            field leaves room for a source that is not.
+            On `session_token_usage`: where the counts were read. Only `transcript` exists.
         status:
           type: string
           description: Cursor — how a turn or sub-agent run ended.

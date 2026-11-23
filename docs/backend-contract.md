@@ -82,20 +82,23 @@ Cursor parallel agents and Codex app worktrees create worktrees without a shell 
 never set it. Any count is a lower bound: read its absence as unknown, never as no worktree use.
 
 Contract 1.10.0 adds the `session_token_usage` event: the tokens a Claude Code session used,
-summed by model from the transcript after the session ends, so cost and session fit do not need the OTel
-exporter. It carries `model`, `from_subagent`, `input_tokens`, `output_tokens`, and when the
-transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning_tokens`, plus
+summed by model from the transcript after the session ends, so cost and session fit do not need
+the OTel exporter. It carries `model`, `from_subagent`, `input_tokens`, `output_tokens`, and when
+the transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning_tokens`, plus
 `usage_source: "transcript"`. Three rules for reading it:
 
 - **Each event is a delta, never a running total.** One session sends several events for the same
   model: a resumed session adds one per resume, and a session whose end was never seen is read
-  after it goes quiet. Sum them. The `event_id` is derived from the transcript range a read covers, so
-  a resend of the same read carries the same id and is stored once.
-- **Absent is not zero.** `cache_write_tokens` and `reasoning_tokens` are absent when the
-  transcript has none. `input_tokens` is the count the transcript reports, apart from cache reads.
-- **It is a floor, and some sessions send nothing.** Only Claude Code sessions are read: Cursor
-  transcripts carry no usage, and Codex is not read. A session's total can sit below what the agent's own cost line reports (the cause
-  is not established). A session that never ended and never went quiet long enough is not read yet.
+  after it goes quiet. Sum them. A resend of the same read carries the same `event_id`, so a
+  backend stores it once.
+- **Absent is not zero.** `cache_read_tokens`, `cache_write_tokens` and `reasoning_tokens` are
+  absent when the transcript has none. `input_tokens` is the count the transcript reports, apart
+  from cache reads. Whether `reasoning_tokens` is part of `output_tokens` is not verified, so do
+  not add or subtract it.
+- **It is a floor, and some sessions send nothing.** Only Claude Code sessions are read; no other
+  tool sends this event. A session's total can sit below what the agent's own cost line reports
+  (the cause is not established). A session that never ended and never went quiet long enough is
+  not read yet.
 
 ## `/ingest/batch` (optional)
 
