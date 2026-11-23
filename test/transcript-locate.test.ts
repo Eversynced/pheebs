@@ -21,7 +21,6 @@ function record(over: Partial<SessionRecord> = {}): SessionRecord {
     codebase: "acme/api",
     scope: "scope-a",
     ended: true,
-    started_at: AT,
     touched_at: AT,
     ...over,
   };
@@ -50,29 +49,6 @@ describe("locateTranscript", () => {
   it("does not find a config directory outside those locations", () => {
     touch(join(home, "custom-dir", "projects", "p", `${ID}.jsonl`));
     expect(locateTranscript(record(), { home, env: {} })).toBeUndefined();
-  });
-
-  it("finds a Codex rollout by session id in the record's days, a day either side", () => {
-    const d = new Date(AT - 24 * 60 * 60 * 1000);
-    const day = [
-      String(d.getFullYear()),
-      String(d.getMonth() + 1).padStart(2, "0"),
-      String(d.getDate()).padStart(2, "0"),
-    ];
-    const rollout = touch(
-      join(home, ".codex", "sessions", ...day, `rollout-2026-11-18T10-00-00-${ID}.jsonl`),
-    );
-    expect(locateTranscript(record({ tool: "codex" }), { home, env: {} })).toBe(rollout);
-    expect(
-      locateTranscript(
-        record({
-          tool: "codex",
-          started_at: AT + 5 * 24 * 60 * 60 * 1000,
-          touched_at: AT + 5 * 24 * 60 * 60 * 1000,
-        }),
-        { home, env: {} },
-      ),
-    ).toBeUndefined();
   });
 
   it("refuses a session id that is not id-shaped", () => {

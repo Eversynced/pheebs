@@ -224,28 +224,6 @@ describe("collectUsage", () => {
     expect(queued().filter((e) => e.input_tokens === 3)).toHaveLength(1);
   });
 
-  it("searches for a resumed session from the day it first started", async () => {
-    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 1, 1));
-    note(true);
-    await collect();
-    const later = NOW + 40 * 24 * 60 * 60 * 1000;
-    await collect(later);
-    note(true, later + 1);
-    const seen: number[] = [];
-    await collectUsage({
-      dir: queue,
-      scope: "scope-a",
-      root,
-      now: later + 2,
-      version: "9.9.9",
-      locate: (record) => {
-        seen.push(record.started_at);
-        return transcript;
-      },
-    });
-    expect(seen).toEqual([NOW]);
-  });
-
   it("does nothing for a transcript that is gone", async () => {
     note(true);
     expect(await collect()).toBe(0);
@@ -253,14 +231,14 @@ describe("collectUsage", () => {
 });
 
 describe("noteSession", () => {
-  it("keeps no path and the first start time across later notes", () => {
+  it("keeps no path across later notes", () => {
     note(false);
     note(true, NOW + 5000);
     const file = readdirSync(root).find((f) => !f.endsWith(".mark.json")) as string;
     const record = JSON.parse(readFileSync(join(root, file), "utf-8"));
-    expect(record).toMatchObject({ started_at: NOW, touched_at: NOW + 5000, ended: true });
+    expect(record).toMatchObject({ touched_at: NOW + 5000, ended: true });
     expect(Object.keys(record).sort()).toEqual(
-      ["codebase", "ended", "scope", "session_id", "started_at", "tool", "touched_at"].sort(),
+      ["codebase", "ended", "scope", "session_id", "tool", "touched_at"].sort(),
     );
   });
 

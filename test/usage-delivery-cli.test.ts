@@ -171,6 +171,13 @@ describe("session token usage delivery", () => {
     expect(existsSync(join(home, ".pheebs", "sessions"))).toBe(false);
   });
 
+  it("never records a Codex session", async () => {
+    configure(await startBackend());
+    transcript();
+    runHook(["hook-codex", "session_end"], { session_id: "sess-0001-abcd" });
+    expect(existsSync(join(home, ".pheebs", "sessions"))).toBe(false);
+  });
+
   it("records nothing without a backend", () => {
     transcript();
     runHook(["hook", "session_end"], { session_id: "sess-0001-abcd" });

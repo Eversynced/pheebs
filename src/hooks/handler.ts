@@ -644,7 +644,7 @@ function noteTranscript(
   sessionId: string | undefined,
   codebase: string,
 ): void {
-  if (tool === AI_TOOLS.CURSOR || !TRANSCRIPT_EVENTS.has(eventName)) return;
+  if (tool !== AI_TOOLS.CLAUDE_CODE || !TRANSCRIPT_EVENTS.has(eventName)) return;
   if (!sessionId) return;
   try {
     const stored = readStoredToken();

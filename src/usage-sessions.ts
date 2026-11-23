@@ -19,7 +19,7 @@ const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 // offsets, or its whole transcript would be counted again.
 const KEEP_MARK_MS = 180 * 24 * 60 * 60 * 1000;
 
-const TOOLS = new Set<string>(["claude_code", "codex"]);
+const TOOLS = new Set<string>(["claude_code"]);
 
 export interface Options {
   root?: string;
@@ -39,8 +39,7 @@ function isRecord(value: unknown): value is SessionRecord {
     typeof r.codebase === "string" &&
     typeof r.ended === "boolean" &&
     typeof r.scope === "string" &&
-    Number.isFinite(r.touched_at) &&
-    Number.isFinite(r.started_at)
+    Number.isFinite(r.touched_at)
   );
 }
 
@@ -61,17 +60,16 @@ function writeAtomic(path: string, value: unknown): void {
  * here. It throws on an unwritable folder, and the caller treats that as nothing to record.
  */
 export function noteSession(
-  record: Omit<SessionRecord, "touched_at" | "started_at" | "ended"> & { ended?: boolean },
+  record: Omit<SessionRecord, "touched_at" | "ended"> & { ended?: boolean },
   { root = SESSIONS_ROOT, now = Date.now() }: Options = {},
 ): void {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const path = join(root, `${sessionKey(record.tool, record.session_id)}.json`);
   const previous = readJsonFile<Partial<SessionRecord>>(path);
-  const started_at = Number.isFinite(previous?.started_at) ? (previous?.started_at as number) : now;
   // Only a start or an end says whether the session is over. A Stop that lands after SessionEnd
   // must not reopen it.
   const ended = record.ended ?? previous?.ended === true;
-  writeAtomic(path, { ...record, ended, started_at, touched_at: now });
+  writeAtomic(path, { ...record, ended, touched_at: now });
 }
 
 export function listSessions(

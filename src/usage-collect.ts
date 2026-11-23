@@ -4,12 +4,12 @@ import { usageEventId } from "./event-id.js";
 import { EVENTS } from "./hooks/types.js";
 import { enqueue } from "./outbox.js";
 import { locateTranscript } from "./transcript-locate.js";
-import { readClaudeUsage, readCodexUsage } from "./transcript-usage.js";
+import { readClaudeUsage } from "./transcript-usage.js";
 import { forgetSession, listSessions, pruneSessions, writeMark } from "./usage-sessions.js";
-import type { SessionRecord, UsageRead } from "./usage-types.js";
+import type { SessionRecord } from "./usage-types.js";
 
-// A session that never sent SessionEnd, or whose tool has no such hook, is read once it has been
-// quiet this long. A transcript is complete at SessionEnd and not at Stop (ledger: Claude Code transcripts carry per-response usage).
+// A session that never sent SessionEnd is read once it has been quiet this long. A transcript is
+// complete at SessionEnd and not at Stop (ledger: Claude Code transcripts carry per-response usage).
 export const IDLE_MS = 30 * 60 * 1000;
 
 export interface CollectOptions {
@@ -31,9 +31,6 @@ export interface CollectOptions {
 
 // How long before a transcript that could not be found is searched for again.
 const NOT_FOUND_RETRY_MS = 10 * 60 * 1000;
-
-const read = (path: string, record: SessionRecord, cursors: UsageRead["cursors"]) =>
-  record.tool === "codex" ? readCodexUsage(path, cursors) : readClaudeUsage(path, cursors);
 
 /**
  * Reads the transcripts of every session that is due and queues one `session_token_usage` event per
@@ -64,8 +61,7 @@ export async function collectUsage({
     const settled = `${record.touched_at}:${record.ended}`;
     if (!due || mark.settled === settled || now < (mark.retryAt ?? 0)) continue;
     try {
-      const startedAt = Math.min(record.started_at, mark.startedAt ?? Number.POSITIVE_INFINITY);
-      const path = locate({ ...record, started_at: startedAt });
+      const path = locate(record);
       if (!path) {
         // Not found yet, or not findable: look again later, until the record expires.
         writeMark(key, { ...mark, retryAt: now + NOT_FOUND_RETRY_MS }, root);
@@ -78,7 +74,7 @@ export async function collectUsage({
       // A session with no SessionEnd is read only once its transcript has gone quiet: the record
       // is touched by the hooks, so a long turn can outlast the window while still being written.
       if (!record.ended && now - stamp < idleMs) continue;
-      const result = await read(path, record, mark.cursors);
+      const result = await readClaudeUsage(path, mark.cursors);
       const pass = createHash("sha256").update(JSON.stringify(result.ranges)).digest("hex");
       for (const row of result.rows) {
         const id = usageEventId(
@@ -103,7 +99,7 @@ export async function collectUsage({
         } catch {}
         queued += 1;
       }
-      writeMark(key, { cursors: result.cursors, settled, startedAt }, root);
+      writeMark(key, { cursors: result.cursors, settled }, root);
     } catch {
       // An unreadable file or a queue that refuses leaves the cursors where they were, and a later
       // pass reads the same bytes again, not every 2 seconds.

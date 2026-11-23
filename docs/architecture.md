@@ -49,20 +49,19 @@ rather than send it to a backend the events were never meant for
 
 ### Token usage
 
-Claude Code and Codex transcripts carry the tokens a session used. No hook reads one: a hook on a session start, a turn end or a session end only records the session
+A Claude Code transcript carries the tokens a session used. No hook reads one: a hook on a session start, a turn end or a session end only records the session
 (id, tool, codebase, timestamps, never a path) in `~/.pheebs/sessions/` ([`src/usage-sessions.ts`](../src/usage-sessions.ts)). The detached flusher
 finds and reads the transcript of every recorded session that has ended, or has been quiet for 30 minutes,
-which is the sweep for sessions that never sent `session_end` and for Codex, which has no such hook
+which is the sweep for sessions that never sent `session_end`
 ([`src/usage-collect.ts`](../src/usage-collect.ts)). It sums the tokens by model and queues one
 `session_token_usage` event per model and scope, as a delta since the last read, then moves the
 session's byte offsets forward. The readers are in [`src/transcript-usage.ts`](../src/transcript-usage.ts):
-Claude Code counts each `message.id` and `requestId` once and adds the subagent files below the
-transcript, and Codex takes differences between its cumulative totals. Cursor has no reader, because its
-transcripts carry no usage (see the [ledger](./spike-findings-ledger.md)).
+it counts each `message.id` and `requestId` once and adds the subagent files below the
+transcript. Cursor has no reader, because its transcripts carry no usage, and Codex is not read (see the
+[ledger](./spike-findings-ledger.md)).
 
 The lookup searches `CLAUDE_CONFIG_DIR`, `~/.claude` and each `~/.claude-*` directory with a
-`projects` folder for Claude Code, and `CODEX_HOME` or `~/.codex` for Codex, a day either side of the
-session's first and last hook. A transcript in a config directory outside those is not found, and its
+`projects` folder, one folder level down. A transcript in a config directory outside those is not found, and its
 usage is never sent: a known limit. A transcript not found yet is searched for again every 10
 minutes until the record expires after 30 days. A session record carries a hash of the backend and
 token it was recorded under, and the flusher drops one recorded under any other, so usage never
