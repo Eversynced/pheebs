@@ -152,7 +152,8 @@ paths are read past and dropped. No transcript path is stored: a hook records on
 tool, codebase, timestamps and a hash of the backend and token in `~/.pheebs/sessions/` (owner-only on
 macOS and Linux, your profile folder's permissions on Windows, local, never sent, removed after 30
 idle days, and by `pheebs uninstall`), only when a backend and token are set, and the background process finds the file
-from the session id. Cursor's transcripts carry no usage, so Cursor sends none.
+from the session id. A per-session offset file beside it (byte positions and token totals, named
+by a hash, with no id or path) is kept 180 days so a resumed session is not counted twice. Cursor's transcripts carry no usage, so Cursor sends none.
 
 **Codex also:** `input_tokens`, `output_tokens`, `permission_type`, `approved`.
 
