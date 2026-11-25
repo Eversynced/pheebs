@@ -6,6 +6,7 @@ import { readCapped } from "./insights.js";
 import { appendLocalLogEntry, type LogEntry } from "./logger.js";
 import {
   discardOtherScopes,
+  endpointKey,
   hasSendNow,
   type Lock,
   listPending,
@@ -75,6 +76,8 @@ export interface FlushContext {
   token: string;
   /** `scopeKey` of the backend and token, so usage recorded for another one is never sent here. */
   scope?: string;
+  /** `endpointKey` of the backend, which keys the usage marks. */
+  endpoint?: string;
   // Fixed when the flusher starts. Events go only to the backend they were queued for, even if
   // the configured one changes while the flusher runs.
   batchUrl: string;
@@ -528,9 +531,10 @@ let lastCollectAt = 0;
 async function collectSessionUsage(
   dir: string,
   scope: string | undefined,
+  endpoint: string | undefined,
   lock: Lock,
 ): Promise<void> {
-  if (!scope) return;
+  if (!scope || !endpoint) return;
   const at = Date.now();
   if (at - lastCollectAt < COLLECT_EVERY_MS) return;
   lastCollectAt = at;
@@ -538,6 +542,7 @@ async function collectSessionUsage(
     await collectUsage({
       dir,
       scope,
+      endpoint,
       version: PHEEBS_VERSION,
       refresh: () => lock.refresh(),
       log: (event) => {
@@ -560,7 +565,7 @@ async function drain(ctx: FlushContext, lock: Lock, linger: boolean) {
   let honourBackoff = linger;
   for (;;) {
     if (!lock.refresh() || !ctx.stillScoped?.()) return false;
-    await collectSessionUsage(dir, ctx.scope, lock);
+    await collectSessionUsage(dir, ctx.scope, ctx.endpoint, lock);
     trimToCaps(dir);
     const pending = listPending(dir);
     if (pending.length === 0) return true;
@@ -604,6 +609,7 @@ export async function runFlush({ linger = false }: { linger?: boolean } = {}): P
   const ctx: FlushContext = {
     token: stored.token,
     scope,
+    endpoint: endpointKey(base),
     batchUrl: ingestBatchUrl(base),
     singleUrl: ingestUrl(base),
     dir: scopeDir(scope),

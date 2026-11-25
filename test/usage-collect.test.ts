@@ -21,6 +21,8 @@ import { loadClaims, noteSession } from "../src/usage-sessions.js";
 const CANARY = "CANARY-prompt-text /home/dev/secret/app.ts";
 const NOW = 1_800_000_000_000;
 const IDLE = 30 * 60 * 1000;
+const EP = "aaaaaaaaaaaaaaaa";
+const EP2 = "bbbbbbbbbbbbbbbb";
 
 let base: string;
 let queue: string;
@@ -62,10 +64,11 @@ function note(ended: boolean, now = NOW) {
   );
 }
 
-function collect(now = NOW, dir = queue, scope = "scope-a") {
+function collect(now = NOW, dir = queue, scope = "scope-a", endpoint = EP) {
   return collectUsage({
     dir,
     scope,
+    endpoint,
     root,
     now,
     idleMs: IDLE,
@@ -167,6 +170,8 @@ describe("collectUsage", () => {
     const logged: Record<string, unknown>[] = [];
     await collectUsage({
       dir: queue,
+      scope: "scope-a",
+      endpoint: EP,
       root,
       now: NOW,
       version: "9.9.9",
@@ -251,6 +256,86 @@ describe("collectUsage", () => {
   });
 });
 
+describe("marks and claims follow the backend endpoint", () => {
+  const queue2 = () => join(base, "queue2");
+  const noteUnder = (scope: string, now: number, id = "sess-1") =>
+    noteSession(
+      { tool: "claude_code", session_id: id, codebase: "acme/api", scope, ended: true },
+      { root, now },
+    );
+  const sentTo = (dir: string) =>
+    listPending(dir).map((p) => JSON.parse(readFileSync(p.path, "utf-8")).input_tokens as number);
+
+  it("sends nothing again after a token rotation on the same endpoint", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 100, 100));
+    note(true);
+    await collect();
+    noteUnder("scope-b", NOW + 1000);
+    expect(await collect(NOW + 2000, queue, "scope-b", EP)).toBe(0);
+    appendFileSync(transcript, turn("m2", "claude-opus-5-5", 1, 1));
+    noteUnder("scope-b", NOW + 3000);
+    expect(await collect(NOW + 4000, queue, "scope-b", EP)).toBe(1);
+    expect(sentTo(queue).sort((a, b) => a - b)).toEqual([1, 100]);
+  });
+
+  it("sends the whole session once to a new endpoint, then only what is added", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 100, 100));
+    note(true);
+    await collect();
+    appendFileSync(transcript, turn("m2", "claude-opus-5-5", 1, 1));
+    noteUnder("scope-b", NOW + 1000);
+    expect(await collect(NOW + 2000, queue2(), "scope-b", EP2)).toBe(1);
+    expect(sentTo(queue2())).toEqual([101]);
+    expect(await collect(NOW + 3000, queue2(), "scope-b", EP2)).toBe(0);
+    appendFileSync(transcript, turn("m3", "claude-opus-5-5", 2, 2));
+    noteUnder("scope-b", NOW + 4000);
+    expect(await collect(NOW + 5000, queue2(), "scope-b", EP2)).toBe(1);
+    expect(sentTo(queue2()).sort((a, b) => a - b)).toEqual([2, 101]);
+    expect(sentTo(queue)).toEqual([100]);
+  });
+
+  it("keeps the marks of each endpoint apart", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 100, 100));
+    note(true);
+    await collect();
+    noteUnder("scope-b", NOW + 1000);
+    await collect(NOW + 2000, queue2(), "scope-b", EP2);
+    const names = readdirSync(root).filter((f) => f.endsWith(".mark.json"));
+    expect(names.map((f) => f.split(".")[1]).sort()).toEqual([EP, EP2]);
+  });
+
+  it("dedups a copied history within each endpoint, and sends it to a new one", async () => {
+    const history = turn("m1", "claude-opus-5-5", 10, 10);
+    const original = join(base, "proj", "original.jsonl");
+    const copy = join(base, "proj", "copy.jsonl");
+    writeFileSync(original, history);
+    writeFileSync(copy, history + turn("m2", "claude-opus-5-5", 3, 3));
+    const paths: Record<string, string> = { original, copy };
+    const run = (dir: string, scope: string, endpoint: string, now: number) =>
+      collectUsage({
+        dir,
+        scope,
+        endpoint,
+        root,
+        now,
+        idleMs: IDLE,
+        version: "9.9.9",
+        locate: (record) => paths[record.session_id],
+      });
+    for (const id of ["original", "copy"]) noteUnder("scope-a", NOW, id);
+    await run(queue, "scope-a", EP, NOW);
+    expect(sentTo(queue).reduce((a, b) => a + b, 0)).toBe(13);
+    for (const id of ["original", "copy"]) noteUnder("scope-b", NOW + 1000, id);
+    await run(queue2(), "scope-b", EP2, NOW + 2000);
+    expect(sentTo(queue2()).reduce((a, b) => a + b, 0)).toBe(13);
+    expect(
+      readdirSync(root)
+        .filter((f) => f.startsWith("claims."))
+        .sort(),
+    ).toEqual([`claims.${EP}.json`, `claims.${EP2}.json`]);
+  });
+});
+
 describe("a session whose file repeats another session's lines", () => {
   const paths: Record<string, string> = {};
   const noteTwo = (id: string) =>
@@ -262,6 +347,7 @@ describe("a session whose file repeats another session's lines", () => {
     collectUsage({
       dir: queue,
       scope: "scope-a",
+      endpoint: EP,
       root,
       now,
       idleMs: IDLE,
@@ -320,11 +406,11 @@ describe("a session whose file repeats another session's lines", () => {
     writeFileSync(paths.original, turn("m-secret-id", "claude-opus-5-5", 1, 1));
     noteTwo("original");
     await collectBoth();
-    const text = readFileSync(join(root, "claims.json"), "utf-8");
+    const text = readFileSync(join(root, `claims.${EP}.json`), "utf-8");
     expect(text).not.toContain("m-secret-id");
     expect(text).not.toContain("CANARY");
     if (process.platform !== "win32") {
-      expect(statSync(join(root, "claims.json")).mode & 0o077).toBe(0);
+      expect(statSync(join(root, `claims.${EP}.json`)).mode & 0o077).toBe(0);
     }
   });
 
@@ -336,13 +422,13 @@ describe("a session whose file repeats another session's lines", () => {
       recent: ["o", Math.floor(NOW / day) - 179],
     };
     for (let i = 0; i < 250_000; i++) claims[`k${i}`] = ["o", Math.floor(NOW / day) - 1];
-    writeFileSync(join(root, "claims.json"), JSON.stringify({ v: 1, claims }));
-    const book = loadClaims(root, NOW);
+    writeFileSync(join(root, `claims.${EP}.json`), JSON.stringify({ v: 1, claims }));
+    const book = loadClaims(EP, root, NOW);
     expect(book.ownerOf("old")).toBeUndefined();
     expect(book.ownerOf("recent")).toBe("o");
     expect(book.add({ fresh: "o" })).toBe(true);
     book.save();
-    const kept = JSON.parse(readFileSync(join(root, "claims.json"), "utf-8")).claims;
+    const kept = JSON.parse(readFileSync(join(root, `claims.${EP}.json`), "utf-8")).claims;
     expect(Object.keys(kept)).toHaveLength(250_000);
     expect(kept.fresh).toBeDefined();
     expect(kept.recent).toBeUndefined();
@@ -353,11 +439,11 @@ describe("a session whose file repeats another session's lines", () => {
     mkdirSync(root, { recursive: true });
     const claims: Record<string, [string, number]> = {};
     for (let i = 0; i < 250_000; i++) claims[`k${i}`] = ["o", day];
-    writeFileSync(join(root, "claims.json"), JSON.stringify({ v: 1, claims }));
-    const book = loadClaims(root, NOW);
+    writeFileSync(join(root, `claims.${EP}.json`), JSON.stringify({ v: 1, claims }));
+    const book = loadClaims(EP, root, NOW);
     book.add({ fresh: "o" });
     book.save();
-    const kept = JSON.parse(readFileSync(join(root, "claims.json"), "utf-8")).claims;
+    const kept = JSON.parse(readFileSync(join(root, `claims.${EP}.json`), "utf-8")).claims;
     expect(kept.fresh).toBeDefined();
     expect(kept.k0).toBeUndefined();
     expect(Object.keys(kept)).toHaveLength(250_000);
@@ -368,14 +454,14 @@ describe("a session whose file repeats another session's lines", () => {
     mkdirSync(root, { recursive: true });
     const claims: Record<string, [string, number]> = {};
     for (let i = 0; i < 250_000; i++) claims[`k${i}`] = ["o", day];
-    writeFileSync(join(root, "claims.json"), JSON.stringify({ v: 1, claims }));
-    const first = loadClaims(root, NOW);
+    writeFileSync(join(root, `claims.${EP}.json`), JSON.stringify({ v: 1, claims }));
+    const first = loadClaims(EP, root, NOW);
     first.add({ fresh1: "o" });
     first.save();
-    const second = loadClaims(root, NOW);
+    const second = loadClaims(EP, root, NOW);
     second.add({ fresh2: "o" });
     second.save();
-    const kept = JSON.parse(readFileSync(join(root, "claims.json"), "utf-8")).claims;
+    const kept = JSON.parse(readFileSync(join(root, `claims.${EP}.json`), "utf-8")).claims;
     expect(kept.fresh1).toBeDefined();
     expect(kept.fresh2).toBeDefined();
     expect(kept.k0).toBeUndefined();

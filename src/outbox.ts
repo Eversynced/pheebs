@@ -92,6 +92,14 @@ export function scopeKey(baseUrl: string, token: string): string {
   return createHash("sha256").update(`${baseUrl}\n${token}`).digest("hex").slice(0, 16);
 }
 
+/**
+ * Identifies the backend alone, so a token rotated on the same backend keeps what was already read
+ * for it, and a new backend starts from nothing. Only a digest of the address is kept.
+ */
+export function endpointKey(baseUrl: string): string {
+  return createHash("sha256").update(baseUrl).digest("hex").slice(0, 16);
+}
+
 const SCOPE_NAME = /^[0-9a-f]{16}$/;
 
 export function scopeDir(scope: string, root = OUTBOX_ROOT): string {

@@ -66,11 +66,11 @@ The lookup searches `CLAUDE_CONFIG_DIR`, `~/.claude` and each `~/.claude-*` dire
 usage is never sent: a known limit. A transcript not found yet is searched for again every 10
 minutes until the record expires after 30 days. A session record carries a hash of the backend and
 token it was recorded under, and the flusher drops one recorded under any other, so usage never
-goes to a backend it was not captured for. Dropping the record keeps the mark. A session with no `session_end` is read only when its
+goes to a backend it was not captured for. Dropping the record keeps the marks. A session with no `session_end` is read only when its
 transcript has also gone quiet for 30 minutes. A mark outlives its record by 180 days, so a
-resumed session carries on from its old offsets, also after a token change. A new backend only receives usage from after the last mark, never the session's earlier history. `pheebs uninstall` removes the records, the marks and the request digests.
+resumed session carries on from its old offsets, also after a token change. A mark belongs to one backend endpoint (a digest of the configured base URL), so a token rotated on the same endpoint resends nothing, and a new endpoint starts at offset 0 and receives the whole session once, then only what is added. A session recorded under the old backend and never resumed is not sent to the new one. `pheebs uninstall` removes the records, the marks and the request digests.
 
-`claims.json` beside them lists, for each request counted, a 16-character digest of its ids and a digest of the file that counted it, never an id or any text, so a later file that repeats the request is skipped. An entry goes after 180 days, like a mark, and the file holds at most 250,000, oldest dropped first. Read order decides which session is credited with a shared request, and moves the output total slightly (426 tokens in one recount, cause unverified).
+One `claims.<endpoint>.json` per endpoint beside them lists, for each request counted, a 16-character digest of its ids and a digest of the file that counted it, never an id or any text, so a later file that repeats the request is skipped for that endpoint, while another endpoint can still receive it. An entry goes after 180 days, like a mark, and the file holds at most 250,000, oldest dropped first. Read order decides which session is credited with a shared request, and moves the output total slightly (426 tokens in one recount, cause unverified).
 
 Known limit: if the flusher dies after queuing a session's events and before writing its mark, and
 the transcript grows before the next read, the overlap is sent again under new ids and counted

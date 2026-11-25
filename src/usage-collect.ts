@@ -24,6 +24,8 @@ export interface CollectOptions {
   dir: string;
   /** The configured backend and token. A record from any other scope is dropped, never sent. */
   scope: string;
+  /** `endpointKey` of the backend, which keys the marks and claims, so a rotated token resends nothing. */
+  endpoint: string;
   root?: string;
   now?: number;
   idleMs?: number;
@@ -48,6 +50,7 @@ const NOT_FOUND_RETRY_MS = 10 * 60 * 1000;
 export async function collectUsage({
   dir,
   scope,
+  endpoint,
   root,
   now = Date.now(),
   idleMs = IDLE_MS,
@@ -56,10 +59,10 @@ export async function collectUsage({
   log,
   locate = locateTranscript,
 }: CollectOptions): Promise<number> {
-  pruneSessions(now, root);
+  pruneSessions(endpoint, now, root);
   let queued = 0;
   let claims: ClaimBook | undefined;
-  for (const { key, record, mark } of listSessions(root)) {
+  for (const { key, record, mark } of listSessions(endpoint, root)) {
     if (refresh && !refresh()) break;
     if (record.scope !== scope) {
       forgetRecord(key, root);
@@ -72,7 +75,7 @@ export async function collectUsage({
       const path = locate(record);
       if (!path) {
         // Not found yet, or not findable: look again later, until the record expires.
-        writeMark(key, { ...mark, retryAt: now + NOT_FOUND_RETRY_MS }, root);
+        writeMark(key, { ...mark, retryAt: now + NOT_FOUND_RETRY_MS }, endpoint, root);
         continue;
       }
       let stamp = now;
@@ -82,7 +85,7 @@ export async function collectUsage({
       // A session with no SessionEnd is read only once its transcript has gone quiet: the record
       // is touched by the hooks, so a long turn can outlast the window while still being written.
       if (!record.ended && now - stamp < idleMs) continue;
-      claims ??= loadClaims(root, now);
+      claims ??= loadClaims(endpoint, root, now);
       const result = await readClaudeUsage(path, mark.cursors, {
         session: key,
         ownerOf: claims.ownerOf,
@@ -113,12 +116,12 @@ export async function collectUsage({
       }
       // Before the mark moves, so a crash between them rereads the same bytes under the same owner.
       if (claims.add(result.claimed)) claims.save();
-      writeMark(key, { cursors: result.cursors, settled }, root);
+      writeMark(key, { cursors: result.cursors, settled }, endpoint, root);
     } catch {
       // An unreadable file or a queue that refuses leaves the cursors where they were, and a later
       // pass reads the same bytes again, not every 2 seconds.
       try {
-        writeMark(key, { ...mark, retryAt: now + NOT_FOUND_RETRY_MS }, root);
+        writeMark(key, { ...mark, retryAt: now + NOT_FOUND_RETRY_MS }, endpoint, root);
       } catch {}
     }
   }
