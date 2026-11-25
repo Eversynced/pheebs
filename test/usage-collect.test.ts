@@ -347,6 +347,20 @@ describe("a session whose file repeats another session's lines", () => {
     expect(kept.fresh).toBeDefined();
     expect(kept.recent).toBeUndefined();
   });
+
+  it("keeps the newest claims when the cap cuts into one day", () => {
+    const day = Math.floor(NOW / (24 * 60 * 60 * 1000));
+    mkdirSync(root, { recursive: true });
+    const claims: Record<string, [string, number]> = {};
+    for (let i = 0; i < 250_000; i++) claims[`k${i}`] = ["o", day];
+    writeFileSync(join(root, "claims.json"), JSON.stringify({ v: 1, claims }));
+    const book = loadClaims(root, NOW);
+    book.add({ fresh: "o" });
+    book.save();
+    const kept = JSON.parse(readFileSync(join(root, "claims.json"), "utf-8")).claims;
+    expect(kept.fresh).toBeDefined();
+    expect(kept.k0).toBeUndefined();
+  });
 });
 
 describe("noteSession", () => {
