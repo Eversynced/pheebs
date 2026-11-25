@@ -184,44 +184,100 @@ describe("readClaudeUsage", () => {
     expect(({} as Record<string, unknown>).input_tokens).toBeUndefined();
   });
 
-  it("skips the lines of a background session's file, so a copied history is not counted twice", async () => {
+  describe("a file that repeats another session's lines", () => {
+    // What the flusher keeps between reads: which file counted a request first.
+    function ledger(session: string) {
+      const owners = new Map<string, string>();
+      return {
+        owners,
+        claims: { session, ownerOf: (key: string) => owners.get(key) },
+        accept(claimed: Record<string, string>) {
+          for (const [key, owner] of Object.entries(claimed)) {
+            if (!owners.has(key)) owners.set(key, owner);
+          }
+        },
+      };
+    }
+    const shared = new Map<string, string>();
+    const claimsFor = (session: string) => ({
+      session,
+      ownerOf: (key: string) => shared.get(key),
+    });
+    const accept = (claimed: Record<string, string>) => {
+      for (const [key, owner] of Object.entries(claimed))
+        if (!shared.has(key)) shared.set(key, owner);
+    };
+    beforeEach(() => shared.clear());
+
     const mark = (line: string, extra: Record<string, unknown>) =>
       JSON.stringify({ ...JSON.parse(line), ...extra });
-    const original = assistant("m1", "r1", "claude-opus-5-5", { input: 10, output: 20 });
-    const parent = write(join(dir, "parent.jsonl"), lines(original));
-    const background = write(
-      join(dir, "background.jsonl"),
-      lines(
-        mark(original, { sessionKind: "bg", requestSessionId: "parent" }),
-        mark(assistant("m2", "r2", "claude-opus-5-5", { input: 3, output: 4 }), {
-          sessionKind: "bg",
-        }),
-        mark(assistant("m3", "r3", "claude-opus-5-5", { input: 5, output: 6 }), {
-          requestSessionId: "parent",
-        }),
-      ),
-    );
-    expect((await readClaudeUsage(parent)).rows).toMatchObject([
-      { input_tokens: 10, output_tokens: 20 },
-    ]);
-    expect((await readClaudeUsage(background)).rows).toEqual([]);
-  });
 
-  it("counts a line that carries neither marker, even beside marked ones", async () => {
-    const own = assistant("m9", "r9", "claude-opus-5-5", { input: 7, output: 8 });
-    const path = write(
-      join(dir, "mixed.jsonl"),
-      lines(
-        JSON.stringify({
-          ...JSON.parse(assistant("m8", "r8", "claude-opus-5-5", { input: 1, output: 1 })),
-          sessionKind: "bg",
-        }),
-        own,
-      ),
-    );
-    expect((await readClaudeUsage(path)).rows).toMatchObject([
-      { input_tokens: 7, output_tokens: 8 },
-    ]);
+    it("counts a background session's own lines and never the history it copied", async () => {
+      const m1 = assistant("m1", "r1", "claude-opus-5-5", { input: 10, output: 20 });
+      const parent = write(join(dir, "parent.jsonl"), lines(m1));
+      const background = write(
+        join(dir, "background.jsonl"),
+        lines(
+          mark(m1, { sessionKind: "bg", requestSessionId: "parent" }),
+          mark(assistant("m2", "r2", "claude-opus-5-5", { input: 3, output: 4 }), {
+            sessionKind: "bg",
+          }),
+        ),
+      );
+      const first = await readClaudeUsage(parent, {}, claimsFor("parent"));
+      accept(first.claimed);
+      const second = await readClaudeUsage(background, {}, claimsFor("background"));
+      expect(first.rows).toMatchObject([{ input_tokens: 10, output_tokens: 20 }]);
+      expect(second.rows).toMatchObject([{ input_tokens: 3, output_tokens: 4 }]);
+    });
+
+    it("skips an unmarked copy in a second file, such as a resumed session's", async () => {
+      const m1 = assistant("m1", "r1", "claude-opus-5-5", { input: 10, output: 20 });
+      const parent = write(join(dir, "parent.jsonl"), lines(m1));
+      const resumed = write(
+        join(dir, "resumed.jsonl"),
+        lines(m1, assistant("m5", "r5", "claude-opus-5-5", { input: 1, output: 1 })),
+      );
+      accept((await readClaudeUsage(parent, {}, claimsFor("parent"))).claimed);
+      const second = await readClaudeUsage(resumed, {}, claimsFor("resumed"));
+      expect(second.rows).toMatchObject([{ input_tokens: 1, output_tokens: 1 }]);
+    });
+
+    it("counts a file's own lines again when the same file is read again", async () => {
+      const path = write(
+        join(dir, "s.jsonl"),
+        lines(assistant("m1", "r1", "claude-opus-5-5", { input: 10, output: 20 })),
+      );
+      const book = ledger("s");
+      const first = await readClaudeUsage(path, {}, book.claims);
+      book.accept(first.claimed);
+      const again = await readClaudeUsage(path, {}, book.claims);
+      expect(again.rows).toEqual(first.rows);
+      expect(again.claimed).toEqual(first.claimed);
+    });
+
+    it("counts a repeated request once across the subagent files of one read", async () => {
+      const m1 = assistant("m1", "r1", "claude-opus-5-5", { input: 4, output: 4 });
+      const parent = write(join(dir, "s.jsonl"), lines(m1));
+      write(join(dir, "s", "subagents", "agent-a.jsonl"), lines(m1));
+      const read = await readClaudeUsage(parent, {}, claimsFor("s"));
+      expect(read.rows).toMatchObject([{ input_tokens: 4, from_subagent: false }]);
+    });
+
+    it("keeps only digests of the ids, never the ids or any text", async () => {
+      const path = write(
+        join(dir, "s.jsonl"),
+        lines(assistant("m1", "r1", "claude-opus-5-5", { input: 1, output: 1 })),
+      );
+      const { claimed } = await readClaudeUsage(path, {}, claimsFor("s"));
+      const text = JSON.stringify(claimed);
+      expect(text).not.toContain("m1");
+      expect(text).not.toContain("CANARY");
+      for (const [key, owner] of Object.entries(claimed)) {
+        expect(key).toMatch(/^[0-9a-f]{16}$/);
+        expect(owner).toMatch(/^[0-9a-f]{16}$/);
+      }
+    });
   });
 
   it("reads a missing file as nothing, without throwing", async () => {
