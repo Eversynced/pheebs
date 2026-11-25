@@ -92,8 +92,8 @@ the transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning
   after it goes quiet. Sum them. A resend of the same read carries the same `event_id`, so a
   backend stores it once.
 - **Absent is not zero.** `cache_read_tokens`, `cache_write_tokens` and `reasoning_tokens` are
-  absent when the transcript has none. `input_tokens` is the count the transcript reports, apart
-  from cache reads. Whether `reasoning_tokens` is part of `output_tokens` is not verified, so do
+  absent when the transcript has none. `input_tokens` leaves out both cache reads and cache
+  writes, so the total input is `input_tokens + cache_read_tokens + cache_write_tokens`. Whether `reasoning_tokens` is part of `output_tokens` is not verified, so do
   not add or subtract it.
 - **It is a floor, and some sessions send nothing.** Only Claude Code sessions are read; no other
   tool sends this event. A session's total can sit below what the agent's own cost line reports
