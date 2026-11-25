@@ -176,7 +176,7 @@ export async function readClaudeUsage(
       const { id, model } = message;
       if (typeof id !== "string" || !isModelId(model)) return;
       if (!isCount(usage.input_tokens) || !isCount(usage.output_tokens)) return;
-      const key = digest(`${id}:${typeof entry.requestId === "string" ? entry.requestId : ""}`);
+      const key = digest(`${id}\0${typeof entry.requestId === "string" ? entry.requestId : ""}`);
       const first = owners.get(key) ?? claims?.ownerOf(key);
       if (first !== undefined && first !== owner) return;
       const thinking = (usage.output_tokens_details as Record<string, unknown> | undefined)
