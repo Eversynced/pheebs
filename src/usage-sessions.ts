@@ -129,11 +129,12 @@ export function removeSessions(root = SESSIONS_ROOT): void {
   } catch {}
 }
 
-/** Forgets one session's record, for a scope that is no longer the configured one. */
-export function forgetSession(key: string, root = SESSIONS_ROOT): void {
-  for (const name of [`${key}.json`, `${key}.mark.json`]) {
-    try {
-      rmSync(join(root, name), { force: true });
-    } catch {}
-  }
+/**
+ * Drops one session's record, for a scope that is no longer the configured one. The mark stays:
+ * it holds only byte offsets, sends nothing, and keeps a resumed session from being counted again.
+ */
+export function forgetRecord(key: string, root = SESSIONS_ROOT): void {
+  try {
+    rmSync(join(root, `${key}.json`), { force: true });
+  } catch {}
 }

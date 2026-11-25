@@ -199,8 +199,29 @@ describe("collectUsage", () => {
     writeFileSync(transcript, turn("m1", "claude-opus-5-5", 2, 2));
     note(true);
     expect(await collect(NOW, queue, "scope-b")).toBe(0);
-    expect(readdirSync(root)).toEqual([]);
+    expect(readdirSync(root).filter((f) => !f.endsWith(".mark.json"))).toEqual([]);
     expect(await collect()).toBe(0);
+  });
+
+  it("keeps the mark when the scope changes, so a resumed session sends only its new work", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 100, 100));
+    note(true);
+    expect(await collect()).toBe(1);
+    expect(await collect(NOW + 1000, queue, "scope-b")).toBe(0);
+    appendFileSync(transcript, turn("m2", "claude-opus-5-5", 1, 1));
+    noteSession(
+      {
+        tool: "claude_code",
+        session_id: "sess-1",
+        codebase: "acme/api",
+        scope: "scope-b",
+        ended: true,
+      },
+      { root, now: NOW + 2000 },
+    );
+    expect(await collect(NOW + 3000, queue, "scope-b")).toBe(1);
+    const sent = queued().map((e) => e.input_tokens);
+    expect(sent.sort()).toEqual([1, 100]);
   });
 
   it("waits for a session with no SessionEnd while its transcript is still being written", async () => {

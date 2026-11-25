@@ -5,7 +5,7 @@ import { EVENTS } from "./hooks/types.js";
 import { enqueue } from "./outbox.js";
 import { locateTranscript } from "./transcript-locate.js";
 import { readClaudeUsage } from "./transcript-usage.js";
-import { forgetSession, listSessions, pruneSessions, writeMark } from "./usage-sessions.js";
+import { forgetRecord, listSessions, pruneSessions, writeMark } from "./usage-sessions.js";
 import type { SessionRecord } from "./usage-types.js";
 
 // A session that never sent SessionEnd is read once it has been quiet this long. A transcript is
@@ -54,7 +54,7 @@ export async function collectUsage({
   for (const { key, record, mark } of listSessions(root)) {
     if (refresh && !refresh()) break;
     if (record.scope !== scope) {
-      forgetSession(key, root);
+      forgetRecord(key, root);
       continue;
     }
     const due = record.ended || now - record.touched_at >= idleMs;
