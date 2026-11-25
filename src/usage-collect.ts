@@ -5,7 +5,14 @@ import { EVENTS } from "./hooks/types.js";
 import { enqueue } from "./outbox.js";
 import { locateTranscript } from "./transcript-locate.js";
 import { readClaudeUsage } from "./transcript-usage.js";
-import { forgetRecord, listSessions, pruneSessions, writeMark } from "./usage-sessions.js";
+import {
+  type ClaimBook,
+  forgetRecord,
+  listSessions,
+  loadClaims,
+  pruneSessions,
+  writeMark,
+} from "./usage-sessions.js";
 import type { SessionRecord } from "./usage-types.js";
 
 // A session that never sent SessionEnd is read once it has been quiet this long. A transcript is
@@ -51,6 +58,7 @@ export async function collectUsage({
 }: CollectOptions): Promise<number> {
   pruneSessions(now, root);
   let queued = 0;
+  let claims: ClaimBook | undefined;
   for (const { key, record, mark } of listSessions(root)) {
     if (refresh && !refresh()) break;
     if (record.scope !== scope) {
@@ -74,7 +82,11 @@ export async function collectUsage({
       // A session with no SessionEnd is read only once its transcript has gone quiet: the record
       // is touched by the hooks, so a long turn can outlast the window while still being written.
       if (!record.ended && now - stamp < idleMs) continue;
-      const result = await readClaudeUsage(path, mark.cursors);
+      claims ??= loadClaims(root, now);
+      const result = await readClaudeUsage(path, mark.cursors, {
+        session: key,
+        ownerOf: claims.ownerOf,
+      });
       const pass = createHash("sha256").update(JSON.stringify(result.ranges)).digest("hex");
       for (const row of result.rows) {
         const id = usageEventId(
@@ -99,6 +111,8 @@ export async function collectUsage({
         } catch {}
         queued += 1;
       }
+      // Before the mark moves, so a crash between them rereads the same bytes under the same owner.
+      if (claims.add(result.claimed)) claims.save();
       writeMark(key, { cursors: result.cursors, settled }, root);
     } catch {
       // An unreadable file or a queue that refuses leaves the cursors where they were, and a later

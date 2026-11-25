@@ -19,6 +19,14 @@ const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 // offsets, or its whole transcript would be counted again.
 const KEEP_MARK_MS = 180 * 24 * 60 * 60 * 1000;
 
+// Requests already counted, across sessions: a resumed, forked or background session's file starts
+// with another session's lines, and only this tells the copy from the original. Kept as long as a
+// mark is, because a session can be resumed and copy its history for that long, and no longer: the
+// file holds a digest and an owner per request, so a cap stops it growing without bound.
+const CLAIMS_FILE = "claims.json";
+const MAX_CLAIMS = 250_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const TOOLS = new Set<string>(["claude_code"]);
 
 export interface Options {
@@ -137,4 +145,44 @@ export function forgetRecord(key: string, root = SESSIONS_ROOT): void {
   try {
     rmSync(join(root, `${key}.json`), { force: true });
   } catch {}
+}
+
+export interface ClaimBook {
+  ownerOf(key: string): string | undefined;
+  /** Records requests no one has claimed. Returns whether anything was added. */
+  add(claimed: Record<string, string>): boolean;
+  save(): void;
+}
+
+/** The request digests counted so far, each with the file that counted it first. */
+export function loadClaims(root = SESSIONS_ROOT, now = Date.now()): ClaimBook {
+  const today = Math.floor(now / DAY_MS);
+  const oldest = today - Math.floor(KEEP_MARK_MS / DAY_MS);
+  const held = new Map<string, [owner: string, day: number]>();
+  const stored = readJsonFile<{ claims?: Record<string, unknown> }>(join(root, CLAIMS_FILE));
+  for (const [key, value] of Object.entries(stored?.claims ?? {})) {
+    if (!Array.isArray(value) || typeof value[0] !== "string" || !Number.isFinite(value[1]))
+      continue;
+    if (value[1] >= oldest) held.set(key, [value[0], value[1]]);
+  }
+  return {
+    ownerOf: (key) => held.get(key)?.[0],
+    add(claimed) {
+      let added = false;
+      for (const [key, owner] of Object.entries(claimed)) {
+        if (held.has(key)) continue;
+        held.set(key, [owner, today]);
+        added = true;
+      }
+      return added;
+    },
+    save() {
+      let entries = [...held];
+      if (entries.length > MAX_CLAIMS) {
+        entries = entries.sort((a, b) => b[1][1] - a[1][1]).slice(0, MAX_CLAIMS);
+      }
+      mkdirSync(root, { recursive: true, mode: 0o700 });
+      writeAtomic(join(root, CLAIMS_FILE), { v: 1, claims: Object.fromEntries(entries) });
+    },
+  };
 }

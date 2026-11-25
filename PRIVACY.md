@@ -153,7 +153,7 @@ tool, codebase, timestamps and a hash of the backend and token in `~/.pheebs/ses
 macOS and Linux, your profile folder's permissions on Windows, local, never sent, removed after 30
 idle days, and by `pheebs uninstall`), only when a backend and token are set, and the background process finds the file
 from the session id. A per-session offset file beside it (byte positions, named
-by a hash, with no id or path) is kept 180 days so a resumed session is not counted twice, and `pheebs uninstall` removes it too. Cursor's transcripts carry no usage and Codex's are not read, so neither sends one.
+by a hash, with no id or path) is kept 180 days so a resumed session is not counted twice, and `pheebs uninstall` removes it too. So does a `claims.json` of digests of request ids (no id, text or path), which tells a copied history from the original. Cursor's transcripts carry no usage and Codex's are not read, so neither sends one.
 
 **Codex also:** `input_tokens`, `output_tokens`, `permission_type`, `approved`.
 

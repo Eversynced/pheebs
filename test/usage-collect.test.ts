@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { newEventId, usageEventId } from "../src/event-id.js";
 import { listPending } from "../src/outbox.js";
 import { collectUsage } from "../src/usage-collect.js";
-import { noteSession } from "../src/usage-sessions.js";
+import { loadClaims, noteSession } from "../src/usage-sessions.js";
 
 const CANARY = "CANARY-prompt-text /home/dev/secret/app.ts";
 const NOW = 1_800_000_000_000;
@@ -248,6 +248,104 @@ describe("collectUsage", () => {
   it("does nothing for a transcript that is gone", async () => {
     note(true);
     expect(await collect()).toBe(0);
+  });
+});
+
+describe("a session whose file repeats another session's lines", () => {
+  const paths: Record<string, string> = {};
+  const noteTwo = (id: string) =>
+    noteSession(
+      { tool: "claude_code", session_id: id, codebase: "acme/api", scope: "scope-a", ended: true },
+      { root, now: NOW },
+    );
+  const collectBoth = (now = NOW) =>
+    collectUsage({
+      dir: queue,
+      scope: "scope-a",
+      root,
+      now,
+      idleMs: IDLE,
+      version: "9.9.9",
+      locate: (record) => paths[record.session_id],
+    });
+  const sent = () => queued().map((e) => [e.session_id, e.input_tokens]);
+
+  beforeEach(() => {
+    paths.original = join(base, "proj", "original.jsonl");
+    paths.copy = join(base, "proj", "copy.jsonl");
+  });
+
+  it("counts a background session's own lines and none of the history it copied", async () => {
+    const history = turn("m1", "claude-opus-5-5", 10, 10);
+    writeFileSync(paths.original, history);
+    const marked = (line: string) =>
+      `${JSON.stringify({ ...JSON.parse(line), sessionKind: "bg", requestSessionId: "original" })}\n`;
+    const own = `${JSON.stringify({ ...JSON.parse(turn("m2", "claude-opus-5-5", 3, 3)), sessionKind: "bg" })}\n`;
+    writeFileSync(paths.copy, marked(history) + own);
+    noteTwo("original");
+    noteTwo("copy");
+    await collectBoth();
+    expect(sent().sort()).toEqual([
+      ["copy", 3],
+      ["original", 10],
+    ]);
+  });
+
+  it("skips an unmarked copy too, whichever session is read first", async () => {
+    const history = turn("m1", "claude-opus-5-5", 10, 10);
+    writeFileSync(paths.original, history);
+    writeFileSync(paths.copy, history + turn("m2", "claude-opus-5-5", 3, 3));
+    noteTwo("original");
+    noteTwo("copy");
+    await collectBoth();
+    const total = queued().reduce((sum, e) => sum + (e.input_tokens as number), 0);
+    expect(total).toBe(13);
+  });
+
+  it("does not skip a session's own lines when its mark is lost and it is read again", async () => {
+    writeFileSync(paths.original, turn("m1", "claude-opus-5-5", 10, 10));
+    noteTwo("original");
+    await collectBoth();
+    for (const name of readdirSync(root)) {
+      if (name.endsWith(".mark.json")) rmSync(join(root, name));
+    }
+    await collectBoth(NOW + 1000);
+    expect(sent()).toEqual([
+      ["original", 10],
+      ["original", 10],
+    ]);
+  });
+
+  it("stores digests, never the ids of a request", async () => {
+    writeFileSync(paths.original, turn("m-secret-id", "claude-opus-5-5", 1, 1));
+    noteTwo("original");
+    await collectBoth();
+    const text = readFileSync(join(root, "claims.json"), "utf-8");
+    expect(text).not.toContain("m-secret-id");
+    expect(text).not.toContain("CANARY");
+    if (process.platform !== "win32") {
+      expect(statSync(join(root, "claims.json")).mode & 0o077).toBe(0);
+    }
+  });
+
+  it("forgets a claim after 180 days, and holds at most 250000", () => {
+    const day = 24 * 60 * 60 * 1000;
+    mkdirSync(root, { recursive: true });
+    const claims: Record<string, [string, number]> = {
+      old: ["o", Math.floor(NOW / day) - 181],
+      recent: ["o", Math.floor(NOW / day) - 179],
+    };
+    for (let i = 0; i < 250_000; i++) claims[`k${i}`] = ["o", Math.floor(NOW / day) - 1];
+    writeFileSync(join(root, "claims.json"), JSON.stringify({ v: 1, claims }));
+    const book = loadClaims(root, NOW);
+    expect(book.ownerOf("old")).toBeUndefined();
+    expect(book.ownerOf("recent")).toBe("o");
+    expect(book.add({ fresh: "o" })).toBe(true);
+    book.save();
+    const kept = JSON.parse(readFileSync(join(root, "claims.json"), "utf-8")).claims;
+    expect(Object.keys(kept)).toHaveLength(250_000);
+    expect(kept.fresh).toBeDefined();
+    expect(kept.recent).toBeUndefined();
   });
 });
 
