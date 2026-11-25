@@ -360,6 +360,28 @@ describe("a session whose file repeats another session's lines", () => {
     const kept = JSON.parse(readFileSync(join(root, "claims.json"), "utf-8")).claims;
     expect(kept.fresh).toBeDefined();
     expect(kept.k0).toBeUndefined();
+    expect(Object.keys(kept)).toHaveLength(250_000);
+  });
+
+  it("keeps the newest claims across two capped saves in one day", () => {
+    const day = Math.floor(NOW / (24 * 60 * 60 * 1000));
+    mkdirSync(root, { recursive: true });
+    const claims: Record<string, [string, number]> = {};
+    for (let i = 0; i < 250_000; i++) claims[`k${i}`] = ["o", day];
+    writeFileSync(join(root, "claims.json"), JSON.stringify({ v: 1, claims }));
+    const first = loadClaims(root, NOW);
+    first.add({ fresh1: "o" });
+    first.save();
+    const second = loadClaims(root, NOW);
+    second.add({ fresh2: "o" });
+    second.save();
+    const kept = JSON.parse(readFileSync(join(root, "claims.json"), "utf-8")).claims;
+    expect(kept.fresh1).toBeDefined();
+    expect(kept.fresh2).toBeDefined();
+    expect(kept.k0).toBeUndefined();
+    expect(kept.k1).toBeUndefined();
+    expect(kept.k249999).toBeDefined();
+    expect(Object.keys(kept)).toHaveLength(250_000);
   });
 });
 

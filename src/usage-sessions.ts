@@ -179,11 +179,13 @@ export function loadClaims(root = SESSIONS_ROOT, now = Date.now()): ClaimBook {
     save() {
       let entries = [...held];
       if (entries.length > MAX_CLAIMS) {
-        // Reversed first, so among entries of one day the newest insertions are the ones kept.
+        // Reversed first, so among entries of one day the newest insertions are the ones kept, and
+        // back to oldest first afterwards, so the next load sees the order they were added in.
         entries = entries
           .reverse()
           .sort((a, b) => b[1][1] - a[1][1])
-          .slice(0, MAX_CLAIMS);
+          .slice(0, MAX_CLAIMS)
+          .reverse();
       }
       mkdirSync(root, { recursive: true, mode: 0o700 });
       writeAtomic(join(root, CLAIMS_FILE), { v: 1, claims: Object.fromEntries(entries) });
