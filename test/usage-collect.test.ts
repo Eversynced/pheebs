@@ -256,7 +256,7 @@ describe("collectUsage", () => {
   });
 });
 
-describe("marks and claims follow the backend endpoint", () => {
+describe("marks and claims are built for one backend endpoint", () => {
   const queue2 = () => join(base, "queue2");
   const noteUnder = (scope: string, now: number, id = "sess-1") =>
     noteSession(
@@ -294,17 +294,24 @@ describe("marks and claims follow the backend endpoint", () => {
     expect(sentTo(queue)).toEqual([100]);
   });
 
-  it("keeps the marks of each endpoint apart", async () => {
+  it("sends the whole session again to an endpoint it comes back to, A then B then A", async () => {
     writeFileSync(transcript, turn("m1", "claude-opus-5-5", 100, 100));
     note(true);
     await collect();
+    appendFileSync(transcript, turn("m2", "claude-opus-5-5", 1, 1));
     noteUnder("scope-b", NOW + 1000);
     await collect(NOW + 2000, queue2(), "scope-b", EP2);
-    const names = readdirSync(root).filter((f) => f.endsWith(".mark.json"));
-    expect(names.map((f) => f.split(".")[1]).sort()).toEqual([EP, EP2]);
+    expect(sentTo(queue2())).toEqual([101]);
+    appendFileSync(transcript, turn("m3", "claude-opus-5-5", 2, 2));
+    noteUnder("scope-a", NOW + 3000);
+    expect(await collect(NOW + 4000, queue, "scope-a", EP)).toBe(1);
+    expect(sentTo(queue).sort((a, b) => a - b)).toEqual([100, 103]);
+    const marks = readdirSync(root).filter((f) => f.endsWith(".mark.json"));
+    expect(marks).toHaveLength(1);
+    expect(JSON.parse(readFileSync(join(root, marks[0]), "utf-8")).endpoint).toBe(EP);
   });
 
-  it("dedups a copied history within each endpoint, and sends it to a new one", async () => {
+  it("dedups a copied history within an endpoint, and sends it to a new one", async () => {
     const history = turn("m1", "claude-opus-5-5", 10, 10);
     const original = join(base, "proj", "original.jsonl");
     const copy = join(base, "proj", "copy.jsonl");
@@ -328,11 +335,7 @@ describe("marks and claims follow the backend endpoint", () => {
     for (const id of ["original", "copy"]) noteUnder("scope-b", NOW + 1000, id);
     await run(queue2(), "scope-b", EP2, NOW + 2000);
     expect(sentTo(queue2()).reduce((a, b) => a + b, 0)).toBe(13);
-    expect(
-      readdirSync(root)
-        .filter((f) => f.startsWith("claims."))
-        .sort(),
-    ).toEqual([`claims.${EP}.json`, `claims.${EP2}.json`]);
+    expect(JSON.parse(readFileSync(join(root, "claims.json"), "utf-8")).endpoint).toBe(EP2);
   });
 });
 
@@ -406,11 +409,11 @@ describe("a session whose file repeats another session's lines", () => {
     writeFileSync(paths.original, turn("m-secret-id", "claude-opus-5-5", 1, 1));
     noteTwo("original");
     await collectBoth();
-    const text = readFileSync(join(root, `claims.${EP}.json`), "utf-8");
+    const text = readFileSync(join(root, "claims.json"), "utf-8");
     expect(text).not.toContain("m-secret-id");
     expect(text).not.toContain("CANARY");
     if (process.platform !== "win32") {
-      expect(statSync(join(root, `claims.${EP}.json`)).mode & 0o077).toBe(0);
+      expect(statSync(join(root, "claims.json")).mode & 0o077).toBe(0);
     }
   });
 
@@ -422,16 +425,32 @@ describe("a session whose file repeats another session's lines", () => {
       recent: ["o", Math.floor(NOW / day) - 179],
     };
     for (let i = 0; i < 250_000; i++) claims[`k${i}`] = ["o", Math.floor(NOW / day) - 1];
-    writeFileSync(join(root, `claims.${EP}.json`), JSON.stringify({ v: 1, claims }));
+    writeFileSync(join(root, "claims.json"), JSON.stringify({ v: 1, endpoint: EP, claims }));
     const book = loadClaims(EP, root, NOW);
     expect(book.ownerOf("old")).toBeUndefined();
     expect(book.ownerOf("recent")).toBe("o");
     expect(book.add({ fresh: "o" })).toBe(true);
     book.save();
-    const kept = JSON.parse(readFileSync(join(root, `claims.${EP}.json`), "utf-8")).claims;
+    const kept = JSON.parse(readFileSync(join(root, "claims.json"), "utf-8")).claims;
     expect(Object.keys(kept)).toHaveLength(250_000);
     expect(kept.fresh).toBeDefined();
     expect(kept.recent).toBeUndefined();
+  });
+
+  it("starts the claims over when the endpoint is not the one they were built for", () => {
+    mkdirSync(root, { recursive: true });
+    writeFileSync(
+      join(root, "claims.json"),
+      JSON.stringify({ v: 1, endpoint: EP, claims: { k: ["o", Math.floor(NOW / 86_400_000)] } }),
+    );
+    expect(loadClaims(EP, root, NOW).ownerOf("k")).toBe("o");
+    const other = loadClaims(EP2, root, NOW);
+    expect(other.ownerOf("k")).toBeUndefined();
+    other.add({ j: "o" });
+    other.save();
+    const kept = JSON.parse(readFileSync(join(root, "claims.json"), "utf-8"));
+    expect(kept.endpoint).toBe(EP2);
+    expect(Object.keys(kept.claims)).toEqual(["j"]);
   });
 
   it("keeps the newest claims when the cap cuts into one day", () => {
@@ -439,11 +458,11 @@ describe("a session whose file repeats another session's lines", () => {
     mkdirSync(root, { recursive: true });
     const claims: Record<string, [string, number]> = {};
     for (let i = 0; i < 250_000; i++) claims[`k${i}`] = ["o", day];
-    writeFileSync(join(root, `claims.${EP}.json`), JSON.stringify({ v: 1, claims }));
+    writeFileSync(join(root, "claims.json"), JSON.stringify({ v: 1, endpoint: EP, claims }));
     const book = loadClaims(EP, root, NOW);
     book.add({ fresh: "o" });
     book.save();
-    const kept = JSON.parse(readFileSync(join(root, `claims.${EP}.json`), "utf-8")).claims;
+    const kept = JSON.parse(readFileSync(join(root, "claims.json"), "utf-8")).claims;
     expect(kept.fresh).toBeDefined();
     expect(kept.k0).toBeUndefined();
     expect(Object.keys(kept)).toHaveLength(250_000);
@@ -454,14 +473,14 @@ describe("a session whose file repeats another session's lines", () => {
     mkdirSync(root, { recursive: true });
     const claims: Record<string, [string, number]> = {};
     for (let i = 0; i < 250_000; i++) claims[`k${i}`] = ["o", day];
-    writeFileSync(join(root, `claims.${EP}.json`), JSON.stringify({ v: 1, claims }));
+    writeFileSync(join(root, "claims.json"), JSON.stringify({ v: 1, endpoint: EP, claims }));
     const first = loadClaims(EP, root, NOW);
     first.add({ fresh1: "o" });
     first.save();
     const second = loadClaims(EP, root, NOW);
     second.add({ fresh2: "o" });
     second.save();
-    const kept = JSON.parse(readFileSync(join(root, `claims.${EP}.json`), "utf-8")).claims;
+    const kept = JSON.parse(readFileSync(join(root, "claims.json"), "utf-8")).claims;
     expect(kept.fresh1).toBeDefined();
     expect(kept.fresh2).toBeDefined();
     expect(kept.k0).toBeUndefined();

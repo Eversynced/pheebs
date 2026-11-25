@@ -76,7 +76,7 @@ export interface FlushContext {
   token: string;
   /** `scopeKey` of the backend and token, so usage recorded for another one is never sent here. */
   scope?: string;
-  /** `endpointKey` of the backend, which keys the usage marks. */
+  /** `endpointKey` of the backend the usage marks are built for. */
   endpoint?: string;
   // Fixed when the flusher starts. Events go only to the backend they were queued for, even if
   // the configured one changes while the flusher runs.

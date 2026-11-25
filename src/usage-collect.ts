@@ -24,7 +24,7 @@ export interface CollectOptions {
   dir: string;
   /** The configured backend and token. A record from any other scope is dropped, never sent. */
   scope: string;
-  /** `endpointKey` of the backend, which keys the marks and claims, so a rotated token resends nothing. */
+  /** `endpointKey` of the backend the marks and claims are built for, so a mark for another is dropped. */
   endpoint: string;
   root?: string;
   now?: number;
@@ -59,7 +59,7 @@ export async function collectUsage({
   log,
   locate = locateTranscript,
 }: CollectOptions): Promise<number> {
-  pruneSessions(endpoint, now, root);
+  pruneSessions(now, root);
   let queued = 0;
   let claims: ClaimBook | undefined;
   for (const { key, record, mark } of listSessions(endpoint, root)) {

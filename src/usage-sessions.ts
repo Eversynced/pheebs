@@ -10,7 +10,7 @@ import type { SessionMark, SessionRecord, UsageTool } from "./usage-types.js";
  * id, tool and codebase and two timestamps, never a path: the flusher finds the transcript from
  * the id (see `locateTranscript`).
  *
- * The hook writes `<key>.json` and the flusher writes `<key>.<endpoint>.mark.json`, so no file has two
+ * The hook writes `<key>.json` and the flusher writes `<key>.mark.json`, so no file has two
  * writers and a hook can never undo a cursor.
  */
 const SESSIONS_ROOT = join(homedir(), ".pheebs", "sessions");
@@ -19,22 +19,17 @@ const KEEP_MS = 30 * 24 * 60 * 60 * 1000;
 // offsets, or its whole transcript would be counted again.
 const KEEP_MARK_MS = 180 * 24 * 60 * 60 * 1000;
 
-// Marks and claims are kept per backend endpoint, so one that has seen a session's usage is not sent
-// it again after a token rotation, and a new one is sent the whole session once.
-const ENDPOINT = /^[0-9a-f]{16}$/;
-function endpointOf(endpoint: string): string {
-  if (!ENDPOINT.test(endpoint)) throw new Error("endpoint is not a digest");
-  return endpoint;
-}
-
 // Requests already counted, across sessions: a resumed, forked or background session's file starts
 // with another session's lines, and only this tells the copy from the original. Kept as long as a
 // mark is, because a session can be resumed and copy its history for that long, and no longer: the
-// file holds a digest and an owner per request, so a cap stops it growing without bound. One file
-// per endpoint: a request counted for one backend can still be sent to another.
-const claimsFile = (endpoint: string) => `claims.${endpointOf(endpoint)}.json`;
+// file holds a digest and an owner per request, so a cap stops it growing without bound.
+const CLAIMS_FILE = "claims.json";
 const MAX_CLAIMS = 250_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// A mark and the claims name the backend endpoint they were built for. One built for another is
+// dropped and the session is read from 0: that backend has never seen it, and no history of the
+// earlier endpoint is kept, so going back to an endpoint sends the whole session again.
 
 const TOOLS = new Set<string>(["claude_code"]);
 
@@ -105,8 +100,12 @@ export function listSessions(
     const key = name.slice(0, -5);
     const record = readJsonFile<unknown>(join(root, name));
     if (!isRecord(record)) continue;
-    const mark = readJsonFile<SessionMark>(join(root, `${key}.${endpointOf(endpoint)}.mark.json`));
-    sessions.push({ key, record, mark: mark?.cursors ? mark : { cursors: {} } });
+    const mark = readJsonFile<SessionMark>(join(root, `${key}.mark.json`));
+    sessions.push({
+      key,
+      record,
+      mark: mark?.cursors && mark.endpoint === endpoint ? mark : { cursors: {} },
+    });
   }
   return sessions;
 }
@@ -117,18 +116,18 @@ export function writeMark(
   endpoint: string,
   root = SESSIONS_ROOT,
 ): void {
-  writeAtomic(join(root, `${key}.${endpointOf(endpoint)}.mark.json`), mark);
+  writeAtomic(join(root, `${key}.mark.json`), { ...mark, endpoint });
 }
 
-/** Drops records untouched for 30 days, and marks and claims nothing has touched for 180. */
-export function pruneSessions(endpoint: string, now = Date.now(), root = SESSIONS_ROOT): void {
+/** Drops records untouched for 30 days, and marks with no record for 180. */
+export function pruneSessions(now = Date.now(), root = SESSIONS_ROOT): void {
   const drop = (name: string) => {
     try {
       rmSync(join(root, name), { force: true });
     } catch {}
   };
   const live = new Set<string>();
-  for (const { key, record } of listSessions(endpoint, root)) {
+  for (const { key, record } of listSessions("", root)) {
     if (now - record.touched_at < KEEP_MS) live.add(key);
     else drop(`${key}.json`);
   }
@@ -137,8 +136,8 @@ export function pruneSessions(endpoint: string, now = Date.now(), root = SESSION
     names = readdirSync(root);
   } catch {}
   for (const name of names) {
-    const match = /^([0-9a-f]{32})\.[0-9a-f]{16}\.mark\.json$/.exec(name);
-    if (match ? live.has(match[1]) : !/^claims\.[0-9a-f]{16}\.json$/.test(name)) continue;
+    const match = /^([0-9a-f]{32})\.mark\.json$/.exec(name);
+    if (!match || live.has(match[1])) continue;
     try {
       if (now - statSync(join(root, name)).mtimeMs >= KEEP_MARK_MS) drop(name);
     } catch {}
@@ -174,10 +173,11 @@ export function loadClaims(endpoint: string, root = SESSIONS_ROOT, now = Date.no
   const today = Math.floor(now / DAY_MS);
   const oldest = today - Math.floor(KEEP_MARK_MS / DAY_MS);
   const held = new Map<string, [owner: string, day: number]>();
-  const stored = readJsonFile<{ claims?: Record<string, unknown> }>(
-    join(root, claimsFile(endpoint)),
+  const stored = readJsonFile<{ endpoint?: unknown; claims?: Record<string, unknown> }>(
+    join(root, CLAIMS_FILE),
   );
-  for (const [key, value] of Object.entries(stored?.claims ?? {})) {
+  const mine = stored?.endpoint === endpoint ? stored.claims : undefined;
+  for (const [key, value] of Object.entries(mine ?? {})) {
     if (!Array.isArray(value) || typeof value[0] !== "string" || !Number.isFinite(value[1]))
       continue;
     if (value[1] >= oldest) held.set(key, [value[0], value[1]]);
@@ -205,7 +205,7 @@ export function loadClaims(endpoint: string, root = SESSIONS_ROOT, now = Date.no
           .reverse();
       }
       mkdirSync(root, { recursive: true, mode: 0o700 });
-      writeAtomic(join(root, claimsFile(endpoint)), { v: 1, claims: Object.fromEntries(entries) });
+      writeAtomic(join(root, CLAIMS_FILE), { v: 1, endpoint, claims: Object.fromEntries(entries) });
     },
   };
 }
