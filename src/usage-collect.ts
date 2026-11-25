@@ -59,9 +59,9 @@ export async function collectUsage({
   // finds it taken skips this pass, and the next one picks the sessions up.
   const lock = tryAcquireLock(root);
   if (!lock) return 0;
-  const state = loadUsageState(endpoint, root, now);
   let queued = 0;
   try {
+    const state = loadUsageState(endpoint, root, now);
     state.prune(pruneRecords(now, root));
     for (const { key, record } of listSessions(root)) {
       if (!lock.refresh() || (refresh && !refresh())) break;

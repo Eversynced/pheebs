@@ -147,6 +147,16 @@ export function removeSessions(root = SESSIONS_ROOT): void {
 
 type StoredMark = SessionMark & { at: number };
 
+// An offset that is not a whole non-negative number would reach the reader as a start position.
+function validCursors(cursors: unknown): boolean {
+  if (typeof cursors !== "object" || cursors === null) return false;
+  return Object.values(cursors).every(
+    (c) =>
+      Number.isSafeInteger((c as { offset?: unknown })?.offset) &&
+      (c as { offset: number }).offset >= 0,
+  );
+}
+
 export interface UsageState {
   markOf(key: string): SessionMark;
   setMark(key: string, mark: SessionMark): void;
@@ -178,7 +188,7 @@ export function loadUsageState(
   let dirty = false;
   if (stored?.endpoint === endpoint) {
     for (const [key, value] of Object.entries((stored.marks ?? {}) as Record<string, StoredMark>)) {
-      if (/^[0-9a-f]{32}$/.test(key) && value?.cursors && Number.isFinite(value.at)) {
+      if (/^[0-9a-f]{32}$/.test(key) && Number.isFinite(value?.at) && validCursors(value.cursors)) {
         marks.set(key, value);
       }
     }

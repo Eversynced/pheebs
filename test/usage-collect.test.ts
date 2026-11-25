@@ -558,6 +558,24 @@ describe("a session whose file repeats another session's lines", () => {
       expect(kept().marks).toEqual({});
     });
 
+    it("ignores a mark whose offsets are not whole non-negative numbers", () => {
+      const bad = "a".repeat(32);
+      const good = "b".repeat(32);
+      write(
+        {},
+        {
+          [bad]: { cursors: { "": { offset: Number.NaN } }, at: NOW },
+          [good]: { cursors: { "": { offset: 12 } }, at: NOW },
+          ["c".repeat(32)]: { cursors: { "": { offset: -1 } }, at: NOW },
+          ["d".repeat(32)]: { cursors: "x", at: NOW },
+        },
+      );
+      const state = loadUsageState(EP, root, NOW);
+      expect(state.markOf(bad)).toEqual({ cursors: {} });
+      expect(state.markOf(good).cursors[""].offset).toBe(12);
+      expect(state.markOf("d".repeat(32))).toEqual({ cursors: {} });
+    });
+
     it("replaces a state built for another endpoint even when nothing was added", () => {
       write({ k: ["o", today] });
       loadUsageState(EP2, root, NOW).save();
