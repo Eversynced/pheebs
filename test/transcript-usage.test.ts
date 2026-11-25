@@ -186,18 +186,6 @@ describe("readClaudeUsage", () => {
 
   describe("a file that repeats another session's lines", () => {
     // What the flusher keeps between reads: which file counted a request first.
-    function ledger(session: string) {
-      const owners = new Map<string, string>();
-      return {
-        owners,
-        claims: { session, ownerOf: (key: string) => owners.get(key) },
-        accept(claimed: Record<string, string>) {
-          for (const [key, owner] of Object.entries(claimed)) {
-            if (!owners.has(key)) owners.set(key, owner);
-          }
-        },
-      };
-    }
     const shared = new Map<string, string>();
     const claimsFor = (session: string) => ({
       session,
@@ -248,10 +236,9 @@ describe("readClaudeUsage", () => {
         join(dir, "s.jsonl"),
         lines(assistant("m1", "r1", "claude-opus-5-5", { input: 10, output: 20 })),
       );
-      const book = ledger("s");
-      const first = await readClaudeUsage(path, {}, book.claims);
-      book.accept(first.claimed);
-      const again = await readClaudeUsage(path, {}, book.claims);
+      const first = await readClaudeUsage(path, {}, claimsFor("s"));
+      accept(first.claimed);
+      const again = await readClaudeUsage(path, {}, claimsFor("s"));
       expect(again.rows).toEqual(first.rows);
       expect(again.claimed).toEqual(first.claimed);
     });
