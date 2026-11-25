@@ -616,10 +616,11 @@ components:
         input_tokens:
           type: integer
           description: |
-            On `session_token_usage`, the tokens a session sent in, apart from cache reads. Each
-            `session_token_usage` event is a delta since the last send: sum the events per session
-            and model, as docs/backend-contract.md describes. Other events may carry the same
-            field name with their own meaning.
+            On `session_token_usage`, the tokens a session sent in, leaving out both cache reads
+            and cache writes: `input_tokens + cache_read_tokens + cache_write_tokens` is the total
+            input. Each `session_token_usage` event is a delta since the last send: sum the events
+            per session and model, as docs/backend-contract.md describes. Other events may carry
+            the same field name with their own meaning.
         output_tokens:
           type: integer
           description: |

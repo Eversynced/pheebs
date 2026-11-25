@@ -184,6 +184,46 @@ describe("readClaudeUsage", () => {
     expect(({} as Record<string, unknown>).input_tokens).toBeUndefined();
   });
 
+  it("skips the lines of a background session's file, so a copied history is not counted twice", async () => {
+    const mark = (line: string, extra: Record<string, unknown>) =>
+      JSON.stringify({ ...JSON.parse(line), ...extra });
+    const original = assistant("m1", "r1", "claude-opus-5-5", { input: 10, output: 20 });
+    const parent = write(join(dir, "parent.jsonl"), lines(original));
+    const background = write(
+      join(dir, "background.jsonl"),
+      lines(
+        mark(original, { sessionKind: "bg", requestSessionId: "parent" }),
+        mark(assistant("m2", "r2", "claude-opus-5-5", { input: 3, output: 4 }), {
+          sessionKind: "bg",
+        }),
+        mark(assistant("m3", "r3", "claude-opus-5-5", { input: 5, output: 6 }), {
+          requestSessionId: "parent",
+        }),
+      ),
+    );
+    expect((await readClaudeUsage(parent)).rows).toMatchObject([
+      { input_tokens: 10, output_tokens: 20 },
+    ]);
+    expect((await readClaudeUsage(background)).rows).toEqual([]);
+  });
+
+  it("counts a line that carries neither marker, even beside marked ones", async () => {
+    const own = assistant("m9", "r9", "claude-opus-5-5", { input: 7, output: 8 });
+    const path = write(
+      join(dir, "mixed.jsonl"),
+      lines(
+        JSON.stringify({
+          ...JSON.parse(assistant("m8", "r8", "claude-opus-5-5", { input: 1, output: 1 })),
+          sessionKind: "bg",
+        }),
+        own,
+      ),
+    );
+    expect((await readClaudeUsage(path)).rows).toMatchObject([
+      { input_tokens: 7, output_tokens: 8 },
+    ]);
+  });
+
   it("reads a missing file as nothing, without throwing", async () => {
     expect((await readClaudeUsage(join(dir, "gone.jsonl"))).rows).toEqual([]);
   });

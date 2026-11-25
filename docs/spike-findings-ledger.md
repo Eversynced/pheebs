@@ -45,6 +45,16 @@ privacy line.
 
 ## Findings
 
+### 2026-11-25: A Claude Code session file can start with a copy of an older session's lines; `sessionKind` marks the whole file, not only the copy [Status: CONFIRMED on 230 local transcripts, what creates these files and the unmarked copies' cause UNVERIFIED]
+
+- **Tool(s):** claude_code (local transcripts under two config directories, top-level session files only, subagent files not walked)
+- **Hook / event:** none. A transcript read by the flusher (`session_token_usage`)
+- **Claim (doc/assumption):** a `message.id` and `requestId` pair appears in one session file, so deduping within one read counts each response once, and a session's total is a floor.
+- **Finding:** no. 2 of 230 files carry a `sessionKind` field (value `bg`, the only value seen), and every one of their 256 assistant lines carries it (138 and 118), the file's own lines as well as the copied ones. Of those 256 lines, 74 repeat a `message.id`, `requestId`, `uuid`, `timestamp` and usage found in another file, and 182 are in no other file. `sessionId` on every line equals its own file name, so it does not identify a copy. A per-line field `requestSessionId` (naming another local file) is on 55 of the 74 copies, on none of the 182 own lines and on no line in the 228 other files; the other 19 copies carry only `sessionKind`. Apart from these files, 263 pairs repeat a `message.id`, `requestId`, `uuid` and `timestamp` across two files that have no `sessionKind` and no `requestSessionId`, so those copies have no marker at all. Another 298 cross-file pairs share a `message.id` and `requestId` but not a `uuid` or `timestamp`, and are not copies of one line.
+- **Method:** `python3 -I` over `*/*.jsonl` under the two config directories, counting field presence, equality of `uuid` and `timestamp` between files, and the owners of each `message.id` and `requestId`. Counts and field names only. UNVERIFIED: what writes a `sessionKind` file (it looks like background sessions), whether `sessionKind` ever takes another value, whether a `sessionKind` line can be the only copy of a response, what the 263 unmarked copies are (a resume or fork is likely, not checked), and any account other than the two read.
+- **Impact:** the client skips every line that carries `sessionKind` or `requestSessionId`. That drops a background session's own usage along with its copies, so the total stays a floor and a missing number is chosen over a repeated one. The 263 unmarked copies are still counted again in the files that repeat them: the reader keeps no cross-file memory, so the floor promise holds only for what a marker can show. No schema change.
+- **Ref:** none
+
 ### 2026-11-19: Cursor transcripts carry no token usage, and the IDE's own store has the fields but empty [Status: CONFIRMED]
 
 - **Tool(s):** cursor (`cursor-agent` CLI 2026.10.22 and the IDE, local data only)

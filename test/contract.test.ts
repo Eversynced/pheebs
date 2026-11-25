@@ -41,6 +41,16 @@ describe("openapi.yaml", () => {
     ).toContain("Contract 1.10.0");
   });
 
+  it("says input_tokens leaves out cache reads and cache writes, and how the total is formed", () => {
+    const total = "input_tokens + cache_read_tokens + cache_write_tokens";
+    const doc = readFileSync(
+      join(import.meta.dirname, "..", "docs", "backend-contract.md"),
+      "utf-8",
+    );
+    expect(spec).toContain(total);
+    expect(doc).toContain(total);
+  });
+
   it("documents command_sequence beside the fields a chain changes", () => {
     expect(spec).toContain("\n        command_sequence:\n");
   });
