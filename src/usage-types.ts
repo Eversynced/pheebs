@@ -56,17 +56,15 @@ export interface SessionRecord {
   session_id: string;
   codebase: string;
   ended: boolean;
-  /** The backend and token the hook saw (`scopeKey`), so usage is only ever sent to that one. */
-  scope: string;
+  /** `endpointKey` of the backend the hook saw, so usage is only ever sent to that backend. */
+  endpoint: string;
   /** ms epoch of the last hook that touched the session. */
   touched_at: number;
 }
 
-/** The flusher's own file for a session, so the hook and the flusher never write the same one. */
+/** What the flusher keeps for a session, in its own file, so a hook never writes it. */
 export interface SessionMark {
   cursors: Cursors;
-  /** `endpointKey` of the backend this mark was built for. A mark for another one is dropped. */
-  endpoint?: string;
   /** `<touched_at>:<ended>` of the record a pass last settled, so an unchanged one is not rescanned. */
   settled?: string;
   /** ms epoch before which a transcript that could not be found is not searched for again. */

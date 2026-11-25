@@ -64,16 +64,31 @@ transcript. Cursor has no reader, because its transcripts carry no usage, and Co
 The lookup searches `CLAUDE_CONFIG_DIR`, `~/.claude` and each `~/.claude-*` directory with a
 `projects` folder, one folder level down. A transcript in a config directory outside those is not found, and its
 usage is never sent: a known limit. A transcript not found yet is searched for again every 10
-minutes until the record expires after 30 days. A session record carries a hash of the backend and
-token it was recorded under, and the flusher drops one recorded under any other, so usage never
-goes to a backend it was not captured for. Dropping the record keeps the marks. A session with no `session_end` is read only when its
-transcript has also gone quiet for 30 minutes. A mark outlives its record by 180 days, so a
-resumed session carries on from its old offsets, also after a token change. A mark names the backend endpoint it was built for (a digest of the configured base URL), so a token rotated on the same endpoint resends nothing. When the endpoint differs, the mark is dropped and the session is read from offset 0, so the new backend receives the whole session once, then only what is added. No history of the earlier endpoint is kept: going back to it drops the mark again and sends the whole session to it again. A session recorded under another backend or token and not yet read is dropped, and sent only if it is resumed and recorded again. `pheebs uninstall` removes the records, the marks and the request digests.
+minutes until the record expires after 30 days. A session record carries a hash of the backend
+endpoint (the configured base URL) it was recorded under, and the flusher drops one recorded under
+any other, so usage never goes to a backend it was not captured for. A token rotated on the same
+endpoint changes nothing: a session that ended but was not read yet is still sent, to the queue of
+the token now configured, and the flusher only runs while a backend and token are configured. A
+session with no `session_end` is read only when its transcript has also gone quiet for 30 minutes.
 
-`claims.json` beside them lists, for each request counted, a 16-character digest of its ids and a digest of the file that counted it, never an id or any text, so a later file that repeats the request is skipped for that endpoint. The file names its endpoint and starts over when the endpoint changes, so a new endpoint can still receive the request. A session whose mark was not touched since an endpoint change keeps its old mark, and its claims are gone, so it can count a request another session had claimed once. An entry goes after 180 days, like a mark, and the file holds at most 250,000, oldest dropped first. Read order decides which session is credited with a shared request, and moves the output total slightly (426 tokens in one recount, cause unverified).
+The flusher keeps everything else in one file, `usage-state.json` beside the records: the byte
+offsets of each session (a mark, kept 180 days after its record goes, so a resumed session carries on
+from its old offsets, 50,000 at most) and, for each request counted, a 16-character digest of its ids
+with a digest of the file that counted it, never an id or any text, so a later file that repeats
+the request is skipped (an entry goes after 180 days, 250,000 at most, oldest dropped first). The file
+names the endpoint it was built for. When the endpoint differs, the marks and the claims go together
+and every session is read from offset 0, so the new backend receives the whole session once, then
+only what is added. No history of the earlier endpoint is kept: going back to it resets again and
+sends the whole session to it again. The hook cannot share that file, since hooks run at once in
+many sessions and must never wait on a lock, so each session keeps its own small record, which only
+a hook writes. A flusher takes a lock around each pass, and one that finds it taken skips the pass,
+so two flushers cannot overwrite each other's marks or claims. For N sessions that is N records and
+one state file, plus the lock while a pass runs. `pheebs uninstall` removes all of it. Read order
+decides which session is credited with a shared request, and moves the output total slightly (426
+tokens in one recount, cause unverified).
 
-Known limit: if the flusher dies after queuing a session's events and before writing its mark, and
-the transcript grows before the next read, the overlap is sent again under new ids and counted
+Known limit: if the flusher dies after queuing a session's events and before saving the state at the
+end of the pass, and the transcript grows before the next read, the overlap is sent again under new ids and counted
 twice.
 
 ## The client's job, and where it stops

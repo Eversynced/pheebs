@@ -2,16 +2,15 @@ import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { usageEventId } from "./event-id.js";
 import { EVENTS } from "./hooks/types.js";
-import { enqueue } from "./outbox.js";
+import { enqueue, tryAcquireLock } from "./outbox.js";
 import { locateTranscript } from "./transcript-locate.js";
 import { readClaudeUsage } from "./transcript-usage.js";
 import {
-  type ClaimBook,
   forgetRecord,
   listSessions,
-  loadClaims,
-  pruneSessions,
-  writeMark,
+  loadUsageState,
+  pruneRecords,
+  SESSIONS_ROOT,
 } from "./usage-sessions.js";
 import type { SessionRecord } from "./usage-types.js";
 
@@ -22,9 +21,7 @@ export const IDLE_MS = 30 * 60 * 1000;
 export interface CollectOptions {
   /** The outbox scope directory the events are queued into. */
   dir: string;
-  /** The configured backend and token. A record from any other scope is dropped, never sent. */
-  scope: string;
-  /** `endpointKey` of the backend the marks and claims are built for, so a mark for another is dropped. */
+  /** `endpointKey` of the configured backend. A record from another is dropped, never sent. */
   endpoint: string;
   root?: string;
   now?: number;
@@ -49,9 +46,8 @@ const NOT_FOUND_RETRY_MS = 10 * 60 * 1000;
  */
 export async function collectUsage({
   dir,
-  scope,
   endpoint,
-  root,
+  root = SESSIONS_ROOT,
   now = Date.now(),
   idleMs = IDLE_MS,
   version,
@@ -59,71 +55,80 @@ export async function collectUsage({
   log,
   locate = locateTranscript,
 }: CollectOptions): Promise<number> {
-  pruneSessions(now, root);
+  // One flusher at a time owns the state: it is read, changed and written whole. A flusher that
+  // finds it taken skips this pass, and the next one picks the sessions up.
+  const lock = tryAcquireLock(root);
+  if (!lock) return 0;
+  const state = loadUsageState(endpoint, root, now);
   let queued = 0;
-  let claims: ClaimBook | undefined;
-  for (const { key, record, mark } of listSessions(endpoint, root)) {
-    if (refresh && !refresh()) break;
-    if (record.scope !== scope) {
-      forgetRecord(key, root);
-      continue;
-    }
-    const due = record.ended || now - record.touched_at >= idleMs;
-    const settled = `${record.touched_at}:${record.ended}`;
-    if (!due || mark.settled === settled || now < (mark.retryAt ?? 0)) continue;
-    try {
-      const path = locate(record);
-      if (!path) {
-        // Not found yet, or not findable: look again later, until the record expires.
-        writeMark(key, { ...mark, retryAt: now + NOT_FOUND_RETRY_MS }, endpoint, root);
+  try {
+    state.prune(pruneRecords(now, root));
+    for (const { key, record } of listSessions(root)) {
+      if (!lock.refresh() || (refresh && !refresh())) break;
+      if (record.endpoint !== endpoint) {
+        forgetRecord(key, root);
         continue;
       }
-      let stamp = now;
+      const mark = state.markOf(key);
+      const due = record.ended || now - record.touched_at >= idleMs;
+      const settled = `${record.touched_at}:${record.ended}`;
+      if (!due || mark.settled === settled || now < (mark.retryAt ?? 0)) continue;
       try {
-        stamp = Math.floor(statSync(path).mtimeMs);
-      } catch {}
-      // A session with no SessionEnd is read only once its transcript has gone quiet: the record
-      // is touched by the hooks, so a long turn can outlast the window while still being written.
-      if (!record.ended && now - stamp < idleMs) continue;
-      claims ??= loadClaims(endpoint, root, now);
-      const result = await readClaudeUsage(path, mark.cursors, {
-        session: key,
-        ownerOf: claims.ownerOf,
-      });
-      const pass = createHash("sha256").update(JSON.stringify(result.ranges)).digest("hex");
-      for (const row of result.rows) {
-        const id = usageEventId(
-          stamp,
-          [record.tool, record.session_id, row.model, row.from_subagent, pass].join("\n"),
-        );
-        const event = {
-          event_id: id,
-          timestamp: new Date(stamp).toISOString(),
-          source: "hook",
-          event: EVENTS.SessionTokenUsage,
-          codebase: record.codebase,
-          ai_tool: record.tool,
-          session_id: record.session_id,
-          version,
-          ...row,
-          usage_source: "transcript",
-        };
-        enqueue(event, dir, { now, sendNow: record.ended });
+        const path = locate(record);
+        if (!path) {
+          // Not found yet, or not findable: look again later, until the record expires.
+          state.setMark(key, { ...mark, retryAt: now + NOT_FOUND_RETRY_MS });
+          continue;
+        }
+        let stamp = now;
         try {
-          log?.(event);
+          stamp = Math.floor(statSync(path).mtimeMs);
         } catch {}
-        queued += 1;
+        // A session with no SessionEnd is read only once its transcript has gone quiet: the record
+        // is touched by the hooks, so a long turn can outlast the window while still being written.
+        if (!record.ended && now - stamp < idleMs) continue;
+        const result = await readClaudeUsage(path, mark.cursors, {
+          session: key,
+          ownerOf: state.ownerOf,
+        });
+        const pass = createHash("sha256").update(JSON.stringify(result.ranges)).digest("hex");
+        for (const row of result.rows) {
+          const id = usageEventId(
+            stamp,
+            [record.tool, record.session_id, row.model, row.from_subagent, pass].join("\n"),
+          );
+          const event = {
+            event_id: id,
+            timestamp: new Date(stamp).toISOString(),
+            source: "hook",
+            event: EVENTS.SessionTokenUsage,
+            codebase: record.codebase,
+            ai_tool: record.tool,
+            session_id: record.session_id,
+            version,
+            ...row,
+            usage_source: "transcript",
+          };
+          enqueue(event, dir, { now, sendNow: record.ended });
+          try {
+            log?.(event);
+          } catch {}
+          queued += 1;
+        }
+        // Claims and mark move together, after the events are queued: a crash before the save
+        // rereads the same bytes under the same owner and names the events the same way.
+        state.addClaims(result.claimed);
+        state.setMark(key, { cursors: result.cursors, settled });
+      } catch {
+        // An unreadable file or a queue that refuses leaves the cursors where they were, and a
+        // later pass reads the same bytes again, not every 2 seconds.
+        state.setMark(key, { ...mark, retryAt: now + NOT_FOUND_RETRY_MS });
       }
-      // Before the mark moves, so a crash between them rereads the same bytes under the same owner.
-      if (claims.add(result.claimed)) claims.save();
-      writeMark(key, { cursors: result.cursors, settled }, endpoint, root);
-    } catch {
-      // An unreadable file or a queue that refuses leaves the cursors where they were, and a later
-      // pass reads the same bytes again, not every 2 seconds.
-      try {
-        writeMark(key, { ...mark, retryAt: now + NOT_FOUND_RETRY_MS }, endpoint, root);
-      } catch {}
     }
+    // Only while the lock is still ours: one stolen as stale may have been written over since.
+    if (lock.refresh()) state.save();
+  } finally {
+    lock.release();
   }
   return queued;
 }

@@ -74,9 +74,7 @@ export type FlushOutcome = "empty" | "sent" | "retry" | "stop";
 
 export interface FlushContext {
   token: string;
-  /** `scopeKey` of the backend and token, so usage recorded for another one is never sent here. */
-  scope?: string;
-  /** `endpointKey` of the backend the usage marks are built for. */
+  /** `endpointKey` of the backend, so usage recorded for another one is never sent here. */
   endpoint?: string;
   // Fixed when the flusher starts. Events go only to the backend they were queued for, even if
   // the configured one changes while the flusher runs.
@@ -530,18 +528,16 @@ function stillScoped(scope: string): boolean {
 let lastCollectAt = 0;
 async function collectSessionUsage(
   dir: string,
-  scope: string | undefined,
   endpoint: string | undefined,
   lock: Lock,
 ): Promise<void> {
-  if (!scope || !endpoint) return;
+  if (!endpoint) return;
   const at = Date.now();
   if (at - lastCollectAt < COLLECT_EVERY_MS) return;
   lastCollectAt = at;
   try {
     await collectUsage({
       dir,
-      scope,
       endpoint,
       version: PHEEBS_VERSION,
       refresh: () => lock.refresh(),
@@ -565,7 +561,7 @@ async function drain(ctx: FlushContext, lock: Lock, linger: boolean) {
   let honourBackoff = linger;
   for (;;) {
     if (!lock.refresh() || !ctx.stillScoped?.()) return false;
-    await collectSessionUsage(dir, ctx.scope, ctx.endpoint, lock);
+    await collectSessionUsage(dir, ctx.endpoint, lock);
     trimToCaps(dir);
     const pending = listPending(dir);
     if (pending.length === 0) return true;
@@ -608,7 +604,6 @@ export async function runFlush({ linger = false }: { linger?: boolean } = {}): P
   const scope = scopeKey(base, stored.token);
   const ctx: FlushContext = {
     token: stored.token,
-    scope,
     endpoint: endpointKey(base),
     batchUrl: ingestBatchUrl(base),
     singleUrl: ingestUrl(base),

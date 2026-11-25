@@ -6,7 +6,7 @@ import { getConfig } from "../config.js";
 import { getDeveloperHandle } from "../developer-id.js";
 import { appendLogEntry } from "../logger.js";
 import { resyncOtelConfigs } from "../otel-resync.js";
-import { scopeKey } from "../outbox.js";
+import { endpointKey } from "../outbox.js";
 import { runArtifactScan } from "../scanner.js";
 import { readStoredToken, revalidateStoredTokenIfStale } from "../token.js";
 import { noteSession } from "../usage-sessions.js";
@@ -653,7 +653,7 @@ function noteTranscript(
       tool,
       session_id: sessionId,
       codebase,
-      scope: scopeKey(baseUrl(), stored.token),
+      endpoint: endpointKey(baseUrl()),
       ended: eventName === EVENTS.TurnEnded ? undefined : eventName === EVENTS.SessionEnd,
     });
   } catch {}

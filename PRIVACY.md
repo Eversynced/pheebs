@@ -149,11 +149,10 @@ queues one `session_token_usage` event per model with `model`, `from_subagent`, 
 `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens` and
 `usage_source`. Only integers and the model id leave the transcript; its text, tool output and
 paths are read past and dropped. No transcript path is stored: a hook records only the session id,
-tool, codebase, timestamps and a hash of the backend and token in `~/.pheebs/sessions/` (owner-only on
+tool, codebase, timestamps and a hash of the backend address in `~/.pheebs/sessions/` (owner-only on
 macOS and Linux, your profile folder's permissions on Windows, local, never sent, removed after 30
 idle days, and by `pheebs uninstall`), only when a backend and token are set, and the background process finds the file
-from the session id. A per-session offset file beside it (byte positions, named
-by a hash, with no id or path) is kept 180 days, and names the backend address (a hash) it was built for, so a resumed session is not counted twice, and `pheebs uninstall` removes it too. So does a `claims.json` of digests of request ids (no id, text or path), which tells a copied history from the original. Cursor's transcripts carry no usage and Codex's are not read, so neither sends one.
+from the session id. One state file beside the records (byte positions per session, named by a hash, and digests of request ids, with no id, text or path) is kept 180 days, names the backend address (a hash) it was built for, so a resumed session is not counted twice and a copied history is skipped, and `pheebs uninstall` removes it too. Cursor's transcripts carry no usage and Codex's are not read, so neither sends one.
 
 **Codex also:** `input_tokens`, `output_tokens`, `permission_type`, `approved`.
 
