@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { createReadStream, type Dirent, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import type { Cursors, UsageRead, UsageRow } from "./usage-types.js";
+import type { Claims, Cursors, UsageRead, UsageRow } from "./usage-types.js";
 
 // A line past this is skipped unread, so one pasted image or tool dump cannot hold a whole line in
 // memory. It undercounts nothing in practice: a usage line is a few hundred bytes.
@@ -58,6 +59,11 @@ async function scanLines(
   }
   return consumed;
 }
+
+// Only a digest of a request's ids is kept, so what a caller stores to tell a copy from an original
+// is neither a transcript string nor reversible.
+const digest = (text: string): string =>
+  createHash("sha256").update(text).digest("hex").slice(0, 16);
 
 const isCount = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -123,18 +129,23 @@ const CLAUDE_NEEDLE = Buffer.from('"usage"');
 /**
  * Sums a Claude Code session's usage by model: the parent transcript plus every subagent file below
  * it, from the offsets in `cursors`. A streamed response repeats its line, so each `message.id` and
- * `requestId` counts once at its largest value per field. A line marked `sessionKind` or
- * `requestSessionId` is skipped, because it can repeat another session's usage. Nothing is persisted here. The dedup
- * holds within one read: a read that ends between two lines of one streamed response counts that
- * response again on the next read, so the caller reads a transcript only once it has gone quiet.
+ * `requestId` counts once at its largest value per field. A resumed, forked or background session's
+ * file starts with a copy of another session's lines, so a request that `claims` says another file
+ * counted first is skipped (ledger 2026-11-25). Nothing is persisted here. The dedup holds within
+ * one read: a read that ends between two lines of one streamed response counts that response again
+ * on the next read, so the caller reads a transcript only once it has gone quiet.
  */
 export async function readClaudeUsage(
   transcriptPath: string,
   cursors: Cursors = {},
+  claims?: Claims,
 ): Promise<UsageRead> {
   const next: Cursors = { ...cursors };
   const ranges: UsageRead["ranges"] = {};
   const tallies = new Map<string, Tally>();
+  // Request key to the file that counted it, for this read and for every earlier one.
+  const owners = new Map<string, string>();
+  const claimed: Record<string, string> = {};
 
   const files: [string, string][] = [["", transcriptPath]];
   for (const rel of subagentFiles(transcriptPath)) {
@@ -150,30 +161,24 @@ export async function readClaudeUsage(
       next[rel] = { offset: size };
       continue;
     }
+    const owner = digest(`${claims?.session ?? ""}\n${rel}`);
     const byKey = new Map<string, Tally>();
     const end = await scanLines(path, from, CLAUDE_NEEDLE, (line) => {
-      let entry: {
-        type?: unknown;
-        requestId?: unknown;
-        sessionKind?: unknown;
-        requestSessionId?: unknown;
-        message?: Record<string, unknown>;
-      };
+      let entry: { type?: unknown; requestId?: unknown; message?: Record<string, unknown> };
       try {
         entry = JSON.parse(line);
       } catch {
         return;
       }
-      // A background session's file starts with another session's lines, which a read of that
-      // session counts too. Those lines carry one of these two fields, so skip them (ledger 2026-11-25).
-      if (entry.sessionKind !== undefined || entry.requestSessionId !== undefined) return;
       const message = entry.message;
       const usage = message?.usage as Record<string, unknown> | undefined;
       if (entry.type !== "assistant" || !message || !usage) return;
       const { id, model } = message;
       if (typeof id !== "string" || !isModelId(model)) return;
       if (!isCount(usage.input_tokens) || !isCount(usage.output_tokens)) return;
-      const key = `${id}:${typeof entry.requestId === "string" ? entry.requestId : ""}`;
+      const key = digest(`${id}:${typeof entry.requestId === "string" ? entry.requestId : ""}`);
+      const first = owners.get(key) ?? claims?.ownerOf(key);
+      if (first !== undefined && first !== owner) return;
       const thinking = (usage.output_tokens_details as Record<string, unknown> | undefined)
         ?.thinking_tokens;
       const seen = byKey.get(key);
@@ -196,7 +201,9 @@ export async function readClaudeUsage(
         reasoning: most(seen?.reasoning, reasoning),
       });
     });
-    for (const tally of byKey.values()) {
+    for (const [key, tally] of byKey) {
+      owners.set(key, owner);
+      claimed[key] = owner;
       const group = `${tally.model}|${tally.from_subagent}`;
       const total = tallies.get(group) ?? {
         model: tally.model,
@@ -214,5 +221,5 @@ export async function readClaudeUsage(
     next[rel] = { offset: end };
     ranges[rel] = [from, end];
   }
-  return { rows: [...tallies.values()].map(toRow), cursors: next, ranges };
+  return { rows: [...tallies.values()].map(toRow), cursors: next, ranges, claimed };
 }

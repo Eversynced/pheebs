@@ -35,6 +35,19 @@ export interface UsageRead {
   cursors: Cursors;
   /** Offsets each file was read between, so the caller can name this pass. */
   ranges: Record<string, [from: number, to: number]>;
+  /** The requests this read counted, as a digest of their ids, each with the file that counted it. */
+  claimed: Record<string, string>;
+}
+
+/**
+ * Which file counted a request first, across every session. A later file that repeats the request
+ * is a copy and is not counted again. Ids only, never content.
+ */
+export interface Claims {
+  /** Names the session, so a file's owner stays the same from one read to the next. */
+  session: string;
+  /** The owner that counted this request key, or undefined when none has. */
+  ownerOf(key: string): string | undefined;
 }
 
 /** Written by the hook, read by the flusher. Never part of an event. Holds no path. */
