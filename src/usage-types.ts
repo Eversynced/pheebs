@@ -5,13 +5,13 @@ export type UsageTool = Extract<AiTool, "claude_code">;
 
 /** Integers only. An optional field is absent, never 0, when the transcript does not carry it. */
 export interface TokenCounts {
-  /** Excludes cache reads. */
+  /** Excludes cache reads and cache writes. */
   input_tokens: number;
-  /** Includes reasoning tokens. */
+  /** Whether this includes `reasoning_tokens` is not verified. */
   output_tokens: number;
   cache_read_tokens?: number;
   cache_write_tokens?: number;
-  /** A subset of output_tokens. Absent when no line of the read carried it. */
+  /** Whether this is part of `output_tokens` is not verified. Absent when no line of the read carried it. */
   reasoning_tokens?: number;
 }
 

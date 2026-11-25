@@ -123,7 +123,8 @@ const CLAUDE_NEEDLE = Buffer.from('"usage"');
 /**
  * Sums a Claude Code session's usage by model: the parent transcript plus every subagent file below
  * it, from the offsets in `cursors`. A streamed response repeats its line, so each `message.id` and
- * `requestId` counts once at its largest value per field. Nothing is persisted here. The dedup
+ * `requestId` counts once at its largest value per field. A line marked `sessionKind` or
+ * `requestSessionId` is skipped, because it can repeat another session's usage. Nothing is persisted here. The dedup
  * holds within one read: a read that ends between two lines of one streamed response counts that
  * response again on the next read, so the caller reads a transcript only once it has gone quiet.
  */
@@ -151,12 +152,21 @@ export async function readClaudeUsage(
     }
     const byKey = new Map<string, Tally>();
     const end = await scanLines(path, from, CLAUDE_NEEDLE, (line) => {
-      let entry: { type?: unknown; requestId?: unknown; message?: Record<string, unknown> };
+      let entry: {
+        type?: unknown;
+        requestId?: unknown;
+        sessionKind?: unknown;
+        requestSessionId?: unknown;
+        message?: Record<string, unknown>;
+      };
       try {
         entry = JSON.parse(line);
       } catch {
         return;
       }
+      // A background session's file starts with another session's lines, which a read of that
+      // session counts too. Those lines carry one of these two fields, so skip them (ledger 2026-11-25).
+      if (entry.sessionKind !== undefined || entry.requestSessionId !== undefined) return;
       const message = entry.message;
       const usage = message?.usage as Record<string, unknown> | undefined;
       if (entry.type !== "assistant" || !message || !usage) return;
