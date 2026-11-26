@@ -219,6 +219,37 @@ describe("readClaudeUsage", () => {
       expect(second.rows).toMatchObject([{ input_tokens: 3, output_tokens: 4 }]);
     });
 
+    it("skips a line that names another session as the requester even when that session was not read first", async () => {
+      const m1 = assistant("m1", "r1", "claude-opus-5-5", { input: 10, output: 20 });
+      const parent = write(join(dir, "parent.jsonl"), lines(m1));
+      const background = write(
+        join(dir, "background.jsonl"),
+        lines(
+          mark(m1, { sessionId: "background", sessionKind: "bg", requestSessionId: "parent" }),
+          mark(assistant("m2", "r2", "claude-opus-5-5", { input: 3, output: 4 }), {
+            sessionId: "background",
+            sessionKind: "bg",
+          }),
+        ),
+      );
+      const second = await readClaudeUsage(background, {}, claimsFor("background"));
+      accept(second.claimed);
+      const first = await readClaudeUsage(parent, {}, claimsFor("parent"));
+      expect(second.rows).toMatchObject([{ input_tokens: 3, output_tokens: 4 }]);
+      expect(first.rows).toMatchObject([{ input_tokens: 10, output_tokens: 20 }]);
+    });
+
+    it("counts a line whose requestSessionId is its own session", async () => {
+      const own = mark(assistant("m1", "r1", "claude-opus-5-5", { input: 2, output: 3 }), {
+        sessionId: "s",
+        requestSessionId: "s",
+      });
+      const path = write(join(dir, "s.jsonl"), lines(own));
+      expect((await readClaudeUsage(path, {}, claimsFor("s"))).rows).toMatchObject([
+        { input_tokens: 2, output_tokens: 3 },
+      ]);
+    });
+
     it("skips an unmarked copy in a second file, such as a resumed session's", async () => {
       const m1 = assistant("m1", "r1", "claude-opus-5-5", { input: 10, output: 20 });
       const parent = write(join(dir, "parent.jsonl"), lines(m1));
