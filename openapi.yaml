@@ -229,8 +229,7 @@ paths:
             enum: [traces, metrics, logs]
       requestBody:
         description: |
-          The client always configures protobuf (`http/protobuf` for Claude Code, `binary` for
-          Codex). A backend that implements only the JSON variant drops every export.
+          The client always configures protobuf (`http/protobuf` for Claude Code). A backend that implements only the JSON variant drops every export.
         required: true
         content:
           application/x-protobuf:
@@ -475,8 +474,8 @@ components:
           type: string
           description: |
             For `ai_tool: claude_code`, present on `session_started` and `session_token_usage`
-            only; recurring hooks do not carry it. Cursor and Codex copy it off any payload that
-            has it, on any event. On `session_token_usage`, the model the counts belong to (a
+            only; recurring hooks do not carry it. An older Cursor or Codex client copied it off any
+            payload that had it, on any event. On `session_token_usage`, the model the counts belong to (a
             Claude Code id has its context suffix stripped).
         from_model:
           type: string
@@ -502,7 +501,7 @@ components:
           type: string
           description: |
             The vendor's own `source` value, passed through verbatim — treat it as an opaque
-            string. Emitted on `session_started` by claude_code and codex; Cursor never sets it.
+            string. Emitted on `session_started` by claude_code. An older client also sent it for codex.
         expansion_type:
           type: string
           description: On `command_expanded`, e.g. `slash_command`.
@@ -559,8 +558,7 @@ components:
             by `tool_intent = 'vcs'`, or chained writes are missed. `worktree` is `git worktree add`
             only. It is not a ship: count commits, pushes and PRs by listing `commit`, `push` and
             `pr_create`, never as `vcs_action != 'other'`. It is seen only when `git worktree add`
-            is typed in a shell, so Claude Code `--worktree`, Cursor parallel agents and Codex app
-            worktrees never set it. A count is a lower bound; absence does not mean no worktree use.
+            is typed in a shell, so Claude Code `--worktree` never sets it. A count is a lower bound; absence does not mean no worktree use.
         command_sequence:
           type: string
           description: |

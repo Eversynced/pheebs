@@ -19,7 +19,7 @@ flowchart TD
     H --> J["Layer 2<br/>classifiers, cost analysis, dashboards"]
 ```
 
-Cursor also runs the hooks in a project's `.claude/settings.json`. Pheebs no longer records
+Cursor also runs the hooks in a project's `.claude/settings.json`. Pheebs does not record
 Cursor, so the hook ignores those payloads rather than logging them as `claude_code`
 (`isCursorPayload` in [`src/hooks/handler.ts`](../src/hooks/handler.ts)). An install made when
 Cursor and Codex were supported still calls `pheebs hook-cursor` and `pheebs hook-codex`, which exit
@@ -177,7 +177,7 @@ Consumer-side correlation has a few rules that are properties of the capture
 layer, not preferences. They apply to any storage engine.
 
 **Anchor on `tool_use_completed` and `tool_use_failed`, never `tool_invoked`.**
-Rows from before Cursor and Codex support was removed can carry `tool_invoked`
+Rows from an older Cursor or Codex client can carry `tool_invoked`
 for the same execution that later produces a completion event, so including it
 double-counts. Claude Code never emitted it.
 

@@ -49,7 +49,7 @@ The two differ in what they claim about the future, and the difference is worth 
 
 Never report a measurement gap as Unobserved. Unobserved says the engineer did not do the thing; if the detector could not have seen it, that sentence is false, and the model exists to make behaviour legible rather than to manufacture a verdict. The conditions that produce *Insufficient data* are listed under [Windows and placement](#windows-and-placement).
 
-A competency inherits the state of its anchor practice. Anchors are the core practices of a competency; most are available and detectable on all three harnesses, and the ones that are not are marked *anchor where applicable*. Harness-specific practices feed the coverage index only. A competency with **no judgeable anchor on the engineer's harness mix** reads Insufficient data: the harness gives us nothing to judge it by, which is a statement about our reach and not about the engineer. An anchor sets the competency's state only while it is both applicable and judgeable.
+A competency inherits the state of its anchor practice. Anchors are the core practices of a competency; most are available and detectable on Claude Code, the one harness the client captures, and the ones that are not are marked *anchor where applicable*. Harness-specific practices feed the coverage index only. A competency with **no judgeable anchor on the engineer's harness mix** reads Insufficient data: the harness gives us nothing to judge it by, which is a statement about our reach and not about the engineer. An anchor sets the competency's state only while it is both applicable and judgeable.
 
 ## Scope
 
@@ -116,7 +116,7 @@ The context-window features in use: compaction, and the save, resume, and clear 
 | Resume and clear lifecycle (anchor where applicable) | Sessions started via resume or clear |
 | Compaction split (team stat) | The auto vs manual compaction ratio |
 
-Both anchors here are harness-limited, so on a harness that reports neither manual compaction nor session origin the competency reads Insufficient data. Context management is no longer the only competency that can lose its anchor this way: Artifacts rests on a single anchor, and as of 2026-09-11 that anchor was unobservable on Codex, which the client no longer captures. The registry records which harness each gap applies to, and which gaps are settled rather than merely unverified.
+Both anchors here are harness-limited, so on a harness that reports neither manual compaction nor session origin the competency reads Insufficient data. Context management is no longer the only competency that can lose its anchor this way: Artifacts rests on a single anchor, and that anchor was unobservable on Codex, so a Codex row in an old log cannot grade it. The registry records which harness each gap applies to, and which gaps are settled rather than merely unverified.
 
 ### Orchestration
 

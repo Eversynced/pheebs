@@ -29,14 +29,34 @@ describe("openapi.yaml", () => {
 
   it("carries the version that deprecated Cursor and Codex, and marks what they produced", () => {
     expect(spec).toContain('\n  version: "1.11.0"\n');
-    for (const field of ["rule_attachment_count", "fast_mode", "failure_type", "approved"]) {
+    const deprecated = [
+      "rule_attachment_count",
+      "fast_mode",
+      "status",
+      "failure_type",
+      "permission_type",
+      "approved",
+      "conversation_id",
+      "generation_id",
+    ];
+    for (const field of deprecated) {
       expect(spec).toMatch(
         new RegExp(`\\n {8}${field}:\\n(?: {10}.*\\n)*? {10}deprecated: true\\n`),
       );
     }
-    expect(
-      readFileSync(join(import.meta.dirname, "..", "docs", "backend-contract.md"), "utf-8"),
-    ).toContain("Contract 1.11.0");
+    const doc = readFileSync(
+      join(import.meta.dirname, "..", "docs", "backend-contract.md"),
+      "utf-8",
+    );
+    const paragraph = doc.slice(doc.indexOf("Contract 1.11.0"));
+    expect(paragraph).toContain("Contract 1.11.0");
+    for (const name of [...deprecated, ...DEPRECATED_EVENTS, "`cursor`", "`codex`"]) {
+      expect(paragraph).toContain(name);
+    }
+  });
+
+  it("keeps the Cursor and Codex ai_tool values a backend may still receive", () => {
+    expect(spec).toContain("\n          enum: [claude_code, cursor, codex]\n");
   });
 
   it("documents the subagent model fields an Agent call carries", () => {

@@ -214,7 +214,7 @@ either. Pheebs's backend never receives it, so the tenant's `prompt_collection` 
 required. Your opt-out still is: an opted-out token
 gets `prompt_intent: "unclassified"` and nothing is run ([`src/classify-local.ts`](./src/classify-local.ts)).
 
-- **Claude Code only.** Pheebs no longer records Cursor or Codex, and a prompt from either is never sent anywhere.
+- **Claude Code only.** A prompt from any other agent is never sent anywhere.
 - **No second transcript, no telemetry.** The child runs with `--no-session-persistence`, and
   hooks, settings, MCP servers and OpenTelemetry are switched off in it, so the classification
   call is not exported as your own usage.
