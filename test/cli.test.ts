@@ -9,7 +9,6 @@ import {
   realpathSync,
   rmSync,
   statSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,35 +55,6 @@ describe("CLI dispatch", () => {
     // The unknown-command error reuses the single HELP source, so it lists all commands.
     expect(stderr).toContain("config <cmd>");
     expect(stderr).toContain("pheebs <command>");
-  });
-});
-
-describe("Codex test-outcome synthesis", () => {
-  it("synthesizes tool_use_failed from a failing tool_response, without persisting it", () => {
-    const rows = runHookRows(["hook-codex", "tool_use_completed"], {
-      session_id: "s1",
-      tool_name: "Bash",
-      tool_input: { command: "pytest" },
-      tool_response: { exit_code: 1 },
-    });
-    const toolRow = rows.find((r) => r.tool_intent !== undefined);
-    expect(toolRow).toBeDefined();
-    expect(toolRow?.event).toBe("tool_use_failed");
-    expect(toolRow?.tool_intent).toBe("test_run");
-    expect(toolRow).not.toHaveProperty("tool_response");
-    expect(JSON.stringify(toolRow)).not.toContain("pytest");
-  });
-
-  it("keeps tool_use_completed for a passing tool_response", () => {
-    const rows = runHookRows(["hook-codex", "tool_use_completed"], {
-      session_id: "s2",
-      tool_name: "Bash",
-      tool_input: { command: "pytest" },
-      tool_response: { exit_code: 0 },
-    });
-    const toolRow = rows.find((r) => r.tool_intent !== undefined);
-    expect(toolRow?.event).toBe("tool_use_completed");
-    expect(toolRow?.tool_intent).toBe("test_run");
   });
 });
 
@@ -216,11 +186,6 @@ describe("Claude Code hook given a Cursor payload", () => {
     });
     expect(rows.some((r) => r.event === "tool_use_completed")).toBe(true);
   });
-
-  it("does not drop Cursor's own hook path", () => {
-    const rows = runHookRows(["hook-cursor", "session_started"], cursorStart);
-    expect(rows.some((r) => r.event === "session_started" && r.ai_tool === "cursor")).toBe(true);
-  });
 });
 
 // A `gh` that leaves a marker when run, ahead of the real one on PATH, so a test proves no
@@ -295,13 +260,14 @@ describe("developer identity", () => {
     }
   });
 
-  // A named tool, because with none detected doctor stops before the identity lines.
+  // Needs a detected Claude Code, because doctor stops before the identity lines without one.
   describe("in doctor", () => {
     let home: string;
     let cwd: string;
     beforeEach(() => {
       home = mkdtempSync(join(tmpdir(), "pheebs-home-"));
       cwd = mkdtempSync(join(tmpdir(), "pheebs-cwd-"));
+      mkdirSync(join(home, ".claude"), { recursive: true });
     });
     afterEach(() => {
       for (const dir of [home, cwd]) rmSync(dir, { recursive: true, force: true });
@@ -310,7 +276,7 @@ describe("developer identity", () => {
     it("names the git-email label without a token, never running gh", () => {
       const gh = fakeGh();
       try {
-        const result = runIn(cwd, home, ["doctor", "--codex"], {
+        const result = runIn(cwd, home, ["doctor"], {
           path: gh.path,
           extraEnv: GIT_EMAIL_ENV,
         });
@@ -327,7 +293,7 @@ describe("developer identity", () => {
         join(home, ".pheebs", ".token"),
         JSON.stringify({ token: "pheebs_e2e", id: "tok-e2e", developer: "octocat" }),
       );
-      const result = runIn(cwd, home, ["doctor", "--codex"]);
+      const result = runIn(cwd, home, ["doctor"]);
       expect(result.stdout).toContain("Pheebs token: octocat");
       expect(result.stdout).toContain("Developer on events: tok-e2e");
     });
@@ -354,9 +320,9 @@ describe("init and doctor scope", () => {
   let home: string;
   let cwd: string;
 
-  // doctor with no tool flag checks only the tools it detects, and detection looks for a binary
-  // on PATH or a ~/.<tool> marker. A PATH that resolves nothing keeps the developer's own
-  // `cursor` or `codex` out of the check, leaving the marker below as the only signal.
+  // doctor looks for Claude Code as a binary on PATH or a ~/.claude marker. A PATH that resolves
+  // nothing keeps the developer's own binary out of the check, leaving the marker below as the
+  // only signal.
   const noBin = () => join(home, "no-bin");
   const runScoped = (...args: string[]) => runIn(cwd, home, args, { path: noBin() });
 
@@ -399,22 +365,6 @@ describe("init and doctor scope", () => {
     const result = runScoped("init", "--no-otel");
 
     expect(result.stderr).not.toContain("fires twice");
-  });
-
-  it("warns that project-local Codex hooks need project trust", () => {
-    const init = runScoped("init", "--codex", "--no-otel");
-    const doctor = runScoped("doctor", "--codex");
-
-    expect(init.stderr).toContain("trust this project");
-    expect(doctor.stdout).toContain("trust this project");
-  });
-
-  it("does not warn about Codex trust on a user-level install", () => {
-    const init = runScoped("init", "--codex", "--global", "--no-otel");
-    const doctor = runScoped("doctor", "--codex", "--global");
-
-    expect(init.stderr).not.toContain("trust this project");
-    expect(doctor.stdout).not.toContain("trust this project");
   });
 
   it("does not claim it wrote OTel config when no backend makes it inert", () => {
@@ -548,8 +498,6 @@ describe("init and doctor scope", () => {
   });
 });
 
-// Codex and Cursor keep their config at the same path in both scopes, so running from $HOME
-// resolves them to one file. Everything that contrasts the two scopes has to notice.
 describe("init from $HOME", () => {
   let home: string;
 
@@ -561,35 +509,6 @@ describe("init from $HOME", () => {
 
   afterEach(() => {
     rmSync(home, { recursive: true, force: true });
-  });
-
-  it("does not claim a second Codex install that is the same file", () => {
-    runFromHome("init", "--codex", "--no-otel");
-    const again = runFromHome("init", "--codex", "--no-otel");
-
-    expect(again.stderr).not.toContain("fires twice");
-  });
-
-  it("does not warn about project trust for what is really a user-level file", () => {
-    const result = runFromHome("init", "--codex", "--no-otel");
-
-    expect(result.stderr).not.toContain("trust this project");
-  });
-
-  it("treats a $HOME reached through a symlink as the folder it points to", () => {
-    const parent = mkdtempSync(join(tmpdir(), "pheebs-link-"));
-    const link = join(parent, "home");
-    // A junction needs no elevation on Windows; elsewhere the type is ignored.
-    symlinkSync(home, link, "junction");
-    try {
-      runIn(home, link, ["init", "--codex", "--no-otel"]);
-      const again = runIn(home, link, ["init", "--codex", "--no-otel"]);
-
-      expect(again.stderr).not.toContain("fires twice");
-      expect(again.stderr).not.toContain("trust this project");
-    } finally {
-      rmSync(parent, { recursive: true, force: true });
-    }
   });
 
   it("still reports the doubled install for Claude Code, whose paths differ", () => {
@@ -604,11 +523,11 @@ describe("init from $HOME", () => {
     runFromHome("config", "set", "base-url", "https://example.invalid");
     runFromHome("config", "set", "token", "pheebs_test_token");
 
-    const result = runFromHome("init", "--codex");
+    const result = runFromHome("init");
 
     expect(result.stderr).toContain(".git/info/exclude");
     const status = execFileSync("git", ["status", "--porcelain"], { cwd: home, encoding: "utf-8" });
-    expect(status).not.toContain(".codex");
+    expect(status).not.toContain("settings.local.json");
   });
 });
 

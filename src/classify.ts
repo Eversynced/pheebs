@@ -21,8 +21,7 @@ export interface ClassifyAttributes {
  * `unclassified` so a prompt event always carries an intent, and the developer is never blocked.
  *
  * `on` sends prompt text only to the backend, under a token and its tenant's consent; `local`
- * sends it only to the developer's own Claude Code login, unless they opted out. `local` runs on
- * Claude Code only: Cursor and Codex wait on their hooks.
+ * sends it only to the developer's own Claude Code login, unless they opted out.
  */
 export async function classifyPrompt(
   prompt: string,

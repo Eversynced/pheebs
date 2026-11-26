@@ -24,7 +24,6 @@ import {
   classifyVcsAction,
   isShellTool,
 } from "./intent.js";
-import { classifyCodexOutcome } from "./outcome.js";
 import { classifyRole } from "./role.js";
 import { RECURSION_GUARD_ENV } from "./types.js";
 
@@ -94,21 +93,9 @@ function readRunInBackground(value: unknown): boolean {
   );
 }
 
-// Cursor's beforeSubmitPrompt payload has no structured command field — a slash
-// command arrives as raw prompt text. Only the leading token is extracted
-// ("deploy" from "/deploy …"); the prompt itself is never persisted.
-function readSlashCommandName(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trimStart();
-  if (!trimmed.startsWith("/")) return undefined;
-  const token = trimmed.slice(1).split(/\s/)[0];
-  return token.length > 0 ? token : undefined;
-}
-
-// Cursor carries a dedicated `mcp_server_name`, but Claude Code and Codex surface
-// an MCP call as a single `tool_name` shaped `mcp__<server>__<method>`. Deriving
-// `<server>` here lets all three report MCP servers on one shared field. Server
-// names may contain single underscores, so `__` is the delimiter.
+// Claude Code surfaces an MCP call as a single `tool_name` shaped `mcp__<server>__<method>`.
+// Deriving `<server>` here reports it on its own field. Server names may contain single
+// underscores, so `__` is the delimiter.
 function deriveMcpServerName(toolName: string | undefined): string | undefined {
   const prefix = "mcp__";
   if (!toolName?.startsWith(prefix)) return undefined;
@@ -182,12 +169,6 @@ function readLinesChanged(toolName: string | undefined, toolResponse: unknown): 
 
   return undefined;
 }
-
-type Extractor = (
-  payload: Record<string, unknown>,
-  cliArgs: string[],
-  eventName: string,
-) => Record<string, unknown>;
 
 export function extractClaudeExtra(
   payload: Record<string, unknown>,
@@ -284,7 +265,6 @@ export function extractClaudeExtra(
     // Refine vcs into commit/push/pr_create so a test-gate metric anchors on
     // write actions, not read-only git. Command read in-process, never persisted.
     applyShellFacts(extra, toolName, command);
-    // Normalize MCP server identity onto the same field Cursor uses.
     const mcpServer = deriveMcpServerName(toolName);
     if (mcpServer) extra.mcp_server_name = mcpServer;
     // Per-call parallel-execution signal (OR2). Captured on both completed and
@@ -343,283 +323,9 @@ export function extractClaudeExtra(
   return extra;
 }
 
-type FieldSpec = [source: string, type: string, target?: string];
-
-const CURSOR_FIELDS: FieldSpec[] = [
-  ["conversation_id", "string"],
-  ["generation_id", "string"],
-  ["model", "string"],
-  ["composer_mode", "string"],
-  ["cursor_version", "string"],
-  ["sandbox", "boolean"],
-  ["status", "string"],
-  ["loop_count", "number"],
-  ["duration", "number", "duration_ms"],
-  ["input_tokens", "number"],
-  ["output_tokens", "number"],
-  ["cache_read_tokens", "number"],
-  ["cache_write_tokens", "number"],
-];
-
-function pickFields(payload: Record<string, unknown>, specs: FieldSpec[]): Record<string, unknown> {
-  const extra: Record<string, unknown> = {};
-  for (const [source, type, target] of specs) {
-    if (typeof payload[source] === type) {
-      extra[target ?? source] = payload[source];
-    }
-  }
-  return extra;
-}
-
-// Cursor tool events carry an explicit `tool_name` for some hooks; for shell
-// and file-edit hooks the tool is inferred from the hook event name instead.
-function inferCursorToolName(payload: Record<string, unknown>): string | undefined {
-  if (typeof payload.tool_name === "string") return payload.tool_name;
-  const hookName = typeof payload.hook_event_name === "string" ? payload.hook_event_name : "";
-  if (hookName.includes("Shell")) return "Shell";
-  if (hookName.includes("FileEdit")) return "Write";
-  return undefined;
-}
-
-// Cursor ships the turn's model configuration as a list of `{id, value}` entries
-// rather than as discrete keys, so every id has to be looked up. Both ids observed
-// arrive as strings — `fast` is a stringly-typed boolean (`"true"`), so reading it
-// as a JSON boolean would silently capture nothing.
-function readModelParam(modelParams: unknown, id: string): string | undefined {
-  if (!Array.isArray(modelParams)) return undefined;
-  for (const entry of modelParams) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const record = entry as Record<string, unknown>;
-    if (record.id === id && typeof record.value === "string") return record.value;
-  }
-  return undefined;
-}
-
-// `type` is a first-class field on every attachment entry, so rule-ness is never
-// inferred from a path shape — the `file_path` beside it is a real path and is
-// never read.
-function countRuleAttachments(attachments: unknown): number {
-  if (!Array.isArray(attachments)) return 0;
-  let rules = 0;
-  for (const entry of attachments) {
-    if (typeof entry === "object" && entry !== null) {
-      if ((entry as Record<string, unknown>).type === "rule") rules += 1;
-    }
-  }
-  return rules;
-}
-
-const CURSOR_COMPACT_FIELDS: FieldSpec[] = [
-  ["trigger", "string", "trigger_type"],
-  ["context_usage_percent", "number"],
-  ["context_tokens", "number"],
-  ["context_window_size", "number"],
-  ["message_count", "number"],
-  ["messages_to_compact", "number"],
-  ["is_first_compaction", "boolean"],
-];
-
-export function extractCursorExtra(
-  payload: Record<string, unknown>,
-  _cliArgs: string[],
-  eventName: string,
-): Record<string, unknown> {
-  const extra = pickFields(payload, CURSOR_FIELDS);
-
-  // Only these three carry `model_params`; the tool events the vendor doc names for
-  // it carry none. Reading it only where a GUI capture has actually shown it keeps a
-  // new surface from emitting before anyone has looked at its shape. `effort` lands
-  // on the field Claude Code already fills so a consumer needs no per-harness branch;
-  // `fast` is undocumented but is the vendor's own raw model setting, passed through
-  // verbatim rather than coerced, since "true" is the only value we have ever seen.
-  if (
-    eventName === "session_started" ||
-    eventName === "prompt_submitted" ||
-    eventName === "turn_ended"
-  ) {
-    const effort = readModelParam(payload.model_params, "effort");
-    if (effort) extra.effort = effort;
-    const fastMode = readModelParam(payload.model_params, "fast");
-    if (fastMode) extra.fast_mode = fastMode;
-  }
-
-  if (eventName === "session_started") {
-    if (typeof payload.is_background_agent === "boolean")
-      extra.is_background_agent = payload.is_background_agent;
-  }
-
-  // Cursor has no command-expansion hook, so a slash command lands here as prompt
-  // text. Reporting it under command_name makes skill usage attributable across
-  // tools, on the same field Claude Code's command_expanded fills.
-  if (eventName === "prompt_submitted") {
-    const commandName = readSlashCommandName(payload.prompt);
-    if (commandName) extra.command_name = commandName;
-    const promptLength = readPromptLength(payload.prompt);
-    if (promptLength !== undefined) extra.prompt_length = promptLength;
-    // A rule-less list reports nothing rather than 0: `attachments` is populated only
-    // on Cursor's GUI surface, and it stayed empty on `beforeReadFile` with a rule
-    // demonstrably loaded, so an empty list cannot be told apart from a surface that
-    // does not report. This field is a presence signal, not a measured zero.
-    const ruleCount = countRuleAttachments(payload.attachments);
-    if (ruleCount) extra.rule_attachment_count = ruleCount;
-  }
-
-  if (eventName === "subagent_spawned") {
-    if (typeof payload.subagent_id === "string") extra.agent_id = payload.subagent_id;
-    if (typeof payload.subagent_type === "string") {
-      extra.agent_type = payload.subagent_type;
-      extra.role = classifyRole(payload.subagent_type);
-    }
-    if (typeof payload.subagent_model === "string") extra.subagent_model = payload.subagent_model;
-    if (typeof payload.is_parallel_worker === "boolean")
-      extra.is_parallel_worker = payload.is_parallel_worker;
-  }
-
-  if (eventName === "subagent_completed") {
-    if (typeof payload.subagent_type === "string") extra.agent_type = payload.subagent_type;
-    if (typeof payload.status === "string") extra.status = payload.status;
-    if (typeof payload.duration_ms === "number") extra.subagent_duration_ms = payload.duration_ms;
-    if (typeof payload.message_count === "number") extra.message_count = payload.message_count;
-    if (typeof payload.tool_call_count === "number")
-      extra.tool_call_count = payload.tool_call_count;
-    if (typeof payload.loop_count === "number") extra.loop_count = payload.loop_count;
-  }
-
-  if (
-    eventName === "tool_invoked" ||
-    eventName === "tool_use_completed" ||
-    eventName === "tool_use_failed"
-  ) {
-    const toolName = inferCursorToolName(payload);
-    if (toolName) extra.tool_name = toolName;
-    if (typeof payload.duration === "number") extra.duration_ms = payload.duration;
-    if (typeof payload.mcp_server_name === "string") {
-      extra.mcp_server_name = payload.mcp_server_name;
-    }
-    const command = typeof payload.command === "string" ? payload.command : undefined;
-    extra.tool_intent = classifyIntent(toolName, command);
-    applyShellFacts(extra, toolName, command);
-  }
-
-  if (eventName === "tool_use_failed") {
-    if (typeof payload.failure_type === "string") extra.failure_type = payload.failure_type;
-    if (typeof payload.is_interrupt === "boolean") extra.is_interrupt = payload.is_interrupt;
-  }
-
-  if (eventName === "context_compacted") {
-    Object.assign(extra, pickFields(payload, CURSOR_COMPACT_FIELDS));
-  }
-
-  if (eventName === "turn_ended") {
-    if (typeof payload.status === "string") extra.status = payload.status;
-    if (typeof payload.loop_count === "number") extra.loop_count = payload.loop_count;
-  }
-
-  if (eventName === "session_end") {
-    if (typeof payload.reason === "string") extra.reason = payload.reason;
-    if (typeof payload.duration_ms === "number") extra.session_duration_ms = payload.duration_ms;
-    if (typeof payload.is_background_agent === "boolean")
-      extra.is_background_agent = payload.is_background_agent;
-  }
-
-  if (Array.isArray(payload.attachments)) {
-    extra.attachment_count = payload.attachments.length;
-  }
-
-  return extra;
-}
-
-const CODEX_FIELDS: FieldSpec[] = [
-  ["model", "string"],
-  ["input_tokens", "number"],
-  ["output_tokens", "number"],
-  ["duration_ms", "number"],
-];
-
-const CODEX_TOOL_FIELDS: FieldSpec[] = [["tool_name", "string"]];
-
-const CODEX_PERMISSION_FIELDS: FieldSpec[] = [
-  ["permission_type", "string"],
-  ["approved", "boolean"],
-];
-
-export function extractCodexExtra(
-  payload: Record<string, unknown>,
-  _cliArgs: string[],
-  eventName: string,
-): Record<string, unknown> {
-  const extra = pickFields(payload, CODEX_FIELDS);
-
-  // Same field name Claude Code emits, so consumers need no per-harness branch.
-  // Presence check, not an event allowlist, so a new carrier event is captured
-  // free; docs/spike-findings-ledger.md owns that list. Constant per harness
-  // today, so it is a raw fact rather than a mode signal.
-  if (typeof payload.permission_mode === "string") {
-    extra.permission_mode = payload.permission_mode;
-  }
-
-  if (eventName === "session_started" && typeof payload.source === "string") {
-    extra.start_source = payload.source;
-  }
-
-  // Codex has no command-expansion hook either, so the command name comes from
-  // the raw prompt text on UserPromptSubmit, as it does for Cursor.
-  if (eventName === "prompt_submitted") {
-    const commandName = readSlashCommandName(payload.prompt);
-    if (commandName) extra.command_name = commandName;
-    const promptLength = readPromptLength(payload.prompt);
-    if (promptLength !== undefined) extra.prompt_length = promptLength;
-  }
-
-  if (eventName === "subagent_spawned" || eventName === "subagent_completed") {
-    if (typeof payload.agent_id === "string") extra.agent_id = payload.agent_id;
-    if (typeof payload.agent_type === "string") {
-      extra.agent_type = payload.agent_type;
-      if (eventName === "subagent_spawned") extra.role = classifyRole(payload.agent_type);
-    }
-  }
-
-  if (eventName === "subagent_completed" && typeof payload.stop_hook_active === "boolean") {
-    extra.stop_hook_active = payload.stop_hook_active;
-  }
-
-  if (eventName === "tool_invoked" || eventName === "tool_use_completed") {
-    Object.assign(extra, pickFields(payload, CODEX_TOOL_FIELDS));
-    const toolName = typeof payload.tool_name === "string" ? payload.tool_name : undefined;
-    const command =
-      readCommand(payload.tool_input) ??
-      (typeof payload.command === "string" ? payload.command : undefined);
-    extra.tool_intent = classifyIntent(toolName, command);
-    applyShellFacts(extra, toolName, command);
-    // Normalize MCP server identity onto the same field Cursor uses.
-    const mcpServer = deriveMcpServerName(toolName);
-    if (mcpServer) extra.mcp_server_name = mcpServer;
-  }
-
-  if (eventName === "permission_requested") {
-    if (typeof payload.tool_name === "string") extra.tool_name = payload.tool_name;
-    Object.assign(extra, pickFields(payload, CODEX_PERMISSION_FIELDS));
-  }
-
-  if (eventName === "turn_ended") {
-    if (typeof payload.stop_hook_active === "boolean")
-      extra.stop_hook_active = payload.stop_hook_active;
-  }
-
-  if (eventName === "context_compacted" || eventName === "compaction_completed") {
-    if (typeof payload.trigger === "string") extra.trigger_type = payload.trigger;
-  }
-
-  return extra;
-}
-
-const EXTRACTORS: Record<AiTool, Extractor> = {
-  [AI_TOOLS.CLAUDE_CODE]: extractClaudeExtra,
-  [AI_TOOLS.CURSOR]: extractCursorExtra,
-  [AI_TOOLS.CODEX]: extractCodexExtra,
-};
-
-// Claude Code names its hook events in PascalCase and never sends `cursor_version`.
+// Cursor also runs the hooks in a project's `.claude/settings.json`, whatever the developer has
+// installed for it. Claude Code names its hook events in PascalCase and never sends
+// `cursor_version`.
 function isCursorPayload(payload: Record<string, unknown>): boolean {
   // Valid JSON that is not an object (`42`, `null`) is no Cursor payload; the `in` check would throw.
   if (typeof payload !== "object" || payload === null) return false;
@@ -635,8 +341,7 @@ const TRANSCRIPT_EVENTS = new Set<string>([
 ]);
 
 // Records that a session has a transcript worth reading once it ends. Nothing is opened or looked
-// up here, and no path is kept: the flusher finds the transcript by session id later. Cursor's
-// transcripts carry no usage, so it is never recorded. Skipped without a backend and token, or in
+// up here, and no path is kept: the flusher finds the transcript by session id later. Skipped without a backend and token, or in
 // debug mode, because only the flusher reads these and it only runs when it can send.
 function noteTranscript(
   tool: AiTool,
@@ -693,37 +398,23 @@ export async function handleHookEvent(
     return;
   }
 
-  // Cursor also runs the hooks in a project's `.claude/settings.json`; its own install already
-  // logs those events, so taking them here would record each one twice as `claude_code`.
+  // Cursor runs these hooks too, and it is no longer a tool pheebs records: taking its events here
+  // would log each one as `claude_code`.
   if (tool === AI_TOOLS.CLAUDE_CODE && isCursorPayload(payload)) return;
 
   if (process.env.PHEEBS_DEBUG) {
     console.error(`pheebs debug [${tool}/${eventName}]: ${JSON.stringify(payload, null, 2)}`);
   }
 
-  const sessionId =
-    typeof payload.session_id === "string"
-      ? payload.session_id
-      : typeof payload.conversation_id === "string"
-        ? payload.conversation_id
-        : undefined;
-  const extra = EXTRACTORS[tool](payload, cliArgs, eventName);
-
-  // Codex has no failure hook: derive pass/fail from the raw tool_response and
-  // synthesize the tool_use_failed event Claude and Cursor emit natively.
-  let event = eventName;
-  if (tool === AI_TOOLS.CODEX && eventName === EVENTS.ToolUseCompleted) {
-    if (classifyCodexOutcome(payload.tool_response) === "failed") {
-      event = EVENTS.ToolUseFailed;
-    }
-  }
+  const sessionId = typeof payload.session_id === "string" ? payload.session_id : undefined;
+  const extra = extractClaudeExtra(payload, cliArgs, eventName);
 
   const submittedAt = new Date().toISOString();
 
   // On a prompt, enrich the event with a classified intent. classifyPrompt sends prompt text only
   // where its mode's gate allows; it degrades rather than throws, and is bounded by the remote
   // timeout, or the longer local one under `classify local`.
-  if (event === EVENTS.PromptSubmitted && typeof payload.prompt === "string") {
+  if (eventName === EVENTS.PromptSubmitted && typeof payload.prompt === "string") {
     const classified = await classifyPrompt(payload.prompt, tool);
     if (classified) Object.assign(extra, classified);
   }
@@ -737,7 +428,7 @@ export async function handleHookEvent(
   appendLogEntry(
     {
       source: "hook",
-      event,
+      event: eventName,
       developer: developerHandle,
       codebase: config.codebaseId,
       ai_tool: tool,
@@ -749,9 +440,6 @@ export async function handleHookEvent(
     config,
   );
 
-  // Only Claude Code's hook entries are registered `async: true`. Cursor runs hooks
-  // synchronously under a 10s timeout and Codex sets no async flag, so on those two the
-  // session start waits on this scan — it has to stay bounded.
   if (eventName === EVENTS.SessionStarted) {
     ensureConfig();
     runArtifactScan(tool, sessionId, developerHandle);

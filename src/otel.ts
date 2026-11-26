@@ -1,5 +1,5 @@
-// OpenTelemetry config injected by `pheebs init` for tools with native OTel support
-// (Claude Code, Codex). The client holds no observability credential: telemetry is exported
+// OpenTelemetry config injected by `pheebs init` into Claude Code, which has native OTel
+// support. The client holds no observability credential: telemetry is exported
 // to the backend's /otel proxy, authenticated with the pheebs token, and the proxy swaps in
 // the real upstream credential. OTel is therefore configured only when both a backend and a
 // token are set — without an endpoint there is nowhere to export to, and without a token
@@ -35,11 +35,6 @@ export const PHEEBS_OTEL_KEYS = [
 export function hasClaudeOtel(settings: Record<string, unknown>): boolean {
   const env = settings.env as Record<string, string> | undefined;
   return env !== undefined && PHEEBS_OTEL_KEYS.some((key) => key in env);
-}
-
-/** Codex keeps it all under one table, so its presence is the whole answer. */
-export function hasCodexOtel(config: Record<string, unknown>): boolean {
-  return config.otel !== undefined;
 }
 
 /**
@@ -85,50 +80,4 @@ export function syncClaudeOtelEnv(
   }
 
   return false;
-}
-
-/**
- * Mutates a Codex config object's `[otel]` table. When enabled AND both a backend and a token
- * are set, writes the pheebs-owned otel config (exporting to the /otel proxy with a Bearer token); otherwise
- * removes it. Returns whether it was written, for the reason on `syncClaudeOtelEnv`.
- *
- * Codex supports three OTel exporters: `exporter` (logs), `trace_exporter` (traces), and
- * `metrics_exporter` (metrics, default: statsig). It also gates `metrics_exporter` behind
- * `[analytics] enabled`, which defaults to false under the app-server, so without that flag the
- * configured OTLP metrics endpoint is silently dropped — enable it so metrics actually flow.
- */
-export function syncCodexOtel(config: Record<string, unknown>, enabled: boolean): boolean {
-  const stored = readStoredToken();
-
-  if (!enabled || !hasBackend() || !stored?.token) {
-    delete config.otel;
-    const analytics = config.analytics as Record<string, unknown> | undefined;
-    if (analytics) {
-      delete analytics.enabled;
-      if (Object.keys(analytics).length === 0) {
-        delete config.analytics;
-      }
-    }
-    return false;
-  }
-
-  const base = otelBaseUrl();
-  const otlpConfig = {
-    protocol: "binary",
-    headers: { Authorization: `Bearer ${stored.token}` },
-  };
-
-  config.otel = {
-    environment: "production",
-    log_user_prompt: false,
-    exporter: { "otlp-http": { ...otlpConfig, endpoint: `${base}/v1/logs` } },
-    trace_exporter: { "otlp-http": { ...otlpConfig, endpoint: `${base}/v1/traces` } },
-    metrics_exporter: { "otlp-http": { ...otlpConfig, endpoint: `${base}/v1/metrics` } },
-  };
-
-  const analytics = (config.analytics as Record<string, unknown> | undefined) ?? {};
-  analytics.enabled = true;
-  config.analytics = analytics;
-
-  return true;
 }

@@ -1,9 +1,8 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { removeFromJsonConfig, removeFromTomlConfig } from "../src/commands/uninstall.js";
+import { removeFromJsonConfig } from "../src/commands/uninstall.js";
 import { AI_TOOLS, buildHooksConfig } from "../src/hooks/definitions.js";
 
 let tmp: string;
@@ -19,7 +18,7 @@ afterEach(() => {
 describe("removeFromJsonConfig", () => {
   it("removes pheebs hooks and OTel env but keeps foreign entries", () => {
     const path = join(tmp, "settings.json");
-    const hooks = buildHooksConfig(AI_TOOLS.CLAUDE_CODE) as Record<string, unknown[]>;
+    const hooks = buildHooksConfig() as Record<string, unknown[]>;
     hooks.SessionStart.unshift({ hooks: [{ command: "foreign-tool" }] });
     writeFileSync(
       path,
@@ -39,7 +38,7 @@ describe("removeFromJsonConfig", () => {
 
   it("drops the hooks block when only pheebs entries existed", () => {
     const path = join(tmp, "settings.json");
-    writeFileSync(path, JSON.stringify({ hooks: buildHooksConfig(AI_TOOLS.CLAUDE_CODE) }));
+    writeFileSync(path, JSON.stringify({ hooks: buildHooksConfig() }));
 
     removeFromJsonConfig(path, AI_TOOLS.CLAUDE_CODE);
 
@@ -54,17 +53,5 @@ describe("removeFromJsonConfig", () => {
     const bad = join(tmp, "bad.json");
     writeFileSync(bad, "{ not json");
     expect(() => removeFromJsonConfig(bad, AI_TOOLS.CLAUDE_CODE)).not.toThrow();
-  });
-});
-
-describe("removeFromTomlConfig", () => {
-  it("removes pheebs hooks from a Codex config", () => {
-    const path = join(tmp, "config.toml");
-    writeFileSync(path, stringifyToml({ hooks: buildHooksConfig(AI_TOOLS.CODEX) }));
-
-    removeFromTomlConfig(path);
-
-    const result = parseToml(readFileSync(path, "utf-8")) as Record<string, unknown>;
-    expect(result.hooks).toBeUndefined();
   });
 });

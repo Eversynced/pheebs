@@ -5,7 +5,7 @@ Canonical agent context for this repository. `CLAUDE.md` imports this file.
 ## What Pheebs is
 
 Pheebs captures how developers interact with AI coding agents. It registers hooks
-in Claude Code, Cursor, and Codex, turns each hook payload into a generic event,
+in Claude Code, turns each hook payload into a generic event,
 writes it to a local JSONL log, and optionally sends it to a backend the user
 configures. It ships local-only: `DEFAULT_BASE_URL` is the empty string, so an
 install that is never pointed at a backend sends nothing.
@@ -54,8 +54,8 @@ change.
    never enters an event, and never crosses the network. Nothing else may join
    it: a path that came from a payload is still read-and-discard.
 2. **Hooks never break or slow the user's session.** Remote failures degrade
-   silently, never throw into the hook. Only Claude Code registers hooks with
-   `"async": true`; Cursor and Codex wait for the hook process to exit, so any
+   silently, never throw into the hook. Claude Code runs its hooks with
+   `"async": true`, but the agent can still wait on the process, so any
    network call a hook makes is bounded by a timeout. Ingest leaves the hook
    path entirely: the hook queues the event and a detached flusher sends it.
    The local JSONL log is the durable copy.
@@ -99,14 +99,13 @@ npm test                           # Vitest
 npm run test:coverage              # Vitest with v8 coverage
 
 pheebs hook <event>                # Claude Code hook, reads JSON from stdin
-pheebs hook-cursor <event>         # Cursor hook
-pheebs hook-codex <event>          # Codex hook
+pheebs hook-cursor|hook-codex <event>  # No-ops kept so an old Cursor or Codex install never fails
 pheebs init                        # Register Claude Code hooks + OTel, project-local
 pheebs init --global               # User-level config instead
-pheebs init --cursor|--codex       # Register for Cursor / Codex
 pheebs init --no-otel              # Skip OpenTelemetry configuration
-pheebs doctor [--global|--project] [--cursor|--codex]  # Verify hooks (both scopes by default)
-pheebs scan [--cursor|--codex]     # Scan repo for AI-config artifacts
+pheebs doctor [--global|--project] # Verify hooks (both scopes by default)
+pheebs scan                        # Scan repo for AI-config artifacts
+pheebs uninstall                   # Clear hooks and exporter config, including an old Cursor or Codex install
 pheebs insights [--days N|--json]  # The caller's own report from the backend /insights
 pheebs insights --team [--days N|--json]  # A manager's team report from /insights/team
 pheebs insights --local [--days N|--json] # Repertoire and verification coverage from the local log, no request; the default with no backend
@@ -124,17 +123,17 @@ so run `npm run build` before the CLI tests mean anything.
 | --- | --- |
 | `src/cli.ts` | Entry point. Dispatches hook commands and `init` / `doctor` / `scan` / `config` / `insights`. |
 | `src/hooks/types.ts` | Shared types, `AI_TOOLS`, and the `EVENTS` enumeration of every event name. |
-| `src/hooks/definitions.ts` | Aggregates per-tool definitions into `ALL_DEFINITIONS`; `getHookDefinitionsForTool`, `isPheebsEntry`, `buildHooksConfig`. |
-| `src/hooks/definitions.{claude,cursor,codex}.ts` | Per-tool hook registrations. `PreModelSwitch` is deliberately unregistered: it fires ahead of a gate that can cancel the switch. |
-| `src/hooks/handler.ts` | `handleHookEvent`. Validates the event, reads stdin, runs the per-tool extractor, derives tags, writes the entry. The place where capture decisions live. |
+| `src/hooks/definitions.ts` | `ALL_DEFINITIONS`, `getHookDefinitionsForTool`, `isPheebsEntry` (which also matches an old `hook-cursor` or `hook-codex` entry), `buildHooksConfig`. |
+| `src/hooks/definitions.claude.ts` | The hook registrations. `PreModelSwitch` is deliberately unregistered: it fires ahead of a gate that can cancel the switch. |
+| `src/hooks/handler.ts` | `handleHookEvent`. Validates the event, reads stdin, runs the extractor, derives tags, writes the entry. Drops a payload that carries `cursor_version`, because Cursor also runs the hooks in `.claude/settings.json`. The place where capture decisions live. |
 | `src/hooks/intent.ts` | `tool_intent` and the `vcs_action` sub-tag from tool names and shell commands. Ordered keyword table is the single place to extend. |
-| `src/hooks/outcome.ts` | `classifyCodexOutcome`. Synthesizes the failure event Codex has no hook for. Returns `undefined` rather than guessing. |
 | `src/hooks/role.ts` | `classifyRole` over the `AGENT_ROLES` table. |
 | `src/scanner.ts` | Project-scoped scan for AI-config artifacts. Records presence and counts, never paths or contents, never user-level config, never git history. |
-| `src/commands/init.ts` | Per-tool hook registration, merging and deduplicating into the tool's settings file. |
-| `src/commands/uninstall.ts` | Clears hooks and exporter config from both derived scopes plus every recorded install. Best-effort per file, and forgets only the paths it actually cleared. |
+| `src/commands/init.ts` | Hook registration, merging and deduplicating into Claude Code's settings file. |
+| `src/commands/uninstall.ts` | Clears hooks and exporter config from both derived scopes plus every recorded install, and an old Cursor or Codex install through `src/legacy.ts`. Best-effort per file, and forgets only the paths it actually cleared. |
+| `src/legacy.ts` | Where an old Cursor or Codex install is cleared: their config paths and the removal of pheebs entries (and Codex's `[otel]` table) from them. Writes no hook. The scanner still reads their repo files. |
 | `src/commands/doctor.ts` | Presence check via `isPheebsEntry`. Checks both scopes unless one is named, because either is a real install and a double install fails the check. |
-| `src/commands/path.ts` | `resolveSettingsPath(tool, project)`, the one place config-file locations are resolved, plus `scopesCollide` for the cwd-at-`$HOME` case where Cursor and Codex resolve both scopes to one file. |
+| `src/commands/path.ts` | `resolveSettingsPath(project)`, the one place Claude Code config-file locations are resolved. |
 | `src/otel.ts`, `src/otel-resync.ts` | OTLP config pointed at the backend `/otel` proxy. Writes only when endpoint and token are both set, removes config when either is cleared, and resyncs already-written agent config. |
 | `src/backend-config.ts` | `~/.pheebs/config.json`. `hasBackend()` is the gate every network path checks. |
 | `src/installs.ts` | `~/.pheebs/installs.json`, the paths `init` wrote. Project-local is the default scope, so the exporter config lives in a file per repo and nothing else knows where those are. Local only, never part of an event. |
@@ -153,7 +152,7 @@ so run `npm run build` before the CLI tests mean anything.
 | `src/commands/insights.ts` | `pheebs insights [--days N] [--json] [--team \| --local]`. Argument parsing (both `--days` spellings) and render options (terminal width, falling back to 80 off a TTY). Computes nothing itself: the backend produces the numbers, or the local log does when there is no backend or `--local` is given. |
 | `src/insights-local.ts`, `src/repertoire.ts`, `src/verification.ts` | The report without a backend: the log read from disk, the `repertoire` section computed under the registry's practice definitions and the model's window and placement rules, and verification coverage, in the contract's shape so normalize and render draw it unchanged. Split-phase delivery reads the session's model timeline and counts a change whose model it cannot resolve as undecided, never as a miss. Verification coverage is withheld when a session could be verified only by a classifier-labeled request, since the log does not record which classifier versions a backend accepts. The other four judgement signals need a backend. |
 | `src/usage-sessions.ts` | `~/.pheebs/sessions/`: one record per Claude Code session the hook has seen, holding the tool, session id, codebase, a hash of the backend endpoint, when Pheebs first saw the session and the last hook's time, and no path (the only file a hook writes; gone after 30 idle days), and `usage-state.json`, the flusher's one file under a lock: byte offsets per session (180 days) and digests of the requests already counted so a copied history is not counted twice (180 days, 250,000 at most), all for one endpoint and reset when it changes. Written owner-only, local only, never part of an event. |
-| `src/transcript-locate.ts`, `src/transcript-usage.ts`, `src/usage-collect.ts` | Finding a transcript from its session id, in bounded searches of the agents' config directories (nothing is stored), the readers that sum a transcript's tokens by model into integers, and the flusher step that queues `session_token_usage` for sessions that ended or went quiet. The transcript is read in-process and discarded; Cursor has no reader because its transcripts carry no usage. |
+| `src/transcript-locate.ts`, `src/transcript-usage.ts`, `src/usage-collect.ts` | Finding a transcript from its session id, in bounded searches of the agents' config directories (nothing is stored), the readers that sum a transcript's tokens by model into integers, and the flusher step that queues `session_token_usage` for sessions that ended or went quiet. The transcript is read in-process and discarded. |
 | `src/config.ts` | Codebase id resolution: env override, git remote `org/repo`, then `local/<folder-name>`. Directory name only, never a full path. |
 | `src/developer-id.ts` | The local `developer` label: the stored token id, falling back to a hashed git email, cached per session in `~/.pheebs/.developer-handles.json` so `git` is not spawned on every event. Resolved without a network call. |
 
@@ -173,18 +172,16 @@ Because the default scope writes a file per repo, `init` records every path it w
 `~/.pheebs/installs.json` (`src/installs.ts`). Without that record, `uninstall` and the OTel resync reach only the current
 directory, and every other repo keeps its hooks and keeps exporting with the token. A
 project-scoped install that carries the token is also added to the repo's `.git/info/exclude`,
-since nothing in a fresh repo ignores `.codex/config.toml`.
+since nothing in a fresh repo is guaranteed to ignore `.claude/settings.local.json`.
 
-## Project-local config and Codex trust
+## Removed tools
 
-All three tools read a project-local config, but on Codex that layer is trust
-gated twice over: it is dropped unless the project is trusted, and each handler
-needs a matching `trusted_hash`. Pheebs writes neither, and should not, because
-both are the developer's own security decision about a directory. So `doctor`
-reporting a project-scoped Codex install healthy means the file is in place, not
-that the hook will fire, which is why `init` and `doctor` both say so on a
-project-scoped Codex install. Cursor merges the project file with the user-level one
-rather than replacing it.
+Cursor and Codex support was removed. An install made before that still calls
+`pheebs hook-cursor` and `pheebs hook-codex`, so those exit 0 silently without
+reading stdin, writing, or sending, and `init`, `doctor` and `scan` refuse
+`--cursor` and `--codex` with a pointer to `pheebs uninstall`, which clears the old
+hooks and Codex's exporter table. Old log lines with a Cursor or Codex `ai_tool`
+are still read as they are, by `insights --local` and the readers under it.
 
 ## Before trusting a payload assumption
 

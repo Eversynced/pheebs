@@ -1,11 +1,11 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { stripBom } from "./bom.js";
 import { resolveSettingsPath } from "./commands/path.js";
 import { protectToken } from "./git-exclude.js";
-import { AI_TOOLS, type AiTool } from "./hooks/definitions.js";
+import { AI_TOOLS } from "./hooks/definitions.js";
 import { listInstalls } from "./installs.js";
-import { hasClaudeOtel, hasCodexOtel, syncClaudeOtelEnv, syncCodexOtel } from "./otel.js";
+import { legacyConfigPaths, stripLegacyCodexOtel } from "./legacy.js";
+import { hasClaudeOtel, syncClaudeOtelEnv } from "./otel.js";
 import { restrictToOwner } from "./pheebs-store.js";
 
 /**
@@ -13,7 +13,7 @@ import { restrictToOwner } from "./pheebs-store.js";
  *
  * Changing or clearing the endpoint only rewrites `~/.pheebs/config.json`, but the exporter
  * config lives in the *agent's* settings — so without this, `config unset base-url` leaves
- * Claude Code and Codex still exporting telemetry, with the token, to the old backend, while
+ * Claude Code still exporting telemetry, with the token, to the old backend, while
  * `doctor` reports the install is local-only.
  *
  * Every scope, not just the current directory: project-local is the default, so most of the
@@ -29,22 +29,32 @@ import { restrictToOwner } from "./pheebs-store.js";
  * command the user actually asked for.
  */
 export function resyncOtelConfigs(): void {
-  const targets = new Map<string, AiTool>();
+  const targets = new Set<string>([
+    resolveSettingsPath(false).path,
+    resolveSettingsPath(true).path,
+  ]);
 
-  for (const tool of [AI_TOOLS.CLAUDE_CODE, AI_TOOLS.CODEX]) {
-    targets.set(resolveSettingsPath(tool, false).path, tool);
-    targets.set(resolveSettingsPath(tool, true).path, tool);
-  }
+  const legacyCodex = new Set(
+    legacyConfigPaths()
+      .filter((entry) => entry.tool === "codex")
+      .map((entry) => entry.path),
+  );
 
   for (const { tool, path } of listInstalls()) {
-    // Cursor has no OTel support, so nothing pheebs wrote there carries the token.
-    if (tool === AI_TOOLS.CLAUDE_CODE || tool === AI_TOOLS.CODEX) {
-      targets.set(path, tool);
-    }
+    if (tool === AI_TOOLS.CLAUDE_CODE) targets.add(path);
+    else if (tool === "codex") legacyCodex.add(path);
   }
 
-  for (const [path, tool] of targets) {
-    const wrote = tool === AI_TOOLS.CODEX ? syncCodexFile(path) : syncClaudeFile(path);
+  // Codex is no longer managed, so its exporter config cannot be refreshed, only stopped from
+  // sending a token that has since changed.
+  for (const path of legacyCodex) {
+    try {
+      stripLegacyCodexOtel(path);
+    } catch {}
+  }
+
+  for (const path of targets) {
+    const wrote = syncClaudeFile(path);
 
     // A refreshed endpoint means a freshly written token, in a file that may now sit in a
     // repo the developer has since started tracking.
@@ -63,20 +73,6 @@ function syncClaudeFile(path: string): boolean {
 
     const wrote = syncClaudeOtelEnv(settings, true);
     writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
-    return wrote;
-  } catch {
-    return false;
-  }
-}
-
-function syncCodexFile(path: string): boolean {
-  if (!existsSync(path)) return false;
-  try {
-    const config = parseToml(stripBom(readFileSync(path, "utf-8"))) as Record<string, unknown>;
-    if (!hasCodexOtel(config)) return false;
-
-    const wrote = syncCodexOtel(config, true);
-    writeFileSync(path, `${stringifyToml(config)}\n`);
     return wrote;
   } catch {
     return false;

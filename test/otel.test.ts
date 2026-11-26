@@ -10,14 +10,7 @@ vi.mock("../src/backend-config.js", () => ({
   hasBackend: () => h.backend,
 }));
 
-const { syncClaudeOtelEnv, syncCodexOtel } = await import("../src/otel.js");
-
-type CodexOtel = {
-  environment: string;
-  exporter: { "otlp-http": { endpoint: string; headers: Record<string, string> } };
-  trace_exporter: { "otlp-http": { endpoint: string } };
-  metrics_exporter: { "otlp-http": { endpoint: string } };
-};
+const { syncClaudeOtelEnv } = await import("../src/otel.js");
 
 beforeEach(() => {
   h.stored = undefined;
@@ -94,84 +87,26 @@ describe("syncClaudeOtelEnv", () => {
   });
 });
 
-describe("syncCodexOtel", () => {
-  it("writes otel tables pointed at the /otel proxy with a Bearer token", () => {
-    h.stored = { token: "pheebs_secret", id: "tok-1" };
-    const config: Record<string, unknown> = {};
-    syncCodexOtel(config, true);
-
-    const otel = config.otel as CodexOtel;
-    expect(otel.environment).toBe("production");
-    expect(otel.exporter["otlp-http"].endpoint).toBe("https://api.test/otel/v1/logs");
-    expect(otel.trace_exporter["otlp-http"].endpoint).toBe("https://api.test/otel/v1/traces");
-    expect(otel.metrics_exporter["otlp-http"].endpoint).toBe("https://api.test/otel/v1/metrics");
-    expect(otel.exporter["otlp-http"].headers.Authorization).toBe("Bearer pheebs_secret");
-    expect((config.analytics as Record<string, unknown>).enabled).toBe(true);
-  });
-
-  it("writes nothing when enabled but no token is set", () => {
-    h.stored = undefined;
-    const config: Record<string, unknown> = {};
-    syncCodexOtel(config, true);
-    expect(config.otel).toBeUndefined();
-  });
-
-  it("strips a previously written export when the backend is unset but the token remains", () => {
-    h.stored = { token: "pheebs_secret" };
-    h.backend = false;
-    const config: Record<string, unknown> = {
-      otel: { environment: "production" },
-      analytics: { enabled: true },
-    };
-    syncCodexOtel(config, true);
-    expect(config.otel).toBeUndefined();
-  });
-
-  it("removes otel and the analytics flag when disabled", () => {
-    h.stored = { token: "pheebs_secret" };
-    const config: Record<string, unknown> = {
-      otel: { environment: "production" },
-      analytics: { enabled: true },
-    };
-    syncCodexOtel(config, false);
-    expect(config.otel).toBeUndefined();
-    expect(config.analytics).toBeUndefined();
-  });
-
-  it("preserves unrelated analytics keys when disabling", () => {
-    const config: Record<string, unknown> = {
-      otel: {},
-      analytics: { enabled: true, other: "keep" },
-    };
-    syncCodexOtel(config, false);
-    expect(config.analytics).toEqual({ other: "keep" });
-  });
-});
-
 describe("return value", () => {
   it("returns true only when the config was actually written", () => {
     h.stored = { token: "pheebs_secret" };
 
     expect(syncClaudeOtelEnv({}, true)).toBe(true);
-    expect(syncCodexOtel({}, true)).toBe(true);
   });
 
   it("returns false when the developer asked for OTel but a gate is unmet", () => {
     h.stored = { token: "pheebs_secret" };
     h.backend = false;
     expect(syncClaudeOtelEnv({}, true)).toBe(false);
-    expect(syncCodexOtel({}, true)).toBe(false);
 
     h.backend = true;
     h.stored = undefined;
     expect(syncClaudeOtelEnv({}, true)).toBe(false);
-    expect(syncCodexOtel({}, true)).toBe(false);
   });
 
   it("returns false when OTel is disabled outright", () => {
     h.stored = { token: "pheebs_secret" };
 
     expect(syncClaudeOtelEnv({}, false)).toBe(false);
-    expect(syncCodexOtel({}, false)).toBe(false);
   });
 });

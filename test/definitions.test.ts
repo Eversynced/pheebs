@@ -11,23 +11,10 @@ import {
 const EVENT_VALUES = new Set(Object.values(EVENTS));
 
 describe("hook definitions", () => {
-  it("aggregates every tool's definitions into ALL_DEFINITIONS", () => {
-    const claude = getHookDefinitionsForTool(AI_TOOLS.CLAUDE_CODE);
-    const cursor = getHookDefinitionsForTool(AI_TOOLS.CURSOR);
-    const codex = getHookDefinitionsForTool(AI_TOOLS.CODEX);
-
-    expect(claude).toHaveLength(15);
-    expect(cursor).toHaveLength(13);
-    expect(codex).toHaveLength(10);
-    expect(ALL_DEFINITIONS).toHaveLength(claude.length + cursor.length + codex.length);
-  });
-
-  it("scopes getHookDefinitionsForTool to a single tool", () => {
-    for (const tool of Object.values(AI_TOOLS)) {
-      const defs = getHookDefinitionsForTool(tool);
-      expect(defs.length).toBeGreaterThan(0);
-      expect(defs.every((d) => d.tool === tool)).toBe(true);
-    }
+  it("registers Claude Code only", () => {
+    expect(ALL_DEFINITIONS).toHaveLength(15);
+    expect(Object.values(AI_TOOLS)).toEqual(["claude_code"]);
+    expect(ALL_DEFINITIONS.every((d) => d.tool === AI_TOOLS.CLAUDE_CODE)).toBe(true);
   });
 
   it("only emits known event names", () => {
@@ -41,7 +28,7 @@ describe("hook definitions", () => {
     expect(claudeKeys).toContain("PostModelSwitch");
     expect(claudeKeys).not.toContain("PreModelSwitch");
 
-    const entries = buildHooksConfig(AI_TOOLS.CLAUDE_CODE).PostModelSwitch;
+    const entries = buildHooksConfig().PostModelSwitch;
     expect(entries).toEqual([
       { hooks: [{ type: "command", command: "pheebs hook model_switched", async: true }] },
     ]);
@@ -58,11 +45,11 @@ describe("hook definitions", () => {
 });
 
 describe("isPheebsEntry", () => {
-  it("recognizes the Cursor flat format", () => {
+  it("recognizes the flat format an old Cursor install wrote", () => {
     expect(isPheebsEntry({ command: "pheebs hook-cursor session_started" })).toBe(true);
   });
 
-  it("recognizes the Claude Code / Codex nested format", () => {
+  it("recognizes the nested format, including an old Codex install's", () => {
     expect(
       isPheebsEntry({ hooks: [{ type: "command", command: "pheebs hook session_started" }] }),
     ).toBe(true);
@@ -94,7 +81,7 @@ describe("buildHooksConfig", () => {
   });
 
   it("carries PreCompact matchers and cliArgs into the command", () => {
-    const claude = buildHooksConfig(AI_TOOLS.CLAUDE_CODE);
+    const claude = buildHooksConfig();
     const preCompact = claude.PreCompact as Array<Record<string, unknown>>;
     expect(preCompact).toHaveLength(2);
     const commands = preCompact.map(
@@ -105,27 +92,8 @@ describe("buildHooksConfig", () => {
     expect(preCompact.map((e) => e.matcher).sort()).toEqual(["auto", "manual"]);
   });
 
-  it("produces the flat Cursor shape", () => {
-    const cursor = buildHooksConfig(AI_TOOLS.CURSOR);
-    const [entry] = cursor.sessionStart as Array<Record<string, unknown>>;
-    expect(entry).toMatchObject({ failClosed: false, timeout: 10 });
-    expect(entry.command).toContain("pheebs hook-cursor session_started");
-  });
-
-  it("produces the nested Codex shape with matchers", () => {
-    const codex = buildHooksConfig(AI_TOOLS.CODEX);
-    const [preTool] = codex.PreToolUse as Array<Record<string, unknown>>;
-    expect(preTool.matcher).toBe(".*");
-    const hook = (preTool.hooks as Array<Record<string, unknown>>)[0];
-    expect(hook.command).toContain("pheebs hook-codex tool_invoked");
-    expect(hook.async).toBeUndefined();
-  });
-
   it("emits an entry for every definition of the tool", () => {
-    for (const tool of Object.values(AI_TOOLS)) {
-      const config = buildHooksConfig(tool);
-      const total = Object.values(config).reduce((n, entries) => n + entries.length, 0);
-      expect(total).toBe(getHookDefinitionsForTool(tool).length);
-    }
+    const total = Object.values(buildHooksConfig()).reduce((n, entries) => n + entries.length, 0);
+    expect(total).toBe(ALL_DEFINITIONS.length);
   });
 });

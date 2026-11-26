@@ -1,79 +1,12 @@
-import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
-import { AI_TOOLS, type AiTool } from "../hooks/definitions.js";
-
-type Level = "project-level" | "user-level";
+import { join } from "node:path";
 
 const CLAUDE_DIR = ".claude";
-const CURSOR_DIR = ".cursor";
-const CODEX_DIR = ".codex";
-
-const CODEX_CONFIG_FILENAME = "config.toml";
-const CURSOR_CONFIG_FILENAME = "hooks.json";
 const CLAUDE_CONFIG_FILENAME = "settings.json";
 const CLAUDE_PROJECT_CONFIG_FILENAME = "settings.local.json";
 
-export function cursorPath(project: boolean, level: Level) {
-  const base = project ? join(process.cwd(), CURSOR_DIR) : join(homedir(), CURSOR_DIR);
-  return { path: join(base, CURSOR_CONFIG_FILENAME), level };
-}
-
-export function codexPath(project: boolean, level: Level) {
-  const base = project ? join(process.cwd(), CODEX_DIR) : join(homedir(), CODEX_DIR);
-  return { path: join(base, CODEX_CONFIG_FILENAME), level };
-}
-
-export function claudePath(project: boolean, level: Level) {
+export function resolveSettingsPath(project: boolean): { path: string; level: string } {
   const base = project ? join(process.cwd(), CLAUDE_DIR) : join(homedir(), CLAUDE_DIR);
   const file = project ? CLAUDE_PROJECT_CONFIG_FILENAME : CLAUDE_CONFIG_FILENAME;
-  return { path: join(base, file), level };
-}
-
-export function resolveSettingsPath(
-  tool: AiTool,
-  project: boolean,
-): { path: string; level: string } {
-  const level = project ? "project-level" : "user-level";
-
-  if (tool === AI_TOOLS.CURSOR) {
-    return cursorPath(project, level);
-  }
-
-  if (tool === AI_TOOLS.CODEX) {
-    return codexPath(project, level);
-  }
-
-  return claudePath(project, level);
-}
-
-/** Cursor and Codex keep their config in the same place at both scopes, so with cwd at $HOME
- *  the two resolve to one file. Callers that contrast the scopes need to know, or they warn
- *  about a second install that does not exist and offer to remove the file they just wrote. */
-export function scopesCollide(tool: AiTool): boolean {
-  const project = canonical(resolveSettingsPath(tool, true).path);
-  const user = canonical(resolveSettingsPath(tool, false).path);
-  // Windows paths are case-insensitive, and the two can differ only in case: an editor terminal
-  // reports the drive as `c:` where homedir() says `C:`.
-  return process.platform === "win32"
-    ? project.toLowerCase() === user.toLowerCase()
-    : project === user;
-}
-
-// cwd is always the resolved path while homedir() is $HOME as given, so a $HOME that reaches
-// through a symlink (macOS's /var, a relocated home) would never match. The config file and
-// its folder may not exist yet, so resolve the nearest ancestor that does.
-function canonical(path: string): string {
-  const rest: string[] = [];
-  let dir = path;
-  for (;;) {
-    try {
-      return join(realpathSync(dir), ...rest);
-    } catch {
-      const parent = dirname(dir);
-      if (parent === dir) return path;
-      rest.unshift(basename(dir));
-      dir = parent;
-    }
-  }
+  return { path: join(base, file), level: project ? "project-level" : "user-level" };
 }
