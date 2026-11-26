@@ -23,7 +23,7 @@ const KEEP_MARK_MS = 180 * 24 * 60 * 60 * 1000;
 
 // The state names the backend endpoint it was built for. Built for another, it is dropped and every
 // session is read from 0: that backend has never seen them, and no history of the earlier endpoint
-// is kept, so going back to an endpoint sends the whole session again.
+// is kept, so going back to an endpoint sends the session again from its `first_seen`.
 const STATE_FILE = "usage-state.json";
 // Requests already counted, across sessions: a resumed, forked or background session's file starts
 // with another session's lines, and only this tells the copy from the original. Kept as long as a

@@ -15,7 +15,7 @@ export const IDLE_MS = 30 * 60 * 1000;
 export interface CollectOptions {
   /** The outbox scope directory the events are queued into. */
   dir: string;
-  /** `endpointKey` of the configured backend. A record from another is dropped, never sent. */
+  /** `endpointKey` of the configured backend. A record from another is skipped and kept, never sent. */
   endpoint: string;
   root?: string;
   now?: number;
