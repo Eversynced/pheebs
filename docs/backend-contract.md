@@ -99,6 +99,12 @@ the transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning
   tool sends this event. A session's total can sit below what the agent's own cost line reports
   (the cause is not established). A session that never ended and never went quiet long enough is
   not read yet.
+- **A request is counted once, by the session file read first.** A resumed, forked or background
+  session's file starts with a copy of older lines, and the same request can sit in two files. Only
+  the file read first counts it, so the total across sessions stays a floor, but one session's
+  total can be too high and another's too low: a background session that ends before its parent can
+  carry tokens the parent made, when its copy of a line names no requester. Do not read one
+  session's total as only what that session spent.
 
 ## `/ingest/batch` (optional)
 
