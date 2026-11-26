@@ -6,6 +6,40 @@ Pheebs was developed privately before this repository was opened. That history i
 so this changelog starts at the first public release rather than linking commits that cannot
 be resolved.
 
+## [1.4.0](https://github.com/Eversynced/pheebs/compare/v1.3.0...v1.4.0) (2026-11-18)
+
+
+### Features
+
+* **hooks:** record the model a Claude Code subagent ran on ([9b632a7](https://github.com/Eversynced/pheebs/commit/9b632a779864fca5651e2d2b399b95ca0157bc1f))
+* **hooks:** tag git worktree add as a vcs_action ([523896c](https://github.com/Eversynced/pheebs/commit/523896c3890c89a822b2b78bd27aeffca33c8a13))
+* **intent:** record the order and operators of a chained shell command ([2823f37](https://github.com/Eversynced/pheebs/commit/2823f370c1d6f687b974698c11ccd37f8adae728))
+* **repertoire:** credit a ship gated by a test in its own row ([7a71bd9](https://github.com/Eversynced/pheebs/commit/7a71bd97b13b9ae06ba11e87849cbe5833f2f8f1))
+* **repertoire:** credit split-phase delivery handed to a subagent on another model ([1c5cb0b](https://github.com/Eversynced/pheebs/commit/1c5cb0bad63c19423487b935025bc1fcc2dae034))
+
+
+### Bug Fixes
+
+* **hooks:** bound the agent type read from an Agent call to an identifier shape ([cb5dacf](https://github.com/Eversynced/pheebs/commit/cb5dacfe4a2395c2eb64ff5b34488d1f8347a552))
+* **hooks:** count a subagent model only when someone chose it ([5269fe9](https://github.com/Eversynced/pheebs/commit/5269fe9450713da4523745e879ba3377f2860266))
+* **hooks:** ignore Cursor payloads on the Claude Code hook path ([cbe1640](https://github.com/Eversynced/pheebs/commit/cbe16403b17c372f29c5ab202b53ef41d23e526c))
+* **intent:** classify every segment of a chained shell command ([4b07db6](https://github.com/Eversynced/pheebs/commit/4b07db62d76644c3332d3ffc649096740eff56bd))
+* **intent:** derive vcs_action from shell tools only ([ec3eace](https://github.com/Eversynced/pheebs/commit/ec3eacea78bed0c07e4dab7035fce8298de77bb8))
+* **intent:** do not read an arithmetic shift as a heredoc ([b76c962](https://github.com/Eversynced/pheebs/commit/b76c9623f3065089da8fbbcd35ab21ba3590322a))
+* **intent:** ignore separators inside quoted text and heredocs ([f3c3ac9](https://github.com/Eversynced/pheebs/commit/f3c3ac9e7d8c10cfa71b3ed68ee86469981afaf0))
+* **intent:** match multi-word commands across tabs and repeated spaces ([6653b11](https://github.com/Eversynced/pheebs/commit/6653b11554ce88822755e8190e2693919654e918))
+* **intent:** read comments, control keywords and background jobs, and keep write actions in chains ([6490e36](https://github.com/Eversynced/pheebs/commit/6490e36bf4271f174312f9c1af0cc40d36885d7d))
+* **repertoire:** count a model's spellings as one and treat default and unknown as no model ([40102d2](https://github.com/Eversynced/pheebs/commit/40102d27a2d0ffea454d1d831d10ac5b14b23b4a))
+* **repertoire:** count every subagent model toward multi-model use ([1011c8b](https://github.com/Eversynced/pheebs/commit/1011c8b4e35f6ecabf37885b8815ca9e87479a6c))
+* **repertoire:** read multi-model use as insufficient data when no model is observed ([a4f4f61](https://github.com/Eversynced/pheebs/commit/a4f4f61dbb2a236ba740fb9db940d51d0fe0adf9))
+* **repertoire:** skip a subagent on the model of the segment its call ran in ([de43718](https://github.com/Eversynced/pheebs/commit/de437182aab0f569590599890df4c775cd309dbf))
+* **scope:** treat a $HOME reached through a symlink as the folder it points to ([dec577c](https://github.com/Eversynced/pheebs/commit/dec577c0b2e3744cbc8b901db48646a25c4af4f0))
+
+
+### Performance Improvements
+
+* **intent:** mask quoted text in one pass ([325defe](https://github.com/Eversynced/pheebs/commit/325defe153906fbdb5bf7d3d085b475e4c7bc104))
+
 ## [1.3.0](https://github.com/Eversynced/pheebs/compare/v1.2.0...v1.3.0) (2026-11-02)
 
 
