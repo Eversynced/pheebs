@@ -1,6 +1,6 @@
 import type { AiTool } from "./hooks/types.js";
 
-/** The tools whose transcripts carry usage. Cursor's carry none (ledger 2026-11-19). */
+/** The tool whose transcripts carry usage here. Cursor's carry none (ledger: Cursor transcripts carry no token usage). */
 export type UsageTool = Extract<AiTool, "claude_code">;
 
 /** Integers only. An optional field is absent, never 0, when the transcript does not carry it. */
@@ -56,12 +56,15 @@ export interface SessionRecord {
   session_id: string;
   codebase: string;
   ended: boolean;
-  /** ms epoch of the first hook that recorded the session, and of the last one that touched it. */
-  started_at: number;
+  /** `endpointKey` of the backend the hook saw, so usage is only ever sent to that backend. */
+  endpoint: string;
+  /** ms epoch of the last hook that touched the session. */
   touched_at: number;
+  /** ms epoch Pheebs first saw the session, kept across every later note. No usage before it is counted. */
+  first_seen: number;
 }
 
-/** The flusher's own file for a session, so the hook and the flusher never write the same one. */
+/** What the flusher keeps for a session, in its own file, so a hook never writes it. */
 export interface SessionMark {
   cursors: Cursors;
   /** `<touched_at>:<ended>` of the record a pass last settled, so an unchanged one is not rescanned. */

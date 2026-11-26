@@ -10,6 +10,7 @@ import {
 import { forgetInstalls, listInstalls } from "../installs.js";
 import { syncClaudeOtelEnv, syncCodexOtel } from "../otel.js";
 import { removeOutbox } from "../outbox.js";
+import { removeSessions } from "../usage-sessions.js";
 import { resolveSettingsPath } from "./path.js";
 
 /** Returns whether the file was dealt with. A malformed one is left alone and reported, so
@@ -148,4 +149,5 @@ export async function runUninstall(): Promise<void> {
   if (!removeOutbox()) {
     console.warn("pheebs: could not remove the send queue in ~/.pheebs/outbox; delete it by hand");
   }
+  removeSessions();
 }
