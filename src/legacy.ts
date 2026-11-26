@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import {
   existsSync,
   readFileSync,
@@ -105,9 +106,10 @@ function writeLegacyConfig(tool: LegacyTool, path: string, config: Record<string
   const text =
     tool === "codex" ? `${stringifyToml(config)}\n` : `${JSON.stringify(config, null, 2)}\n`;
   const target = realpathSync(path);
-  const temp = `${target}.pheebs-tmp`;
+  // A random name opened exclusively: a repo can plant a symlink at a predictable one.
+  const temp = `${target}.${randomBytes(6).toString("hex")}.pheebs-tmp`;
   try {
-    writeFileSync(temp, text, { mode: statSync(target).mode & 0o777 });
+    writeFileSync(temp, text, { mode: statSync(target).mode & 0o777, flag: "wx" });
     renameSync(temp, target);
   } catch (error) {
     rmSync(temp, { force: true });

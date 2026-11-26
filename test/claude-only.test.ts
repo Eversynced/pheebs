@@ -325,6 +325,23 @@ describe("uninstall of a symlinked Codex config", () => {
   });
 });
 
+describe("uninstall in a repo that plants a symlink at the old temp name", () => {
+  it("leaves the file the symlink points to alone", () => {
+    const home = tempDir("pheebs-home-");
+    const cwd = tempDir("pheebs-cwd-");
+    const victim = join(tempDir("pheebs-victim-"), "important");
+    write(victim, "keep me");
+    write(join(cwd, ".codex", "config.toml"), codexFixture());
+    symlinkSync(victim, join(cwd, ".codex", "config.toml.pheebs-tmp"));
+
+    const result = runCli(["uninstall"], { HOME: home, USERPROFILE: home }, cwd);
+    expect(result.status).toBe(0);
+    expect(readFileSync(victim, "utf-8")).toBe("keep me");
+    const config = parseToml(readFileSync(join(cwd, ".codex", "config.toml"), "utf-8"));
+    expect((config as { otel?: unknown }).otel).toBeUndefined();
+  });
+});
+
 describe("a local log from before the removal", () => {
   it("still reports, with Cursor and Codex rows beside Claude Code ones", () => {
     const home = tempDir("pheebs-home-");
