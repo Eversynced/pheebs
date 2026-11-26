@@ -143,6 +143,17 @@ setting), `session_duration_ms`, `is_background_agent`, and compaction detail
 (`context_usage_percent`, `context_tokens`, `context_window_size`, `messages_to_compact`,
 `is_first_compaction`).
 
+**Session token usage:** for Claude Code, after a session ends or goes quiet, the
+background process reads the agent's transcript on your machine, adds up the tokens by model, and
+queues one `session_token_usage` event per model with `model`, `from_subagent`, `input_tokens`,
+`output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens` and
+`usage_source`. Only integers and the model id leave the transcript; its text, tool output and
+paths are read past and dropped. No transcript path is stored: a hook records only the session id,
+tool, codebase, timestamps (including when it first saw the session, so usage from before you installed is never counted) and a hash of the backend address in `~/.pheebs/sessions/` (owner-only on
+macOS and Linux, your profile folder's permissions on Windows, local, never sent, removed after 30
+idle days, and by `pheebs uninstall`), only when a backend and token are set, and the background process finds the file
+from the session id. One state file beside the records (byte positions per session, named by a hash, and digests of request ids, with no id, text or path) is kept 180 days, names the backend address (a hash) it was built for, so a resumed session is not counted twice and a copied history is skipped, and `pheebs uninstall` removes it too. Cursor's transcripts carry no usage and Codex's are not read, so neither sends one.
+
 **Codex also:** `input_tokens`, `output_tokens`, `permission_type`, `approved`.
 
 > **Two of these are free text.** `task_subject` and `teammate_name` (Claude Code background

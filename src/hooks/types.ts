@@ -30,6 +30,7 @@ export const EVENTS = {
   SessionEnd: "session_end",
   PermissionRequested: "permission_requested",
   ArtifactFound: "artifact_found",
+  SessionTokenUsage: "session_token_usage",
 } as const;
 
 export type PheebsEvent = (typeof EVENTS)[keyof typeof EVENTS];

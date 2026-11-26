@@ -47,6 +47,54 @@ Each backend and token gets its own queue, and pointing Pheebs elsewhere discard
 rather than send it to a backend the events were never meant for
 ([`src/outbox.ts`](../src/outbox.ts)). The local log keeps every event either way.
 
+### Token usage
+
+A Claude Code transcript carries the tokens a session used. No hook reads one: a hook on a session start, a turn end or a session end only records the session
+(id, tool, codebase, timestamps, never a path) in `~/.pheebs/sessions/` ([`src/usage-sessions.ts`](../src/usage-sessions.ts)). The detached flusher
+finds and reads the transcript of every recorded session that has ended, or has been quiet for 30 minutes,
+which is the sweep for sessions that never sent `session_end`
+([`src/usage-collect.ts`](../src/usage-collect.ts)). It sums the tokens by model and queues one
+`session_token_usage` event per model and scope, as a delta since the last read, then moves the
+session's byte offsets forward. The readers are in [`src/transcript-usage.ts`](../src/transcript-usage.ts):
+it counts each `message.id` and `requestId` once, skips a request another session's file already counted
+(a background, resumed or forked session's file starts with a copy) and a line that names another session
+as the requester, never counts a line stamped before the session was first seen or not stamped at all,
+and adds the subagent files below the transcript. Cursor has no reader, because its transcripts carry no usage, and Codex is not read (see the
+[ledger](./spike-findings-ledger.md)).
+
+The lookup searches `CLAUDE_CONFIG_DIR`, `~/.claude` and each `~/.claude-*` directory with a
+`projects` folder, one folder level down. A transcript in a config directory outside those is not found, and its
+usage is never sent: a known limit. A transcript not found yet is searched for again every 10
+minutes until the record expires after 30 days. A session record carries a hash of the backend
+endpoint (the configured base URL) it was recorded under, and the flusher skips one recorded under
+any other, so usage never goes to a backend it was not captured for. The record also keeps when Pheebs
+first saw the session (`first_seen`), through every later note and through a change of backend, so a
+session resumed after the install sends only what it did from then on, never the history in its file. A token rotated on the same
+endpoint changes nothing: a session that ended but was not read yet is still sent, to the queue of
+the token now configured, and the flusher only runs while a backend and token are configured. A
+session with no `session_end` is read only when its transcript has also gone quiet for 30 minutes.
+
+The flusher keeps everything else in one file, `usage-state.json` beside the records: the byte
+offsets of each session (a mark, kept 180 days after its record goes, so a resumed session carries on
+from its old offsets, 50,000 at most) and, for each request counted, a 16-character digest of its ids
+with a digest of the file that counted it, never an id or any text, so a later file that repeats
+the request is skipped (an entry goes after 180 days, 250,000 at most, oldest dropped first). The file
+names the endpoint it was built for. When the endpoint differs, the marks and the claims go together
+and every session is read from offset 0, but a line stamped before the session's `first_seen` is still
+not counted, so the new backend receives the session from when Pheebs first saw it, once, then only
+what is added. No history of the earlier endpoint is kept: going back to it resets again and
+sends the session to it again from `first_seen`. The hook cannot share that file, since hooks run at once in
+many sessions and must never wait on a lock, so each session keeps its own small record, which only
+a hook writes. A flusher takes a lock around each pass, and one that finds it taken skips the pass,
+so two flushers cannot overwrite each other's marks or claims. For N sessions that is N records and
+one state file, plus the lock while a pass runs. `pheebs uninstall` removes all of it. Read order
+decides which session is credited with a shared request, and moves the output total slightly (426
+tokens in one recount, cause unverified).
+
+Known limit: if the flusher dies after queuing a session's events and before saving the state at the
+end of the pass, and the transcript grows before the next read, the overlap is sent again under new ids and counted
+twice.
+
 ## The client's job, and where it stops
 
 Pheebs emits generic facts about an interaction: a tool ran with intent

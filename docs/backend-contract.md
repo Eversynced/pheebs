@@ -81,6 +81,32 @@ still shows the `worktree` segment.
 Cursor parallel agents and Codex app worktrees create worktrees without a shell command, so they
 never set it. Any count is a lower bound: read its absence as unknown, never as no worktree use.
 
+Contract 1.10.0 adds the `session_token_usage` event: the tokens a Claude Code session used,
+summed by model from the transcript after the session ends, so cost and session fit do not need
+the OTel exporter. It carries `model`, `from_subagent`, `input_tokens`, `output_tokens`, and when
+the transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning_tokens`, plus
+`usage_source: "transcript"`. Four rules for reading it:
+
+- **Each event is a delta, never a running total.** One session sends several events for the same
+  model: a resumed session adds one per resume, and a session whose end was never seen is read
+  after it goes quiet. Sum them. A resend of the same read carries the same `event_id`, so a
+  backend stores it once.
+- **Absent is not zero.** `cache_read_tokens`, `cache_write_tokens` and `reasoning_tokens` are
+  absent when the transcript has none. `input_tokens` leaves out both cache reads and cache
+  writes, so the total input is `input_tokens + cache_read_tokens + cache_write_tokens`. Whether `reasoning_tokens` is part of `output_tokens` is not verified, so do
+  not add or subtract it.
+- **It is a floor, and some sessions send nothing.** Only Claude Code sessions are read; no other
+  tool sends this event. A session's total can sit below what the agent's own cost line reports
+  (the cause is not established). A session that never ended and never went quiet long enough is
+  not read yet. A session resumed after the client was installed sends only the usage written after
+  the client first saw it, never the history already in its file.
+- **A request is counted once, by the session file read first.** A resumed, forked or background
+  session's file starts with a copy of older lines, and the same request can sit in two files. Only
+  the file read first counts it, so the total across sessions stays a floor, but one session's
+  total can be too high and another's too low: a background session that ends before its parent can
+  carry tokens the parent made, when its copy of a line names no requester. Do not read one
+  session's total as only what that session spent.
+
 ## `/ingest/batch` (optional)
 
 `{ "events": [envelope, ...], "droppedSinceLastSend": n }`, at most 500 events. The client writes

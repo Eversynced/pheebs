@@ -17,6 +17,12 @@ export interface LogEntry {
 }
 
 export function appendLogEntry(entry: LogEntry, config: PheebsConfig): void {
+  appendLocalLogEntry(entry, config);
+  getTransport().send(entry);
+}
+
+/** The local write alone, for an event that is already in the send queue. */
+export function appendLocalLogEntry(entry: LogEntry, config: PheebsConfig): void {
   const date = new Date().toISOString();
   const dayStamp = date.slice(0, 10);
   const safeCodebaseId = config.codebaseId.replace(/\//g, "--");
@@ -33,6 +39,4 @@ export function appendLogEntry(entry: LogEntry, config: PheebsConfig): void {
   if (!entry.event_id) entry.event_id = newEventId(Number.isNaN(stampedAt) ? undefined : stampedAt);
 
   appendFileSync(fullPath, `${JSON.stringify(entry)}\n`);
-
-  getTransport().send(entry);
 }

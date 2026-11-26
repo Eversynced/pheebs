@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.9.0"
+  version: "1.10.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -434,6 +434,7 @@ components:
             - session_end
             - permission_requested
             - artifact_found
+            - session_token_usage
         codebase:
           type: string
           description: |
@@ -465,8 +466,10 @@ components:
         model:
           type: string
           description: |
-            For `ai_tool: claude_code`, present on `session_started` only — recurring hooks do
-            not carry it. Cursor and Codex copy it off any payload that has it, on any event.
+            For `ai_tool: claude_code`, present on `session_started` and `session_token_usage`
+            only; recurring hooks do not carry it. Cursor and Codex copy it off any payload that
+            has it, on any event. On `session_token_usage`, the model the counts belong to (a
+            Claude Code id has its context suffix stripped).
         from_model:
           type: string
           description: |
@@ -612,12 +615,44 @@ components:
           description: Free text, as above.
         input_tokens:
           type: integer
+          description: |
+            On `session_token_usage`, the tokens a session sent in, leaving out both cache reads
+            and cache writes: `input_tokens + cache_read_tokens + cache_write_tokens` is the total
+            input. Each `session_token_usage` event is a delta since the last send: sum the events
+            per session and model, as docs/backend-contract.md describes. When two session files
+            hold the same request, only the file read first counts it: the total across sessions
+            stays a floor, but one session's total can be too high or too low. Other events may
+            carry the same field name with their own meaning.
         output_tokens:
           type: integer
+          description: |
+            On `session_token_usage`, as the transcript reports it. Whether `reasoning_tokens` is
+            part of this count is not verified.
         cache_read_tokens:
           type: integer
+          description: |
+            Absent on a `session_token_usage` whose transcript carries none, which is not a
+            measured zero.
         cache_write_tokens:
           type: integer
+          description: |
+            Absent on a `session_token_usage` whose transcript carries none, which is not a
+            measured zero.
+        reasoning_tokens:
+          type: integer
+          description: |
+            On `session_token_usage`, the reasoning tokens the transcript reports. Absent when it
+            carries none, which is not a measured zero.
+        from_subagent:
+          type: boolean
+          description: |
+            On `session_token_usage`, true for the usage of the session's subagents, which the
+            client reads from separate transcript files, and false for the main agent.
+        usage_source:
+          type: string
+          const: transcript
+          description: |
+            On `session_token_usage`: where the counts were read. Only `transcript` exists.
         status:
           type: string
           description: Cursor — how a turn or sub-agent run ended.

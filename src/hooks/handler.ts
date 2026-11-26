@@ -1,13 +1,15 @@
 import { maybeAutoUpdate } from "../auto-update.js";
-import { ensureConfig } from "../backend-config.js";
+import { baseUrl, ensureConfig, hasBackend } from "../backend-config.js";
 import { stripBom } from "../bom.js";
 import { classifyPrompt } from "../classify.js";
 import { getConfig } from "../config.js";
 import { getDeveloperHandle } from "../developer-id.js";
 import { appendLogEntry } from "../logger.js";
 import { resyncOtelConfigs } from "../otel-resync.js";
+import { endpointKey } from "../outbox.js";
 import { runArtifactScan } from "../scanner.js";
-import { revalidateStoredTokenIfStale } from "../token.js";
+import { readStoredToken, revalidateStoredTokenIfStale } from "../token.js";
+import { noteSession } from "../usage-sessions.js";
 import { PHEEBS_VERSION } from "../version.js";
 import {
   AI_TOOLS,
@@ -626,6 +628,37 @@ function isCursorPayload(payload: Record<string, unknown>): boolean {
   return typeof hookName === "string" && /^[a-z]/.test(hookName);
 }
 
+const TRANSCRIPT_EVENTS = new Set<string>([
+  EVENTS.SessionStarted,
+  EVENTS.TurnEnded,
+  EVENTS.SessionEnd,
+]);
+
+// Records that a session has a transcript worth reading once it ends. Nothing is opened or looked
+// up here, and no path is kept: the flusher finds the transcript by session id later. Cursor's
+// transcripts carry no usage, so it is never recorded. Skipped without a backend and token, or in
+// debug mode, because only the flusher reads these and it only runs when it can send.
+function noteTranscript(
+  tool: AiTool,
+  eventName: string,
+  sessionId: string | undefined,
+  codebase: string,
+): void {
+  if (tool !== AI_TOOLS.CLAUDE_CODE || !TRANSCRIPT_EVENTS.has(eventName)) return;
+  if (!sessionId) return;
+  try {
+    const stored = readStoredToken();
+    if (process.env.PHEEBS_DEBUG || !hasBackend() || !stored) return;
+    noteSession({
+      tool,
+      session_id: sessionId,
+      codebase,
+      endpoint: endpointKey(baseUrl()),
+      ended: eventName === EVENTS.TurnEnded ? undefined : eventName === EVENTS.SessionEnd,
+    });
+  } catch {}
+}
+
 export async function handleHookEvent(
   tool: AiTool,
   eventName: string,
@@ -697,6 +730,9 @@ export async function handleHookEvent(
 
   const developerHandle = getDeveloperHandle(sessionId);
   const config = getConfig();
+
+  // Before the event is queued, so the flusher it starts finds the session already recorded.
+  noteTranscript(tool, eventName, sessionId, config.codebaseId);
 
   appendLogEntry(
     {
