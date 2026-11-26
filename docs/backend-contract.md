@@ -98,7 +98,8 @@ the transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning
 - **It is a floor, and some sessions send nothing.** Only Claude Code sessions are read; no other
   tool sends this event. A session's total can sit below what the agent's own cost line reports
   (the cause is not established). A session that never ended and never went quiet long enough is
-  not read yet.
+  not read yet. A session resumed after the client was installed sends only the usage written after
+  the client first saw it, never the history already in its file.
 - **A request is counted once, by the session file read first.** A resumed, forked or background
   session's file starts with a copy of older lines, and the same request can sit in two files. Only
   the file read first counts it, so the total across sessions stays a floor, but one session's
