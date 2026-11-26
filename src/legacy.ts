@@ -68,7 +68,11 @@ function stripCodexOtel(config: Record<string, unknown>): boolean {
   return true;
 }
 
-function readLegacyConfig(tool: LegacyTool, path: string): Record<string, unknown> | undefined {
+function readLegacyConfig(
+  tool: LegacyTool,
+  path: string,
+  quiet = false,
+): Record<string, unknown> | undefined {
   try {
     const raw = stripBom(readFileSync(path, "utf-8"));
     const config = tool === "codex" ? parseToml(raw) : JSON.parse(raw);
@@ -76,7 +80,7 @@ function readLegacyConfig(tool: LegacyTool, path: string): Record<string, unknow
       return config as Record<string, unknown>;
     }
   } catch {}
-  console.warn(`pheebs: ${path} is malformed, skipping`);
+  if (!quiet) console.warn(`pheebs: ${path} is malformed, skipping`);
   return undefined;
 }
 
@@ -88,10 +92,11 @@ function writeLegacyConfig(tool: LegacyTool, path: string, config: Record<string
 }
 
 /** Removes the pheebs exporter table from a recorded Codex config, for the token resync: a
- *  rotated or revoked token would otherwise keep exporting from a tool pheebs no longer manages. */
+ *  rotated or revoked token would otherwise keep exporting from a tool pheebs no longer manages.
+ *  Silent on a bad file, because the resync runs inside a session's hook. */
 export function stripLegacyCodexOtel(path: string): void {
   if (!existsSync(path)) return;
-  const config = readLegacyConfig("codex", path);
+  const config = readLegacyConfig("codex", path, true);
   if (config && stripCodexOtel(config)) writeLegacyConfig("codex", path, config);
 }
 

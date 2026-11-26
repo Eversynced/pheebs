@@ -141,8 +141,8 @@ practice and signal means is defined in the [AI Proficiency Model](./docs/ai-pro
 
 Claude Code only: 15 hook entries across 14 hook types, plus OpenTelemetry metrics.
 
-Cursor and Codex support was removed. Hooks they already have still call `pheebs`, which
-ignores them, so nothing breaks. Run `pheebs uninstall` to clear them.
+Claude Code is the only supported agent. A Cursor or Codex hook left from an earlier install
+still calls `pheebs`, which ignores it, so nothing breaks. Run `pheebs uninstall` to clear it.
 
 ## Privacy
 
