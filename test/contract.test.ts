@@ -51,6 +51,15 @@ describe("openapi.yaml", () => {
     expect(doc).toContain(total);
   });
 
+  it("says a request in two session files is counted once, by the file read first", () => {
+    const doc = readFileSync(
+      join(import.meta.dirname, "..", "docs", "backend-contract.md"),
+      "utf-8",
+    );
+    expect(spec).toContain("only the file read first counts it");
+    expect(doc).toContain("the file read first counts it");
+  });
+
   it("documents command_sequence beside the fields a chain changes", () => {
     expect(spec).toContain("\n        command_sequence:\n");
   });
