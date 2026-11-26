@@ -20,7 +20,7 @@ import { resolveSettingsPath } from "./path.js";
 
 /** Returns whether the file was dealt with. A malformed one is left alone and reported, so
  *  the caller can keep its registry entry rather than forgetting a repo it never cleared. */
-export function removeFromJsonConfig(settingsPath: string, tool: AiTool): boolean {
+export function removeFromJsonConfig(settingsPath: string): boolean {
   if (!existsSync(settingsPath)) return true;
 
   let settings: Record<string, unknown>;
@@ -34,7 +34,9 @@ export function removeFromJsonConfig(settingsPath: string, tool: AiTool): boolea
   const hooks = settings.hooks as Record<string, unknown[]> | undefined;
   if (!hooks) return true;
 
-  const hookKeys = [...new Set(getHookDefinitionsForTool(tool).map((d) => d.hookKey))];
+  const hookKeys = [
+    ...new Set(getHookDefinitionsForTool(AI_TOOLS.CLAUDE_CODE).map((d) => d.hookKey)),
+  ];
   let removed = 0;
 
   for (const key of hookKeys) {
@@ -56,9 +58,7 @@ export function removeFromJsonConfig(settingsPath: string, tool: AiTool): boolea
     delete settings.hooks;
   }
 
-  if (tool === AI_TOOLS.CLAUDE_CODE) {
-    syncClaudeOtelEnv(settings, false);
-  }
+  syncClaudeOtelEnv(settings, false);
 
   writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
   console.log(`pheebs: removed ${removed} hook entries from ${settingsPath}`);
@@ -71,7 +71,7 @@ function removeFrom(tool: AiTool | LegacyTool, settingsPath: string): boolean {
   try {
     return isLegacyTool(tool)
       ? removeLegacyInstall(tool, settingsPath)
-      : removeFromJsonConfig(settingsPath, tool);
+      : removeFromJsonConfig(settingsPath);
   } catch {
     console.warn(`pheebs: could not clear ${settingsPath}, skipping`);
     return false;

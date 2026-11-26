@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { removeFromJsonConfig } from "../src/commands/uninstall.js";
-import { AI_TOOLS, buildHooksConfig } from "../src/hooks/definitions.js";
+import { buildHooksConfig } from "../src/hooks/definitions.js";
 
 let tmp: string;
 
@@ -28,7 +28,7 @@ describe("removeFromJsonConfig", () => {
       }),
     );
 
-    removeFromJsonConfig(path, AI_TOOLS.CLAUDE_CODE);
+    removeFromJsonConfig(path);
 
     const result = JSON.parse(readFileSync(path, "utf-8"));
     expect(result.hooks.SessionStart).toHaveLength(1);
@@ -40,18 +40,18 @@ describe("removeFromJsonConfig", () => {
     const path = join(tmp, "settings.json");
     writeFileSync(path, JSON.stringify({ hooks: buildHooksConfig() }));
 
-    removeFromJsonConfig(path, AI_TOOLS.CLAUDE_CODE);
+    removeFromJsonConfig(path);
 
     expect(JSON.parse(readFileSync(path, "utf-8")).hooks).toBeUndefined();
   });
 
   it("is a no-op for missing or malformed files", () => {
     const missing = join(tmp, "missing.json");
-    expect(() => removeFromJsonConfig(missing, AI_TOOLS.CLAUDE_CODE)).not.toThrow();
+    expect(() => removeFromJsonConfig(missing)).not.toThrow();
     expect(existsSync(missing)).toBe(false);
 
     const bad = join(tmp, "bad.json");
     writeFileSync(bad, "{ not json");
-    expect(() => removeFromJsonConfig(bad, AI_TOOLS.CLAUDE_CODE)).not.toThrow();
+    expect(() => removeFromJsonConfig(bad)).not.toThrow();
   });
 });

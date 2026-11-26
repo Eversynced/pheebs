@@ -33,6 +33,13 @@ export function legacyConfigPaths(): { tool: LegacyTool; path: string }[] {
   });
 }
 
+/** Where an old Codex config can sit without a record. */
+export function legacyCodexPaths(): string[] {
+  return legacyConfigPaths()
+    .filter((entry) => entry.tool === "codex")
+    .map((entry) => entry.path);
+}
+
 /** Drops every pheebs entry under every hook key, and a key only if it held nothing else. */
 function stripPheebsHooks(hooks: Record<string, unknown>): number {
   let removed = 0;
