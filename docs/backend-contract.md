@@ -85,7 +85,7 @@ Contract 1.10.0 adds the `session_token_usage` event: the tokens a Claude Code s
 summed by model from the transcript after the session ends, so cost and session fit do not need
 the OTel exporter. It carries `model`, `from_subagent`, `input_tokens`, `output_tokens`, and when
 the transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning_tokens`, plus
-`usage_source: "transcript"`. Three rules for reading it:
+`usage_source: "transcript"`. Four rules for reading it:
 
 - **Each event is a delta, never a running total.** One session sends several events for the same
   model: a resumed session adds one per resume, and a session whose end was never seen is read
