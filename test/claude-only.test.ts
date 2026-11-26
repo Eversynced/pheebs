@@ -1,15 +1,19 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { afterAll, describe, expect, it } from "vitest";
 
@@ -108,7 +112,7 @@ describe("removed tool flags", () => {
       expect(result.status).toBe(1);
       const lines = `${result.stdout}${result.stderr}`.split("\n").filter(Boolean);
       expect(lines).toHaveLength(1);
-      expect(lines[0]).toContain("support was removed");
+      expect(lines[0]).toContain("supports Claude Code only");
       expect(lines[0]).toContain("pheebs uninstall");
       expect(listFiles(cwd)).toEqual([]);
       expect(listFiles(home)).toEqual([]);
@@ -246,6 +250,22 @@ describe("an old Codex install after the token or endpoint changes", () => {
   });
 });
 
+describe("a malformed old Codex config during the token resync", () => {
+  it("is skipped without a word, since the resync runs inside a hook", () => {
+    const home = tempDir("pheebs-home-");
+    const cwd = tempDir("pheebs-cwd-");
+    const bad = join(cwd, "repo", ".codex", "config.toml");
+    write(bad, "[[hooks\nnot toml");
+    write(join(home, ".pheebs", "installs.json"), JSON.stringify([{ tool: "codex", path: bad }]));
+    write(join(home, ".pheebs", "config.json"), JSON.stringify({ baseUrl: "https://old.example" }));
+
+    const result = runCli(["config", "unset", "base-url"], { HOME: home, USERPROFILE: home }, cwd);
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain("malformed");
+    expect(readFileSync(bad, "utf-8")).toBe("[[hooks\nnot toml");
+  });
+});
+
 describe("uninstall of a malformed old config", () => {
   it("leaves the file alone and keeps its install record", () => {
     const home = tempDir("pheebs-home-");
@@ -259,6 +279,66 @@ describe("uninstall of a malformed old config", () => {
     expect(result.status).toBe(0);
     expect(readFileSync(bad, "utf-8")).toBe("[[hooks\nnot toml");
     expect(JSON.parse(readFileSync(registry, "utf-8"))).toEqual([{ tool: "codex", path: bad }]);
+  });
+});
+
+describe("uninstall of a Codex config with unusual shapes", () => {
+  it("keeps a non-table analytics value and the file's mode, and says an unreadable path is unreadable", () => {
+    const home = tempDir("pheebs-home-");
+    const cwd = tempDir("pheebs-cwd-");
+    const codex = join(home, ".codex", "config.toml");
+    write(
+      codex,
+      'analytics = true\n[otel]\n[otel.exporter.otlp-http]\nheaders = { Authorization = "Bearer pheebs_x" }\n',
+    );
+    chmodSync(codex, 0o600);
+    mkdirSync(join(cwd, ".codex", "config.toml"), { recursive: true });
+
+    const result = runCli(["uninstall"], { HOME: home, USERPROFILE: home }, cwd);
+    expect(result.status).toBe(0);
+    const after = parseToml(readFileSync(codex, "utf-8")) as {
+      analytics?: unknown;
+      otel?: unknown;
+    };
+    expect(after.otel).toBeUndefined();
+    expect(after.analytics).toBe(true);
+    expect(statSync(codex).mode & 0o777).toBe(0o600);
+    expect(result.stderr).toContain("could not read");
+    expect(result.stderr).not.toContain("malformed");
+  });
+});
+
+describe("uninstall of a symlinked Codex config", () => {
+  it("clears the real file and keeps the link", () => {
+    const home = tempDir("pheebs-home-");
+    const cwd = tempDir("pheebs-cwd-");
+    const real = join(tempDir("pheebs-dotfiles-"), "config.toml");
+    write(real, codexFixture());
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    symlinkSync(real, join(home, ".codex", "config.toml"));
+
+    const result = runCli(["uninstall"], { HOME: home, USERPROFILE: home }, cwd);
+    expect(result.status).toBe(0);
+    expect(lstatSync(join(home, ".codex", "config.toml")).isSymbolicLink()).toBe(true);
+    expect((parseToml(readFileSync(real, "utf-8")) as { otel?: unknown }).otel).toBeUndefined();
+    expect(readdirSync(dirname(real))).toEqual(["config.toml"]);
+  });
+});
+
+describe("uninstall in a repo that plants a symlink at the old temp name", () => {
+  it("leaves the file the symlink points to alone", () => {
+    const home = tempDir("pheebs-home-");
+    const cwd = tempDir("pheebs-cwd-");
+    const victim = join(tempDir("pheebs-victim-"), "important");
+    write(victim, "keep me");
+    write(join(cwd, ".codex", "config.toml"), codexFixture());
+    symlinkSync(victim, join(cwd, ".codex", "config.toml.pheebs-tmp"));
+
+    const result = runCli(["uninstall"], { HOME: home, USERPROFILE: home }, cwd);
+    expect(result.status).toBe(0);
+    expect(readFileSync(victim, "utf-8")).toBe("keep me");
+    const config = parseToml(readFileSync(join(cwd, ".codex", "config.toml"), "utf-8"));
+    expect((config as { otel?: unknown }).otel).toBeUndefined();
   });
 });
 

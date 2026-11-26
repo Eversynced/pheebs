@@ -174,10 +174,10 @@ directory, and every other repo keeps its hooks and keeps exporting with the tok
 project-scoped install that carries the token is also added to the repo's `.git/info/exclude`,
 since nothing in a fresh repo is guaranteed to ignore `.claude/settings.local.json`.
 
-## Removed tools
+## Old Cursor and Codex installs
 
-Cursor and Codex support was removed. An install made before that still calls
-`pheebs hook-cursor` and `pheebs hook-codex`, so those exit 0 silently without
+Claude Code is the only supported agent. `pheebs hook-cursor` and `pheebs hook-codex`,
+which an old Cursor or Codex install still calls, exit 0 silently without
 reading stdin, writing, or sending, and `init`, `doctor` and `scan` refuse
 `--cursor` and `--codex` with a pointer to `pheebs uninstall`, which clears the old
 hooks and Codex's exporter table. Old log lines with a Cursor or Codex `ai_tool`

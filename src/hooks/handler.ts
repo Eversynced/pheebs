@@ -341,8 +341,9 @@ const TRANSCRIPT_EVENTS = new Set<string>([
 ]);
 
 // Records that a session has a transcript worth reading once it ends. Nothing is opened or looked
-// up here, and no path is kept: the flusher finds the transcript by session id later. Skipped without a backend and token, or in
-// debug mode, because only the flusher reads these and it only runs when it can send.
+// up here, and no path is kept: the flusher finds the transcript by session id later. Skipped
+// without a backend and token, or in debug mode, because only the flusher reads these and it
+// only runs when it can send.
 function noteTranscript(
   tool: AiTool,
   eventName: string,

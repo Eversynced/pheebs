@@ -10,7 +10,7 @@ labels: bug
 
 **Reproduction**
 
-<!-- The agent (Claude Code / Cursor / Codex) and what you did. -->
+<!-- What you did in Claude Code. -->
 
 **A sample row, if relevant**
 

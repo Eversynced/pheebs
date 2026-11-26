@@ -1,4 +1,13 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import {
+  existsSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -6,10 +15,9 @@ import { stripBom } from "./bom.js";
 import { isPheebsEntry } from "./hooks/definitions.js";
 
 /**
- * What `uninstall` needs to clear an install made when Cursor and Codex were supported.
- * Nothing here writes a hook: both tools are gone from `init`, and the only reason this file
- * exists is that their hooks and Codex's exporter config still sit in developers' config files
- * and still call this binary.
+ * What `uninstall` needs to clear Cursor and Codex hooks and Codex's exporter config.
+ * Nothing here writes a hook: `init` does not manage either tool, and the only reason this file
+ * exists is that their entries can still sit in developers' config files and call this binary.
  */
 
 export const LEGACY_TOOLS = ["cursor", "codex"] as const;
@@ -56,42 +64,65 @@ function stripPheebsHooks(hooks: Record<string, unknown>): number {
 }
 
 /** Codex's exporter config sat under `[otel]`, with the token in its headers. Only a table that
- *  carries a pheebs token is ours to remove: the developer may have an `[otel]` of their own. */
+ *  carries a pheebs token is ours to remove: the developer may have an `[otel]` of their own.
+ *  `config set token` only accepts `pheebs_` tokens, so the prefix is how a token of ours shows. */
 function stripCodexOtel(config: Record<string, unknown>): boolean {
   if (!JSON.stringify(config.otel ?? null).includes("Bearer pheebs_")) return false;
   delete config.otel;
-  const analytics = config.analytics as Record<string, unknown> | undefined;
-  if (analytics) {
-    delete analytics.enabled;
+  // The old exporter setup also switched `[analytics] enabled` on, which Codex needs to export.
+  const analytics = config.analytics;
+  if (typeof analytics === "object" && analytics !== null && !Array.isArray(analytics)) {
+    delete (analytics as Record<string, unknown>).enabled;
     if (Object.keys(analytics).length === 0) delete config.analytics;
   }
   return true;
 }
 
-function readLegacyConfig(tool: LegacyTool, path: string): Record<string, unknown> | undefined {
+function readLegacyConfig(
+  tool: LegacyTool,
+  path: string,
+  quiet = false,
+): Record<string, unknown> | undefined {
+  let raw: string;
   try {
-    const raw = stripBom(readFileSync(path, "utf-8"));
+    raw = stripBom(readFileSync(path, "utf-8"));
+  } catch {
+    if (!quiet) console.warn(`pheebs: could not read ${path}, skipping`);
+    return undefined;
+  }
+  try {
     const config = tool === "codex" ? parseToml(raw) : JSON.parse(raw);
     if (typeof config === "object" && config !== null && !Array.isArray(config)) {
       return config as Record<string, unknown>;
     }
   } catch {}
-  console.warn(`pheebs: ${path} is malformed, skipping`);
+  if (!quiet) console.warn(`pheebs: ${path} is malformed, skipping`);
   return undefined;
 }
 
+/** Renamed into place, so a crash mid-write cannot leave a truncated file the developer owns.
+ *  Written beside the real file, because a symlinked config (a dotfiles manager) must stay one. */
 function writeLegacyConfig(tool: LegacyTool, path: string, config: Record<string, unknown>): void {
-  writeFileSync(
-    path,
-    tool === "codex" ? `${stringifyToml(config)}\n` : `${JSON.stringify(config, null, 2)}\n`,
-  );
+  const text =
+    tool === "codex" ? `${stringifyToml(config)}\n` : `${JSON.stringify(config, null, 2)}\n`;
+  const target = realpathSync(path);
+  // A random name opened exclusively: a repo can plant a symlink at a predictable one.
+  const temp = `${target}.${randomBytes(6).toString("hex")}.pheebs-tmp`;
+  try {
+    writeFileSync(temp, text, { mode: statSync(target).mode & 0o777, flag: "wx" });
+    renameSync(temp, target);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
 }
 
 /** Removes the pheebs exporter table from a recorded Codex config, for the token resync: a
- *  rotated or revoked token would otherwise keep exporting from a tool pheebs no longer manages. */
+ *  rotated or revoked token would otherwise keep exporting from a tool pheebs no longer manages.
+ *  Silent on a bad file, because the resync runs inside a session's hook. */
 export function stripLegacyCodexOtel(path: string): void {
   if (!existsSync(path)) return;
-  const config = readLegacyConfig("codex", path);
+  const config = readLegacyConfig("codex", path, true);
   if (config && stripCodexOtel(config)) writeLegacyConfig("codex", path, config);
 }
 

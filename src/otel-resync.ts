@@ -41,7 +41,7 @@ export function resyncOtelConfigs(): void {
     else if (tool === "codex") legacyCodex.add(path);
   }
 
-  // Codex is no longer managed, so its exporter config cannot be refreshed, only stopped from
+  // Codex's exporter config is not managed, so it cannot be refreshed, only stopped from
   // sending a token that has since changed.
   for (const path of legacyCodex) {
     try {
