@@ -516,8 +516,8 @@ components:
           type: string
           description: |
             The model a subagent ran on. For `ai_tool: claude_code`, on an `Agent` call's
-            `tool_use_completed`, from the result's `resolvedModel`, a full model id. Cursor sets it
-            on `subagent_spawned`, passed through verbatim, and reports `default` on Auto. Kept only
+            `tool_use_completed`, from the result's `resolvedModel`, a full model id. An older Cursor client set it
+            on `subagent_spawned`, passed through verbatim, and reported `default` on Auto. Kept only
             when it is a short id token.
         requested_model:
           type: string
@@ -540,7 +540,7 @@ components:
           description: |
             On `context_compacted`, and for Codex also on `compaction_completed`. The
             `auto`/`manual` pair is guaranteed only for `claude_code` (it comes from the hook's
-            own CLI argument); Cursor and Codex pass the vendor's raw value through.
+            own CLI argument); an older Cursor or Codex client passed the vendor's raw value through.
             The Cursor and Codex values, and `compaction_completed`, are deprecated in 1.11.0.
         tool_intent:
           type: string
@@ -597,9 +597,8 @@ components:
           type: string
           description: |
             The reasoning effort level, from whichever field the harness puts it in. Claude Code
-            carries it on every event; Cursor carries it on `session_started`, `prompt_submitted`
-            and `turn_ended` only, and only from its GUI — its CLI sends no effort at all, so
-            absence on Cursor is as often the surface as the setting.
+            carries it on every event. An older Cursor client carried it on `session_started`,
+            `prompt_submitted` and `turn_ended` only, and only from its GUI.
         fast_mode:
           type: string
           deprecated: true

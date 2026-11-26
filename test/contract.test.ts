@@ -48,15 +48,18 @@ describe("openapi.yaml", () => {
       join(import.meta.dirname, "..", "docs", "backend-contract.md"),
       "utf-8",
     );
-    const paragraph = doc.slice(doc.indexOf("Contract 1.11.0"));
-    expect(paragraph).toContain("Contract 1.11.0");
-    for (const name of [...deprecated, ...DEPRECATED_EVENTS, "`cursor`", "`codex`"]) {
-      expect(paragraph).toContain(name);
+    const start = doc.indexOf("Contract 1.11.0");
+    expect(start).toBeGreaterThan(-1);
+    const paragraph = doc.slice(start, doc.indexOf("\n## ", start));
+    for (const name of [...deprecated, ...DEPRECATED_EVENTS, "cursor", "codex"]) {
+      expect(paragraph).toContain(`\`${name}\``);
     }
   });
 
   it("keeps the Cursor and Codex ai_tool values a backend may still receive", () => {
     expect(spec).toContain("\n          enum: [claude_code, cursor, codex]\n");
+    expect(spec).toContain("`cursor` and `codex` are deprecated in 1.11.0");
+    expect(spec).toContain("`permission_requested` are deprecated in\n            1.11.0");
   });
 
   it("documents the subagent model fields an Agent call carries", () => {

@@ -106,7 +106,7 @@ the transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning
   carry tokens the parent made, when its copy of a line names no requester. Do not read one
   session's total as only what that session spent.
 
-Contract 1.11.0 deprecates Cursor and Codex. The client now captures Claude Code only, so it always
+Contract 1.11.0 deprecates Cursor and Codex. The client captures Claude Code only, so it always
 sends `ai_tool: claude_code`, and nothing is removed from the schema. A backend may still hold or
 receive the deprecated values, because an older client keeps sending them and an event queued
 before the upgrade is still sent:

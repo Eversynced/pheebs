@@ -116,7 +116,7 @@ The context-window features in use: compaction, and the save, resume, and clear 
 | Resume and clear lifecycle (anchor where applicable) | Sessions started via resume or clear |
 | Compaction split (team stat) | The auto vs manual compaction ratio |
 
-Both anchors here are harness-limited, so on a harness that reports neither manual compaction nor session origin the competency reads Insufficient data. Context management is no longer the only competency that can lose its anchor this way: Artifacts rests on a single anchor, and that anchor was unobservable on Codex, so a Codex row in an old log cannot grade it. The registry records which harness each gap applies to, and which gaps are settled rather than merely unverified.
+Both anchors here are harness-limited, so on a harness that reports neither manual compaction nor session origin the competency reads Insufficient data. Artifacts also rests on a single anchor, which was unobservable on Codex, so a Codex row in an old log cannot grade it. The registry records which harness each gap applies to, and which gaps are settled rather than merely unverified.
 
 ### Orchestration
 
