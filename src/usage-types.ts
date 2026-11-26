@@ -60,6 +60,8 @@ export interface SessionRecord {
   endpoint: string;
   /** ms epoch of the last hook that touched the session. */
   touched_at: number;
+  /** ms epoch Pheebs first saw the session, kept across every later note. No usage before it is counted. */
+  first_seen: number;
 }
 
 /** What the flusher keeps for a session, in its own file, so a hook never writes it. */

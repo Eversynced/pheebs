@@ -132,7 +132,8 @@ const CLAUDE_NEEDLE = Buffer.from('"usage"');
  * `requestId` counts once at its largest value per field. A resumed, forked or background session's
  * file starts with a copy of another session's lines, so a request that `claims` says another file
  * counted first is skipped, and so is a line that names another session as the one that made the
- * request (ledger 2026-11-25, 2026-11-26). Nothing is persisted here. The dedup holds within
+ * request (ledger 2026-11-25, 2026-11-26). With `since`, a line stamped before it, or not stamped,
+ * is read past and not counted. Nothing is persisted here. The dedup holds within
  * one read: a read that ends between two lines of one streamed response counts that response again
  * on the next read, so the caller reads a transcript only once it has gone quiet.
  */
@@ -140,6 +141,7 @@ export async function readClaudeUsage(
   transcriptPath: string,
   cursors: Cursors = {},
   claims?: Claims,
+  since?: number,
 ): Promise<UsageRead> {
   const next: Cursors = { ...cursors };
   const ranges: UsageRead["ranges"] = {};
@@ -170,6 +172,7 @@ export async function readClaudeUsage(
         requestId?: unknown;
         sessionId?: unknown;
         requestSessionId?: unknown;
+        timestamp?: unknown;
         message?: Record<string, unknown>;
       };
       try {
@@ -180,6 +183,12 @@ export async function readClaudeUsage(
       const message = entry.message;
       const usage = message?.usage as Record<string, unknown> | undefined;
       if (entry.type !== "assistant" || !message || !usage) return;
+      // History from before `since` is not this install's to count, and a line that says nothing
+      // about when it was written cannot be shown to be after it.
+      if (since !== undefined) {
+        const at = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
+        if (!(at >= since)) return;
+      }
       // A line that names another session as the one that made the request is that session's own
       // line, copied here. Skipping it holds whichever file is read first (ledger 2026-11-26).
       if (typeof entry.requestSessionId === "string" && entry.requestSessionId !== entry.sessionId)

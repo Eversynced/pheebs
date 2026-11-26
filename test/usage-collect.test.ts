@@ -38,9 +38,10 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(base, { recursive: true, force: true }));
 
-function turn(id: string, model: string, input: number, output: number): string {
+function turn(id: string, model: string, input: number, output: number, at = NOW): string {
   return `${JSON.stringify({
     type: "assistant",
+    timestamp: new Date(at).toISOString(),
     requestId: `r-${id}`,
     message: {
       id,
@@ -196,12 +197,11 @@ describe("collectUsage", () => {
     expect(await collect(NOW + 11 * 60_000)).toBe(1);
   });
 
-  it("never sends a record captured under another backend, and forgets it", async () => {
+  it("never sends a record captured under another backend, and keeps it for a later hook", async () => {
     writeFileSync(transcript, turn("m1", "claude-opus-5-5", 2, 2));
     note(true);
     expect(await collect(NOW, queue, EP2)).toBe(0);
-    expect(readdirSync(root).filter((f) => /^[0-9a-f]{32}\.json$/.test(f))).toEqual([]);
-    expect(await collect()).toBe(0);
+    expect(readdirSync(root).filter((f) => /^[0-9a-f]{32}\.json$/.test(f))).toHaveLength(1);
   });
 
   it("sends an ended session that was not read yet after a token rotation on the same endpoint", async () => {
@@ -229,7 +229,7 @@ describe("collectUsage", () => {
     await collect();
     const later = NOW + 40 * 24 * 60 * 60 * 1000;
     expect(await collect(later)).toBe(0);
-    appendFileSync(transcript, turn("m2", "claude-opus-5-5", 3, 4));
+    appendFileSync(transcript, turn("m2", "claude-opus-5-5", 3, 4, later + 1));
     note(true, later + 1);
     expect(await collect(later + 2)).toBe(1);
     expect(queued().filter((e) => e.input_tokens === 3)).toHaveLength(1);
@@ -637,7 +637,7 @@ describe("noteSession", () => {
     const record = JSON.parse(readFileSync(join(root, file), "utf-8"));
     expect(record).toMatchObject({ touched_at: NOW + 5000, ended: true });
     expect(Object.keys(record).sort()).toEqual(
-      ["codebase", "ended", "endpoint", "session_id", "tool", "touched_at"].sort(),
+      ["codebase", "ended", "endpoint", "first_seen", "session_id", "tool", "touched_at"].sort(),
     );
   });
 
@@ -676,5 +676,89 @@ describe("usageEventId", () => {
     expect(usageEventId(NOW, "a")).toBe(usageEventId(NOW, "a"));
     expect(usageEventId(NOW, "a")).not.toBe(usageEventId(NOW, "b"));
     expect(newEventId()).toMatch(V7);
+  });
+});
+
+describe("usage from before Pheebs first saw the session", () => {
+  const noteAt = (now: number, endpoint = EP, ended = true) =>
+    noteSession(
+      { tool: "claude_code", session_id: "sess-1", codebase: "acme/api", endpoint, ended },
+      { root, now },
+    );
+  const sent = (dir: string) =>
+    listPending(dir)
+      .map((p) => JSON.parse(readFileSync(p.path, "utf-8")).input_tokens as number)
+      .sort((a, b) => a - b);
+  const HOUR = 60 * 60 * 1000;
+
+  it("sends only what a resumed old session added after it was first seen", async () => {
+    writeFileSync(
+      transcript,
+      turn("old1", "claude-opus-5-5", 1000, 1, NOW - 48 * HOUR) +
+        turn("old2", "claude-opus-5-5", 2000, 1, NOW - 24 * HOUR - 1) +
+        turn("new1", "claude-opus-5-5", 7, 1, NOW + 1000),
+    );
+    noteAt(NOW);
+    expect(await collect(NOW + 2000)).toBe(1);
+    expect(sent(queue)).toEqual([7]);
+  });
+
+  it("counts a line stamped exactly when the session was first seen", async () => {
+    writeFileSync(transcript, turn("m1", "claude-opus-5-5", 5, 1, NOW));
+    noteAt(NOW);
+    expect(await collect(NOW + 1000)).toBe(1);
+    expect(sent(queue)).toEqual([5]);
+  });
+
+  it("does not count a line with no timestamp, or one that is not a date", async () => {
+    const bare = JSON.parse(turn("m1", "claude-opus-5-5", 100, 1));
+    delete bare.timestamp;
+    const odd = JSON.parse(turn("m2", "claude-opus-5-5", 200, 1));
+    odd.timestamp = "yesterday";
+    writeFileSync(
+      transcript,
+      `${JSON.stringify(bare)}\n${JSON.stringify(odd)}\n${turn("m3", "claude-opus-5-5", 3, 1)}`,
+    );
+    noteAt(NOW);
+    expect(await collect(NOW + 1000)).toBe(1);
+    expect(sent(queue)).toEqual([3]);
+  });
+
+  it("keeps the first sighting through later notes", async () => {
+    noteAt(NOW, EP, false);
+    noteAt(NOW + 5 * HOUR);
+    const file = readdirSync(root).find((f) => /^[0-9a-f]{32}\.json$/.test(f)) as string;
+    expect(JSON.parse(readFileSync(join(root, file), "utf-8")).first_seen).toBe(NOW);
+  });
+
+  it("resends a session to a new endpoint from when it was first seen, not from the top of the file", async () => {
+    const queue2 = join(base, "queue2");
+    writeFileSync(
+      transcript,
+      turn("old", "claude-opus-5-5", 1000, 1, NOW - 48 * HOUR) +
+        turn("m1", "claude-opus-5-5", 100, 1, NOW + 1000),
+    );
+    noteAt(NOW);
+    await collect(NOW + 2000);
+    expect(sent(queue)).toEqual([100]);
+    appendFileSync(transcript, turn("m2", "claude-opus-5-5", 1, 1, NOW + 3000));
+    noteAt(NOW + 4000, EP2);
+    expect(await collect(NOW + 5000, queue2, EP2)).toBe(1);
+    expect(sent(queue2)).toEqual([101]);
+  });
+
+  it("keeps the first sighting when a flusher under the new endpoint runs before the session's next hook", async () => {
+    const queue2 = join(base, "queue2");
+    writeFileSync(
+      transcript,
+      turn("old", "claude-opus-5-5", 1000, 1, NOW - 48 * HOUR) +
+        turn("m1", "claude-opus-5-5", 100, 1, NOW + 1000),
+    );
+    noteAt(NOW);
+    await collect(NOW + 2000, queue, EP);
+    expect(await collect(NOW + 3000, queue2, EP2)).toBe(0);
+    noteAt(NOW + 4000, EP2);
+    expect(await collect(NOW + 5000, queue2, EP2)).toBe(1);
+    expect(sent(queue2)).toEqual([100]);
   });
 });

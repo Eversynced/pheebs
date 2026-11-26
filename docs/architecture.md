@@ -57,16 +57,19 @@ which is the sweep for sessions that never sent `session_end`
 `session_token_usage` event per model and scope, as a delta since the last read, then moves the
 session's byte offsets forward. The readers are in [`src/transcript-usage.ts`](../src/transcript-usage.ts):
 it counts each `message.id` and `requestId` once, skips a request another session's file already counted
-(a background, resumed or forked session's file starts with a copy), and adds the subagent files below the
-transcript. Cursor has no reader, because its transcripts carry no usage, and Codex is not read (see the
+(a background, resumed or forked session's file starts with a copy) and a line that names another session
+as the requester, never counts a line stamped before the session was first seen or not stamped at all,
+and adds the subagent files below the transcript. Cursor has no reader, because its transcripts carry no usage, and Codex is not read (see the
 [ledger](./spike-findings-ledger.md)).
 
 The lookup searches `CLAUDE_CONFIG_DIR`, `~/.claude` and each `~/.claude-*` directory with a
 `projects` folder, one folder level down. A transcript in a config directory outside those is not found, and its
 usage is never sent: a known limit. A transcript not found yet is searched for again every 10
 minutes until the record expires after 30 days. A session record carries a hash of the backend
-endpoint (the configured base URL) it was recorded under, and the flusher drops one recorded under
-any other, so usage never goes to a backend it was not captured for. A token rotated on the same
+endpoint (the configured base URL) it was recorded under, and the flusher skips one recorded under
+any other, so usage never goes to a backend it was not captured for. The record also keeps when Pheebs
+first saw the session (`first_seen`), through every later note and through a change of backend, so a
+session resumed after the install sends only what it did from then on, never the history in its file. A token rotated on the same
 endpoint changes nothing: a session that ended but was not read yet is still sent, to the queue of
 the token now configured, and the flusher only runs while a backend and token are configured. A
 session with no `session_end` is read only when its transcript has also gone quiet for 30 minutes.
@@ -77,9 +80,10 @@ from its old offsets, 50,000 at most) and, for each request counted, a 16-charac
 with a digest of the file that counted it, never an id or any text, so a later file that repeats
 the request is skipped (an entry goes after 180 days, 250,000 at most, oldest dropped first). The file
 names the endpoint it was built for. When the endpoint differs, the marks and the claims go together
-and every session is read from offset 0, so the new backend receives the whole session once, then
-only what is added. No history of the earlier endpoint is kept: going back to it resets again and
-sends the whole session to it again. The hook cannot share that file, since hooks run at once in
+and every session is read from offset 0, but a line stamped before the session's `first_seen` is still
+not counted, so the new backend receives the session from when Pheebs first saw it, once, then only
+what is added. No history of the earlier endpoint is kept: going back to it resets again and
+sends the session to it again from `first_seen`. The hook cannot share that file, since hooks run at once in
 many sessions and must never wait on a lock, so each session keeps its own small record, which only
 a hook writes. A flusher takes a lock around each pass, and one that finds it taken skips the pass,
 so two flushers cannot overwrite each other's marks or claims. For N sessions that is N records and

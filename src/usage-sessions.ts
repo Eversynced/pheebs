@@ -53,7 +53,8 @@ function isRecord(value: unknown): value is SessionRecord {
     typeof r.codebase === "string" &&
     typeof r.ended === "boolean" &&
     typeof r.endpoint === "string" &&
-    Number.isFinite(r.touched_at)
+    Number.isFinite(r.touched_at) &&
+    Number.isFinite(r.first_seen)
   );
 }
 
@@ -74,7 +75,7 @@ function writeAtomic(path: string, value: unknown): void {
  * here. It throws on an unwritable folder, and the caller treats that as nothing to record.
  */
 export function noteSession(
-  record: Omit<SessionRecord, "touched_at" | "ended"> & { ended?: boolean },
+  record: Omit<SessionRecord, "touched_at" | "ended" | "first_seen"> & { ended?: boolean },
   { root = SESSIONS_ROOT, now = Date.now() }: Options = {},
 ): void {
   mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -83,7 +84,10 @@ export function noteSession(
   // Only a start or an end says whether the session is over. A Stop that lands after SessionEnd
   // must not reopen it.
   const ended = record.ended ?? previous?.ended === true;
-  writeAtomic(path, { ...record, ended, touched_at: now });
+  // Kept through a change of backend too, so a session resent to a new one starts where Pheebs
+  // first saw it and never at the top of a file that holds history from before.
+  const first_seen = Number.isFinite(previous?.first_seen) ? previous?.first_seen : now;
+  writeAtomic(path, { ...record, ended, touched_at: now, first_seen });
 }
 
 /** Every record the hook wrote, whatever it was recorded under. */
@@ -101,16 +105,6 @@ export function listSessions(root = SESSIONS_ROOT): { key: string; record: Sessi
     if (isRecord(record)) sessions.push({ key: name.slice(0, -5), record });
   }
   return sessions;
-}
-
-/**
- * Drops a record, for one recorded under a backend that is no longer the configured one. It stays
- * a hook's file: the flusher only ever removes it.
- */
-export function forgetRecord(key: string, root = SESSIONS_ROOT): void {
-  try {
-    rmSync(join(root, `${key}.json`), { force: true });
-  } catch {}
 }
 
 /** Drops records untouched for 30 days, and files left by earlier layouts. */

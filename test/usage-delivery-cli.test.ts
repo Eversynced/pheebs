@@ -123,6 +123,7 @@ function transcript(): string {
   mkdirSync(join(home, ".claude", "projects", "proj"), { recursive: true });
   const line = JSON.stringify({
     type: "assistant",
+    timestamp: new Date().toISOString(),
     requestId: "r1",
     message: {
       id: "m1",
@@ -138,6 +139,8 @@ function transcript(): string {
 describe("session token usage delivery", () => {
   it("sends the usage after session_end, without the path or any content", async () => {
     configure(await startBackend());
+    expect(runHook(["hook", "session_started"], { session_id: "sess-0001-abcd" })).toBe(0);
+    await new Promise((r) => setTimeout(r, 20));
     const path = transcript();
     expect(runHook(["hook", "session_end"], { session_id: "sess-0001-abcd" })).toBe(0);
     await until(() => stored().some((e) => e.event === "session_token_usage"));

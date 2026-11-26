@@ -5,13 +5,7 @@ import { EVENTS } from "./hooks/types.js";
 import { enqueue, tryAcquireLock } from "./outbox.js";
 import { locateTranscript } from "./transcript-locate.js";
 import { readClaudeUsage } from "./transcript-usage.js";
-import {
-  forgetRecord,
-  listSessions,
-  loadUsageState,
-  pruneRecords,
-  SESSIONS_ROOT,
-} from "./usage-sessions.js";
+import { listSessions, loadUsageState, pruneRecords, SESSIONS_ROOT } from "./usage-sessions.js";
 import type { SessionRecord } from "./usage-types.js";
 
 // A session that never sent SessionEnd is read once it has been quiet this long. A transcript is
@@ -65,10 +59,8 @@ export async function collectUsage({
     state.prune(pruneRecords(now, root));
     for (const { key, record } of listSessions(root)) {
       if (!lock.refresh() || (refresh && !refresh())) break;
-      if (record.endpoint !== endpoint) {
-        forgetRecord(key, root);
-        continue;
-      }
+      // Another backend's record stays, so a later hook under this one carries its first_seen on.
+      if (record.endpoint !== endpoint) continue;
       const mark = state.markOf(key);
       const due = record.ended || now - record.touched_at >= idleMs;
       const settled = `${record.touched_at}:${record.ended}`;
@@ -87,10 +79,12 @@ export async function collectUsage({
         // A session with no SessionEnd is read only once its transcript has gone quiet: the record
         // is touched by the hooks, so a long turn can outlast the window while still being written.
         if (!record.ended && now - stamp < idleMs) continue;
-        const result = await readClaudeUsage(path, mark.cursors, {
-          session: key,
-          ownerOf: state.ownerOf,
-        });
+        const result = await readClaudeUsage(
+          path,
+          mark.cursors,
+          { session: key, ownerOf: state.ownerOf },
+          record.first_seen,
+        );
         const pass = createHash("sha256").update(JSON.stringify(result.ranges)).digest("hex");
         for (const row of result.rows) {
           const id = usageEventId(

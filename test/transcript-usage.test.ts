@@ -184,6 +184,33 @@ describe("readClaudeUsage", () => {
     expect(({} as Record<string, unknown>).input_tokens).toBeUndefined();
   });
 
+  describe("a read that starts at a given time", () => {
+    const stamped = (id: string, at: string | undefined, input: number) =>
+      mark(assistant(id, `r-${id}`, "claude-opus-5-5", { input, output: 1 }), { timestamp: at });
+    const mark = (line: string, extra: Record<string, unknown>) =>
+      JSON.stringify({ ...JSON.parse(line), ...extra });
+
+    it("reads past a line stamped before it, or not stamped, without counting it", async () => {
+      const path = write(
+        join(dir, "s.jsonl"),
+        lines(
+          stamped("a", "2026-01-01T00:00:00.000Z", 100),
+          stamped("b", undefined, 200),
+          stamped("c", "2026-06-01T00:00:00.000Z", 3),
+        ),
+      );
+      const read = await readClaudeUsage(path, {}, undefined, Date.parse("2026-03-01T00:00:00Z"));
+      expect(read.rows).toMatchObject([{ input_tokens: 3 }]);
+      expect(read.cursors[""]?.offset).toBeGreaterThan(0);
+    });
+
+    it("does not let a skipped line claim its request for the session that read it", async () => {
+      const path = write(join(dir, "s.jsonl"), lines(stamped("a", "2026-01-01T00:00:00.000Z", 9)));
+      const read = await readClaudeUsage(path, {}, undefined, Date.parse("2026-03-01T00:00:00Z"));
+      expect(read.claimed).toEqual({});
+    });
+  });
+
   describe("a file that repeats another session's lines", () => {
     // What the flusher keeps between reads: which file counted a request first.
     const shared = new Map<string, string>();
