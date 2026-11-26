@@ -131,7 +131,8 @@ const CLAUDE_NEEDLE = Buffer.from('"usage"');
  * it, from the offsets in `cursors`. A streamed response repeats its line, so each `message.id` and
  * `requestId` counts once at its largest value per field. A resumed, forked or background session's
  * file starts with a copy of another session's lines, so a request that `claims` says another file
- * counted first is skipped (ledger 2026-11-25). Nothing is persisted here. The dedup holds within
+ * counted first is skipped, and so is a line that names another session as the one that made the
+ * request (ledger 2026-11-25, 2026-11-26). Nothing is persisted here. The dedup holds within
  * one read: a read that ends between two lines of one streamed response counts that response again
  * on the next read, so the caller reads a transcript only once it has gone quiet.
  */
@@ -164,7 +165,13 @@ export async function readClaudeUsage(
     const owner = digest(`${claims?.session ?? ""}\n${rel}`);
     const byKey = new Map<string, Tally>();
     const end = await scanLines(path, from, CLAUDE_NEEDLE, (line) => {
-      let entry: { type?: unknown; requestId?: unknown; message?: Record<string, unknown> };
+      let entry: {
+        type?: unknown;
+        requestId?: unknown;
+        sessionId?: unknown;
+        requestSessionId?: unknown;
+        message?: Record<string, unknown>;
+      };
       try {
         entry = JSON.parse(line);
       } catch {
@@ -173,6 +180,10 @@ export async function readClaudeUsage(
       const message = entry.message;
       const usage = message?.usage as Record<string, unknown> | undefined;
       if (entry.type !== "assistant" || !message || !usage) return;
+      // A line that names another session as the one that made the request is that session's own
+      // line, copied here. Skipping it holds whichever file is read first (ledger 2026-11-26).
+      if (typeof entry.requestSessionId === "string" && entry.requestSessionId !== entry.sessionId)
+        return;
       const { id, model } = message;
       if (typeof id !== "string" || !isModelId(model)) return;
       if (!isCount(usage.input_tokens) || !isCount(usage.output_tokens)) return;

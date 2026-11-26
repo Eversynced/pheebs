@@ -45,6 +45,16 @@ privacy line.
 
 ## Findings
 
+### 2026-11-26: `requestSessionId` marks only lines copied from another session, so the reader skips them [Status: CONFIRMED on 1,799 local files, the 19 copies without it UNVERIFIED]
+
+- **Tool(s):** claude_code (local transcripts under two config directories: 230 top-level session files and their 1,569 subagent files)
+- **Hook / event:** none. A transcript read by the flusher (`session_token_usage`)
+- **Claim (doc/assumption):** the 2026-11-25 entry saw `requestSessionId` on 55 copies and on no own line, and left open whether it could ever sit on a session's own line.
+- **Finding:** of 91,129 assistant lines with usage, 55 carry `requestSessionId`. All 55 name a session other than the file's own (`sessionId` on the line), and all 55 repeat a `message.id` and `requestId` that sits in a file of the session they name. None of the 91,074 other lines carries it, and 1,318 of those repeat a request found in another file, so the field is a sufficient marker of a copy and not a necessary one. The other 19 copies in the two background files carry only `sessionKind`.
+- **Method:** a `node` script over every `*.jsonl` of the two directories, grouping assistant lines by `message.id` and `requestId` and comparing `requestSessionId` with the line's `sessionId` and with the sessions that hold the same request. Counts and field names only. UNVERIFIED: whether Claude Code writes the field in every version, and why 19 copies lack it.
+- **Impact:** the reader skips a line whose `requestSessionId` names another session, whichever file is read first, so a background session that ends before its parent no longer counts the parent's lines that carry it. The cross-file dedup stays for the rest, so a copy without the field goes to the file read first, which the contract says.
+- **Ref:** none
+
 ### 2026-11-25: A Claude Code session file can start with a copy of an older session's lines; `sessionKind` marks the whole file, not only the copy [Status: CONFIRMED on 230 local transcripts, what creates these files and the unmarked copies' cause UNVERIFIED]
 
 - **Tool(s):** claude_code (local transcripts under two config directories; the marker and pair counts use the 230 top-level session files, the request counts further down use those plus their 1,569 subagent files)
