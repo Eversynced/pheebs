@@ -27,13 +27,21 @@ describe("openapi.yaml", () => {
     );
   });
 
+  it("carries the version that deprecated Cursor and Codex, and marks what they produced", () => {
+    expect(spec).toContain('\n  version: "1.11.0"\n');
+    for (const field of ["rule_attachment_count", "fast_mode", "failure_type", "approved"]) {
+      expect(spec).toMatch(
+        new RegExp(`\\n {8}${field}:\\n(?: {10}.*\\n)*? {10}deprecated: true\\n`),
+      );
+    }
+    expect(
+      readFileSync(join(import.meta.dirname, "..", "docs", "backend-contract.md"), "utf-8"),
+    ).toContain("Contract 1.11.0");
+  });
+
   it("documents the subagent model fields an Agent call carries", () => {
     expect(spec).toContain("\n        subagent_model:\n");
     expect(spec).toContain("\n        requested_model:\n");
-  });
-
-  it("carries the version that introduced session_token_usage", () => {
-    expect(spec).toContain('\n  version: "1.10.0"\n');
   });
 
   it("documents the fields a session_token_usage event carries", () => {

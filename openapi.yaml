@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.10.0"
+  version: "1.11.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -435,6 +435,10 @@ components:
             - permission_requested
             - artifact_found
             - session_token_usage
+          description: |
+            `tool_invoked`, `compaction_completed` and `permission_requested` are deprecated in
+            1.11.0: only Cursor and Codex produced them, and the client stops sending them. A
+            backend may still hold or receive them from an older client, so keep accepting them.
         codebase:
           type: string
           description: |
@@ -444,6 +448,10 @@ components:
         ai_tool:
           type: string
           enum: [claude_code, cursor, codex]
+          description: |
+            `cursor` and `codex` are deprecated in 1.11.0: the client stops sending them, because
+            Cursor and Codex support was removed, so a new client always sends `claude_code`. A
+            backend may still hold or receive them from an older client.
         session_id:
           type: string
           description: |
@@ -534,6 +542,7 @@ components:
             On `context_compacted`, and for Codex also on `compaction_completed`. The
             `auto`/`manual` pair is guaranteed only for `claude_code` (it comes from the hook's
             own CLI argument); Cursor and Codex pass the vendor's raw value through.
+            The Cursor and Codex values, and `compaction_completed`, are deprecated in 1.11.0.
         tool_intent:
           type: string
           enum: [test_run, build, typecheck, lint, vcs, read, edit, other]
@@ -574,7 +583,10 @@ components:
         rule_attachment_count:
           type: integer
           minimum: 1
+          deprecated: true
           description: |
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
+
             Cursor only, on `prompt_submitted`: how many rule files were attached to the prompt.
             Never accompanied by a path — the vendor entry's `file_path` is not read. Absent
             means "no rule seen", which is NOT the same as a measured zero: Cursor populates
@@ -592,7 +604,10 @@ components:
             absence on Cursor is as often the surface as the setting.
         fast_mode:
           type: string
+          deprecated: true
           description: |
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
+
             Cursor only, on the same three events as `effort`. The vendor's undocumented `fast`
             model setting, passed through verbatim — a STRING, and the only value observed is
             `"true"`. Do not treat it as a boolean: `"false"` would be truthy.
@@ -655,20 +670,38 @@ components:
             On `session_token_usage`: where the counts were read. Only `transcript` exists.
         status:
           type: string
-          description: Cursor — how a turn or sub-agent run ended.
+          deprecated: true
+          description: |
+            Cursor: how a turn or sub-agent run ended.
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         failure_type:
           type: string
-          description: Cursor — on `tool_use_failed`.
+          deprecated: true
+          description: |
+            Cursor: on `tool_use_failed`.
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         permission_type:
           type: string
-          description: Codex — on `permission_requested`.
+          deprecated: true
+          description: |
+            Codex: on `permission_requested`.
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         approved:
           type: boolean
-          description: Codex — on `permission_requested`.
+          deprecated: true
+          description: |
+            Codex: on `permission_requested`.
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         conversation_id:
           type: string
+          deprecated: true
+          description: |
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         generation_id:
           type: string
+          deprecated: true
+          description: |
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         requests_verification:
           type: boolean
           description: Rides on the prompt event beside `prompt_intent`, not only in ClassifyResponse.

@@ -3,7 +3,7 @@
 **Last updated:** Sep 24, 2026
 
 > **Scope.** This repository is the capture client. It implements Layer 1: hooks that emit generic
-> events from Claude Code, Cursor, and Codex, and a repo scan for AI-config artifacts. Layer 2 is
+> events from Claude Code (rows from Cursor and Codex, captured before their removal, remain in old logs), and a repo scan for AI-config artifacts. Layer 2 is
 > not implemented here. Its signals are computed by a backend from the captured events, using
 > fields defined in [`openapi.yaml`](../openapi.yaml) and
 > [`backend-contract.md`](./backend-contract.md). Read the model below as what the facts are read
@@ -22,7 +22,7 @@ Both dimensions are measured by Pheebs from telemetry. How Pheebs detects profic
 
 # Layer 1: AI harness repertoire
 
-Computed over a trailing 4-week window, using a shared event vocabulary across Claude Code, Cursor, and Codex, a repo artifact scan, and native OpenTelemetry.
+Computed over a trailing 4-week window, using a shared event vocabulary from Claude Code, a repo artifact scan, and native OpenTelemetry.
 
 ## The unit: a practice
 
@@ -116,7 +116,7 @@ The context-window features in use: compaction, and the save, resume, and clear 
 | Resume and clear lifecycle (anchor where applicable) | Sessions started via resume or clear |
 | Compaction split (team stat) | The auto vs manual compaction ratio |
 
-Both anchors here are harness-limited, so on a harness that reports neither manual compaction nor session origin the competency reads Insufficient data. Context management is no longer the only competency that can lose its anchor this way: Artifacts rests on a single anchor, and as of 2026-09-11 that anchor is unobservable on Codex. The registry records which harness each gap applies to, and which gaps are settled rather than merely unverified.
+Both anchors here are harness-limited, so on a harness that reports neither manual compaction nor session origin the competency reads Insufficient data. Context management is no longer the only competency that can lose its anchor this way: Artifacts rests on a single anchor, and as of 2026-09-11 that anchor was unobservable on Codex, which the client no longer captures. The registry records which harness each gap applies to, and which gaps are settled rather than merely unverified.
 
 ### Orchestration
 
