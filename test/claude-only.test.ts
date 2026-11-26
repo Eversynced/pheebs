@@ -246,6 +246,22 @@ describe("an old Codex install after the token or endpoint changes", () => {
   });
 });
 
+describe("a malformed old Codex config during the token resync", () => {
+  it("is skipped without a word, since the resync runs inside a hook", () => {
+    const home = tempDir("pheebs-home-");
+    const cwd = tempDir("pheebs-cwd-");
+    const bad = join(cwd, "repo", ".codex", "config.toml");
+    write(bad, "[[hooks\nnot toml");
+    write(join(home, ".pheebs", "installs.json"), JSON.stringify([{ tool: "codex", path: bad }]));
+    write(join(home, ".pheebs", "config.json"), JSON.stringify({ baseUrl: "https://old.example" }));
+
+    const result = runCli(["config", "unset", "base-url"], { HOME: home, USERPROFILE: home }, cwd);
+    expect(result.status).toBe(0);
+    expect(result.stderr).not.toContain("malformed");
+    expect(readFileSync(bad, "utf-8")).toBe("[[hooks\nnot toml");
+  });
+});
+
 describe("uninstall of a malformed old config", () => {
   it("leaves the file alone and keeps its install record", () => {
     const home = tempDir("pheebs-home-");
