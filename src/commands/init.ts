@@ -222,7 +222,7 @@ export async function runInitInteractive(): Promise<void> {
     if (isCancel(remove)) return cancel("Aborted, nothing was changed.");
     if (remove) {
       const { removeFromJsonConfig } = await import("./uninstall.js");
-      removeFromJsonConfig(resolveSettingsPath(false).path, AI_TOOLS.CLAUDE_CODE);
+      removeFromJsonConfig(resolveSettingsPath(false).path);
     }
   }
 

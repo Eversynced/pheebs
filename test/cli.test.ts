@@ -260,7 +260,6 @@ describe("developer identity", () => {
     }
   });
 
-  // Needs a detected Claude Code, because doctor stops before the identity lines without one.
   describe("in doctor", () => {
     let home: string;
     let cwd: string;

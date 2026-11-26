@@ -4,7 +4,7 @@ import { resolveSettingsPath } from "./commands/path.js";
 import { protectToken } from "./git-exclude.js";
 import { AI_TOOLS } from "./hooks/definitions.js";
 import { listInstalls } from "./installs.js";
-import { legacyConfigPaths, stripLegacyCodexOtel } from "./legacy.js";
+import { legacyCodexPaths, stripLegacyCodexOtel } from "./legacy.js";
 import { hasClaudeOtel, syncClaudeOtelEnv } from "./otel.js";
 import { restrictToOwner } from "./pheebs-store.js";
 
@@ -34,11 +34,7 @@ export function resyncOtelConfigs(): void {
     resolveSettingsPath(true).path,
   ]);
 
-  const legacyCodex = new Set(
-    legacyConfigPaths()
-      .filter((entry) => entry.tool === "codex")
-      .map((entry) => entry.path),
-  );
+  const legacyCodex = new Set(legacyCodexPaths());
 
   for (const { tool, path } of listInstalls()) {
     if (tool === AI_TOOLS.CLAUDE_CODE) targets.add(path);

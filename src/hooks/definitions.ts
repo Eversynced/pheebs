@@ -41,12 +41,10 @@ export function isPheebsEntry(entry: unknown): boolean {
   }
   const obj = entry as Record<string, unknown>;
 
-  // Flat format: { command: "pheebs hook-cursor ..." }
   if (typeof obj.command === "string" && obj.command.includes("pheebs hook")) {
     return true;
   }
 
-  // Nested format: { hooks: [{ command: "pheebs hook ..." }] }
   if (!Array.isArray(obj.hooks)) {
     return false;
   }
