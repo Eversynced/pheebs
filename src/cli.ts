@@ -5,9 +5,9 @@ import { PHEEBS_VERSION } from "./version.js";
 
 const args = process.argv.slice(2);
 
-// Cursor and Codex support was removed, but an install made before that still calls these. They
-// must exit 0 without reading stdin, writing, or sending, so the old agent is never slowed or
-// broken while the developer gets round to `pheebs uninstall`.
+// Existing Cursor and Codex hook entries still call these. They must exit 0 without reading
+// stdin, writing, or sending, so that agent is never slowed or broken before `pheebs uninstall`
+// clears the entries.
 const REMOVED_HOOK_COMMANDS = ["hook-cursor", "hook-codex"];
 const REMOVED_TOOL_FLAGS = ["--cursor", "--codex"];
 

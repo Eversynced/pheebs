@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -6,10 +6,9 @@ import { stripBom } from "./bom.js";
 import { isPheebsEntry } from "./hooks/definitions.js";
 
 /**
- * What `uninstall` needs to clear an install made when Cursor and Codex were supported.
- * Nothing here writes a hook: both tools are gone from `init`, and the only reason this file
- * exists is that their hooks and Codex's exporter config still sit in developers' config files
- * and still call this binary.
+ * What `uninstall` needs to clear Cursor and Codex hooks and Codex's exporter config.
+ * Nothing here writes a hook: `init` does not manage either tool, and the only reason this file
+ * exists is that their entries can still sit in developers' config files and call this binary.
  */
 
 export const LEGACY_TOOLS = ["cursor", "codex"] as const;
@@ -56,13 +55,14 @@ function stripPheebsHooks(hooks: Record<string, unknown>): number {
 }
 
 /** Codex's exporter config sat under `[otel]`, with the token in its headers. Only a table that
- *  carries a pheebs token is ours to remove: the developer may have an `[otel]` of their own. */
+ *  carries a pheebs token is ours to remove: the developer may have an `[otel]` of their own.
+ *  `config set token` only accepts `pheebs_` tokens, so the prefix is how a token of ours shows. */
 function stripCodexOtel(config: Record<string, unknown>): boolean {
   if (!JSON.stringify(config.otel ?? null).includes("Bearer pheebs_")) return false;
   delete config.otel;
-  const analytics = config.analytics as Record<string, unknown> | undefined;
-  if (analytics) {
-    delete analytics.enabled;
+  const analytics = config.analytics;
+  if (typeof analytics === "object" && analytics !== null && !Array.isArray(analytics)) {
+    delete (analytics as Record<string, unknown>).enabled;
     if (Object.keys(analytics).length === 0) delete config.analytics;
   }
   return true;
@@ -73,8 +73,14 @@ function readLegacyConfig(
   path: string,
   quiet = false,
 ): Record<string, unknown> | undefined {
+  let raw: string;
   try {
-    const raw = stripBom(readFileSync(path, "utf-8"));
+    raw = stripBom(readFileSync(path, "utf-8"));
+  } catch {
+    if (!quiet) console.warn(`pheebs: could not read ${path}, skipping`);
+    return undefined;
+  }
+  try {
     const config = tool === "codex" ? parseToml(raw) : JSON.parse(raw);
     if (typeof config === "object" && config !== null && !Array.isArray(config)) {
       return config as Record<string, unknown>;
@@ -84,11 +90,13 @@ function readLegacyConfig(
   return undefined;
 }
 
+/** Renamed into place, so a crash mid-write cannot leave a truncated file the developer owns. */
 function writeLegacyConfig(tool: LegacyTool, path: string, config: Record<string, unknown>): void {
-  writeFileSync(
-    path,
-    tool === "codex" ? `${stringifyToml(config)}\n` : `${JSON.stringify(config, null, 2)}\n`,
-  );
+  const text =
+    tool === "codex" ? `${stringifyToml(config)}\n` : `${JSON.stringify(config, null, 2)}\n`;
+  const temp = `${path}.pheebs-tmp`;
+  writeFileSync(temp, text, { mode: statSync(path).mode & 0o777 });
+  renameSync(temp, path);
 }
 
 /** Removes the pheebs exporter table from a recorded Codex config, for the token resync: a
