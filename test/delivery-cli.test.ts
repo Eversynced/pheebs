@@ -180,7 +180,6 @@ const queued = () => {
 };
 
 describe("hook delivery", () => {
-  // The agent can still wait on a hook process, so its lifetime must stay short.
   it("exits promptly when the backend is unreachable", () => {
     configure("http://10.255.255.1");
     const { status, ms } = runHook(["hook", "turn_ended"], { session_id: "s1" });
@@ -284,7 +283,6 @@ describe("hook delivery", () => {
   it("doctor reports the queue for the configured backend and token", () => {
     configure("http://10.255.255.1");
     runHook(["hook", "turn_ended"], { session_id: "s1" });
-    // Doctor stops before the queue lines unless it finds Claude Code.
     mkdirSync(join(home, ".claude"), { recursive: true });
     const doctor = (): string =>
       spawnSync(process.execPath, [cliPath, "doctor"], {

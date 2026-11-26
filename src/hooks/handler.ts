@@ -398,8 +398,6 @@ export async function handleHookEvent(
     return;
   }
 
-  // Cursor runs these hooks too, and it is no longer a tool pheebs records: taking its events here
-  // would log each one as `claude_code`.
   if (tool === AI_TOOLS.CLAUDE_CODE && isCursorPayload(payload)) return;
 
   if (process.env.PHEEBS_DEBUG) {

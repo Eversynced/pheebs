@@ -187,16 +187,12 @@ function diagnose(scope: DoctorScope): boolean {
   const found = checked.filter((c) => !c.result.fatal && c.result.registeredTypes > 0);
 
   if (found.length === 0) {
-    // Report against the scope an install would land in, so the hint matches the fix, but
-    // name every path looked at rather than implying only one was.
     const [primary, ...rest] = checked;
     const alsoChecked = rest.map((c) => c.result.settingsPath);
     reportToolResult(
       alsoChecked.length > 0
         ? {
             ...primary.result,
-            // A file that exists with no pheebs hooks in it, as `uninstall` leaves one, has
-            // no fatal of its own.
             fatal: `${primary.result.fatal ?? `no pheebs hooks in ${primary.result.settingsPath}`} (also checked ${alsoChecked.join(", ")})`,
           }
         : primary.result,

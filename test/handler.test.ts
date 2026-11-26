@@ -512,7 +512,6 @@ describe("handleHookEvent — validation guards", () => {
 
   it("ignores an event not registered for the given tool", async () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
-    // artifact_found is a valid pheebs event, but no hook registers it.
     await handleHookEvent("claude_code", "artifact_found", []);
     expect(err).toHaveBeenCalledWith(expect.stringContaining("not registered"));
   });
