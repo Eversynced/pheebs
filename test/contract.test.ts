@@ -44,6 +44,7 @@ describe("openapi.yaml", () => {
         new RegExp(`\\n {8}${field}:\\n(?: {10}.*\\n)*? {10}deprecated: true\\n`),
       );
     }
+    expect(spec.split("Deprecated in 1.11.0:").length - 1).toBe(deprecated.length);
     const doc = readFileSync(
       join(import.meta.dirname, "..", "docs", "backend-contract.md"),
       "utf-8",
