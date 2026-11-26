@@ -58,7 +58,7 @@ if (REMOVED_HOOK_COMMANDS.includes(args[0])) {
   process.exit(0);
 } else if (TOOL_FLAG_COMMANDS.includes(args[0]) && hasFlag(...REMOVED_TOOL_FLAGS)) {
   console.error(
-    "pheebs: Cursor and Codex support was removed; `pheebs uninstall` clears the old hooks, and the Claude Code ones too.",
+    "pheebs supports Claude Code only; `pheebs uninstall` clears old Cursor and Codex hooks, and the Claude Code ones too.",
   );
   process.exit(1);
 } else if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {

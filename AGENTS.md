@@ -176,8 +176,8 @@ since nothing in a fresh repo is guaranteed to ignore `.claude/settings.local.js
 
 ## Old Cursor and Codex installs
 
-Claude Code is the only supported agent. An install from when Cursor and Codex were
-supported still calls `pheebs hook-cursor` and `pheebs hook-codex`, so those exit 0 silently without
+Claude Code is the only supported agent. `pheebs hook-cursor` and `pheebs hook-codex`,
+which an old Cursor or Codex install still calls, exit 0 silently without
 reading stdin, writing, or sending, and `init`, `doctor` and `scan` refuse
 `--cursor` and `--codex` with a pointer to `pheebs uninstall`, which clears the old
 hooks and Codex's exporter table. Old log lines with a Cursor or Codex `ai_tool`

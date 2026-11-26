@@ -1,4 +1,12 @@
-import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -60,6 +68,7 @@ function stripPheebsHooks(hooks: Record<string, unknown>): number {
 function stripCodexOtel(config: Record<string, unknown>): boolean {
   if (!JSON.stringify(config.otel ?? null).includes("Bearer pheebs_")) return false;
   delete config.otel;
+  // The old exporter setup also switched `[analytics] enabled` on, which Codex needs to export.
   const analytics = config.analytics;
   if (typeof analytics === "object" && analytics !== null && !Array.isArray(analytics)) {
     delete (analytics as Record<string, unknown>).enabled;
@@ -90,13 +99,20 @@ function readLegacyConfig(
   return undefined;
 }
 
-/** Renamed into place, so a crash mid-write cannot leave a truncated file the developer owns. */
+/** Renamed into place, so a crash mid-write cannot leave a truncated file the developer owns.
+ *  Written beside the real file, because a symlinked config (a dotfiles manager) must stay one. */
 function writeLegacyConfig(tool: LegacyTool, path: string, config: Record<string, unknown>): void {
   const text =
     tool === "codex" ? `${stringifyToml(config)}\n` : `${JSON.stringify(config, null, 2)}\n`;
-  const temp = `${path}.pheebs-tmp`;
-  writeFileSync(temp, text, { mode: statSync(path).mode & 0o777 });
-  renameSync(temp, path);
+  const target = realpathSync(path);
+  const temp = `${target}.pheebs-tmp`;
+  try {
+    writeFileSync(temp, text, { mode: statSync(target).mode & 0o777 });
+    renameSync(temp, target);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
 }
 
 /** Removes the pheebs exporter table from a recorded Codex config, for the token resync: a

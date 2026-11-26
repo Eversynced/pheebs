@@ -2,16 +2,18 @@ import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { afterAll, describe, expect, it } from "vitest";
 
@@ -110,7 +112,7 @@ describe("removed tool flags", () => {
       expect(result.status).toBe(1);
       const lines = `${result.stdout}${result.stderr}`.split("\n").filter(Boolean);
       expect(lines).toHaveLength(1);
-      expect(lines[0]).toContain("support was removed");
+      expect(lines[0]).toContain("supports Claude Code only");
       expect(lines[0]).toContain("pheebs uninstall");
       expect(listFiles(cwd)).toEqual([]);
       expect(listFiles(home)).toEqual([]);
@@ -303,6 +305,23 @@ describe("uninstall of a Codex config with unusual shapes", () => {
     expect(statSync(codex).mode & 0o777).toBe(0o600);
     expect(result.stderr).toContain("could not read");
     expect(result.stderr).not.toContain("malformed");
+  });
+});
+
+describe("uninstall of a symlinked Codex config", () => {
+  it("clears the real file and keeps the link", () => {
+    const home = tempDir("pheebs-home-");
+    const cwd = tempDir("pheebs-cwd-");
+    const real = join(tempDir("pheebs-dotfiles-"), "config.toml");
+    write(real, codexFixture());
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    symlinkSync(real, join(home, ".codex", "config.toml"));
+
+    const result = runCli(["uninstall"], { HOME: home, USERPROFILE: home }, cwd);
+    expect(result.status).toBe(0);
+    expect(lstatSync(join(home, ".codex", "config.toml")).isSymbolicLink()).toBe(true);
+    expect((parseToml(readFileSync(real, "utf-8")) as { otel?: unknown }).otel).toBeUndefined();
+    expect(readdirSync(dirname(real))).toEqual(["config.toml"]);
   });
 });
 
