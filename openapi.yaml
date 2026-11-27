@@ -1067,7 +1067,7 @@ components:
             coverage_index:
               type: object
               description: |
-                Practices at Recurring over practices that apply on this engineer's harness mix.
+                Practices at Recurring over practices that apply on this engineer's harness.
                 Reported as its two parts rather than a percentage, so the consumer renders the
                 share and the denominator without the backend deciding the rounding.
               properties:

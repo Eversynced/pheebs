@@ -49,7 +49,7 @@ The two differ in what they claim about the future, and the difference is worth 
 
 Never report a measurement gap as Unobserved. Unobserved says the engineer did not do the thing; if the detector could not have seen it, that sentence is false, and the model exists to make behaviour legible rather than to manufacture a verdict. The conditions that produce *Insufficient data* are listed under [Windows and placement](#windows-and-placement).
 
-A competency inherits the state of its anchor practice. Anchors are the core practices of a competency; most are available and detectable on Claude Code, the one harness the client captures, and the ones that are not are marked *anchor where applicable*. Harness-specific practices feed the coverage index only. A competency with **no judgeable anchor on the engineer's harness mix** reads Insufficient data: the harness gives us nothing to judge it by, which is a statement about our reach and not about the engineer. An anchor sets the competency's state only while it is both applicable and judgeable.
+A competency inherits the state of its anchor practice. Anchors are the core practices of a competency; most are available and detectable on Claude Code, and the ones that are not are marked *anchor where applicable*. Harness-specific practices feed the coverage index only. A competency with **no judgeable anchor on the engineer's harness** reads Insufficient data: the harness gives us nothing to judge it by, which is a statement about our reach and not about the engineer. An anchor sets the competency's state only while it is both applicable and judgeable.
 
 ## Scope
 
@@ -57,10 +57,10 @@ A practice states an AI harness capability was invoked, is configured, or recurs
 
 ## Competencies and their practices
 
-Twenty-four practices across the six competencies. Anchors come first in each competency table. Across all practices:
-- Twenty-three are per-engineer practices.
+Twenty-three practices across the six competencies. Anchors come first in each competency table. Across all practices:
+- Twenty-two are per-engineer practices.
 - One is a team stat: the session context compaction split.
-- Three of the twenty-three per-engineer practices are patterns (composite event sequences): split-phase delivery, fix loop, test-gated ship.
+- Three of the twenty-two per-engineer practices are patterns (composite event sequences): split-phase delivery, fix loop, test-gated ship.
 
 ### Models
 
@@ -69,7 +69,6 @@ Which AI models are run for a task: the models, effort settings, and autonomy mo
 | Practice | What it states |
 | :-- | :-- |
 | Multi-model use (anchor) | 2+ distinct models in the window |
-| Multi-harness use | 2+ AI harnesses in the window |
 | Effort variation | 2+ distinct effort settings in the window |
 | Plan-mode use | Plan-mode segments in sessions |
 | Autonomy variation | 2+ distinct permission modes in the window |
@@ -147,16 +146,16 @@ Coordinating more than one agent or session: sub-agents for parallel or isolated
 1. fewer than 2 active weeks in the window;
 2. a detector not yet observable to the engineer for a full window;
 3. a practice whose support on the engineer's harness has not been established — the detector exists there but has never produced the value the practice needs;
-4. a competency with no judgeable anchor on the engineer's harness mix, whether its anchors are n/a or unverified;
+4. a competency with no judgeable anchor on the engineer's harness, whether its anchors are n/a or unverified;
 5. multi-model use (MD1) when no event in the window carries a model: one model is a fact, no model is a gap, so the engineer is not read as having used one.
 
 ## Engineer view
 
 ### The coverage index
 
-Per engineer: the share of applicable practices at Recurring. *Applicable* means the feature exists on the engineer's harness mix. Team stats (the compaction split) sit outside the index.
+Per engineer: the share of applicable practices at Recurring. *Applicable* means the feature exists on the engineer's harness. Team stats (the compaction split) sit outside the index.
 
-An engineer on more than one harness still gets one index. States pool practices across the harnesses so a practice recurring in the harness mix is counted as met.
+Multi-harness use is no longer a practice, so coverage index scores shift slightly for engineers who were recurring on it.
 
 Example:
 
