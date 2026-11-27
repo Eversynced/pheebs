@@ -5,6 +5,8 @@ import { DEFAULT_DAYS, localInsights } from "../src/insights-local.js";
 interface ParityCase {
   name: string;
   known_divergence?: boolean;
+  /** What this client reports where it differs from `expected` only because it has no multi-harness practice. */
+  client_expected?: Record<string, unknown>;
   /** A state only this client can report, such as undecided, so other implementations skip it. */
   client_only?: boolean;
   today: string;
@@ -24,7 +26,7 @@ const sectionOf = ({ events, today }: ParityCase) =>
 
 describe("repertoire section from the shared parity fixture", () => {
   it.each(cases.filter((c) => !c.known_divergence))("$name", (c) => {
-    expect(sectionOf(c)).toEqual(c.expected);
+    expect(sectionOf(c)).toEqual(c.client_expected ?? c.expected);
   });
 
   // The client still reads a plan on a model nothing names as Insufficient data, not Unobserved.
