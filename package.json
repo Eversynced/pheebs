@@ -1,6 +1,6 @@
 {
   "name": "pheebs",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "description": "Open-source, local-first telemetry for AI coding agents. See how Claude Code is actually used, without capturing code or prompts.",
   "type": "module",
   "bin": {

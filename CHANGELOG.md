@@ -6,6 +6,42 @@ Pheebs was developed privately before this repository was opened. That history i
 so this changelog starts at the first public release rather than linking commits that cannot
 be resolved.
 
+## [2.0.0](https://github.com/Eversynced/pheebs/compare/v1.4.0...v2.0.0) (2026-11-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove Cursor and Codex support, keep their old hooks harmless
+
+### Features
+
+* **contract:** add session_token_usage to the event contract ([cfbca1a](https://github.com/Eversynced/pheebs/commit/cfbca1a00576184e5af7d784a4eacc5d0f85ca3e))
+* **contract:** deprecate Cursor and Codex in 1.11.0 ([81352a8](https://github.com/Eversynced/pheebs/commit/81352a87a8bb57a7ae8c08a98ae0035c3f5f633b))
+* remove Cursor and Codex support, keep their old hooks harmless ([d26daca](https://github.com/Eversynced/pheebs/commit/d26dacaaf14292ee58328596e7a1e1ff3d1b463c))
+* **usage:** count only usage stamped after Pheebs first saw the session ([abba4b5](https://github.com/Eversynced/pheebs/commit/abba4b54985be7fcc634ed331d97502747656727))
+* **usage:** key marks and claims by backend endpoint, so a rotated token resends nothing and a new backend gets the whole session ([c6151a7](https://github.com/Eversynced/pheebs/commit/c6151a752d404bb86a1bf8bb0b6d593bf832572a))
+* **usage:** read per-model token usage from Claude Code transcripts ([e599b8c](https://github.com/Eversynced/pheebs/commit/e599b8c6cd7b342b19b84dc28f6a73496744417f))
+* **usage:** remember which file counted a request, so a copied history is not counted again ([f7e72e8](https://github.com/Eversynced/pheebs/commit/f7e72e8bdf08c99922993387f500e4e0d71b17ac))
+* **usage:** send session token usage from the detached flusher ([b160cf2](https://github.com/Eversynced/pheebs/commit/b160cf29783b9210f45c4af7281e0a30092bfbff))
+
+
+### Bug Fixes
+
+* drop multi-harness use from the repertoire ([97eb3b2](https://github.com/Eversynced/pheebs/commit/97eb3b213ecadbc07198203bf0d06e7c06994a90))
+* keep a symlinked old Codex config a link, clean up a failed write, and state legacy handling as current behavior ([1efd966](https://github.com/Eversynced/pheebs/commit/1efd96619d6e06d6575674c5dd015112f242802d))
+* keep the Codex otel resync silent, and state the legacy handling as current fact ([51a3304](https://github.com/Eversynced/pheebs/commit/51a3304e76f0276ff4c2a2274e7706f2f06d714e))
+* **usage:** accept only whole counts, reset Codex totals when a rollout is replaced, drop scaffold headers ([50070e3](https://github.com/Eversynced/pheebs/commit/50070e31cba491fbaf3630b5edd2db860616acca))
+* **usage:** back off after a failed collect pass, tidy comments and docs from pre-review ([f743f82](https://github.com/Eversynced/pheebs/commit/f743f82c0200b84a23eaaebb7920145e7a126641))
+* **usage:** keep a session's mark when its scope changes, so a rotated token does not resend the session ([0922e69](https://github.com/Eversynced/pheebs/commit/0922e696e061593d1903419066222c4034236ec2))
+* **usage:** keep the newest claims when the cap cuts into one day ([cbfceea](https://github.com/Eversynced/pheebs/commit/cbfceea20f46a3f4773a151666a4774b0fa490f2))
+* **usage:** release the state lock if loading it throws, and refuse marks with bad offsets ([bdfb31f](https://github.com/Eversynced/pheebs/commit/bdfb31fcb98a58d65d50a7ef035f6ac0f77a18a2))
+* **usage:** skip a request another session's file already counted, instead of every marked line ([668baaf](https://github.com/Eversynced/pheebs/commit/668baafe6105dafe8bd5c85f8b3f076f1f701dc6))
+* **usage:** skip lines a background session copied from another session, and leave open whether output includes reasoning ([ac88da0](https://github.com/Eversynced/pheebs/commit/ac88da0f094777993527995f64c3b315099315e8))
+* **usage:** skip lines that name another session as the requester ([f326c41](https://github.com/Eversynced/pheebs/commit/f326c41596782d07d7a790f891ee4fd4c8b5b441))
+* **usage:** write the claims back oldest first, so a second capped save keeps the newest ([c1904e6](https://github.com/Eversynced/pheebs/commit/c1904e62d765bb43642939179cb018a3c290ecba))
+* write old configs atomically, tell unreadable from malformed, and leave a non-table analytics value alone ([8156108](https://github.com/Eversynced/pheebs/commit/81561080ce43eb071afe2ed98effc5928f87efc4))
+* write the old config through a random exclusive temp file so a planted symlink cannot redirect it ([656068d](https://github.com/Eversynced/pheebs/commit/656068dd95d0178d56facf947cc14be1620241ae))
+
 ## [1.4.0](https://github.com/Eversynced/pheebs/compare/v1.3.0...v1.4.0) (2026-11-18)
 
 
