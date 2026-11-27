@@ -164,7 +164,7 @@ Pam works in Claude Code only, with 4 active weeks in the window:
 
 Competency           State       % recurring
 ---------------------------------------------
-Models               Recurring     33%
+Models               Recurring     40%
 Artifacts            Recurring     33%
 MCP                  Recurring     100%
 Evals                Recurring     60%
@@ -172,8 +172,8 @@ Context management   Recurring     50%
 Orchestration        Adopted       0%
 
 
-Coverage index: 9 / 23 = 39%
-█████████░░░░░░░░░░░░░░
+Coverage index: 9 / 22 = 41%
+█████████░░░░░░░░░░░░░
 ```
 
 The competency states are the profile, the index is the trend line.
