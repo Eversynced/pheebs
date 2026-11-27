@@ -224,7 +224,6 @@ const REVALIDATE_TTL_MS = 12 * 60 * 60 * 1000;
 // After a revalidation that got no answer, so an offline machine does not wait on every session.
 const RETRY_AFTER_MS = 60 * 60 * 1000;
 
-// Session start waits on this under Cursor and Codex, which run hooks synchronously.
 const REVALIDATE_TIMEOUT_MS = 2000;
 
 function within(iso: string | undefined, ms: number): boolean {

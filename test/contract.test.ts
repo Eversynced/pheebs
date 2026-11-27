@@ -17,8 +17,14 @@ function envelopeEventEnum(): string[] {
 }
 
 describe("openapi.yaml", () => {
-  it("lists every event the client emits, and nothing else", () => {
-    expect(envelopeEventEnum().sort()).toEqual(Object.values(EVENTS).sort());
+  // Events only Cursor and Codex produced. The client no longer sends them, but a backend may still
+  // hold or receive them, so the schema keeps them marked deprecated.
+  const DEPRECATED_EVENTS = ["tool_invoked", "compaction_completed", "permission_requested"];
+
+  it("lists every event the client emits, and the deprecated ones, and nothing else", () => {
+    expect(envelopeEventEnum().sort()).toEqual(
+      [...Object.values(EVENTS), ...DEPRECATED_EVENTS].sort(),
+    );
   });
 
   it("documents the subagent model fields an Agent call carries", () => {

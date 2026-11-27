@@ -111,12 +111,6 @@ describe.skipIf(process.platform === "win32")("classify local through the built 
     expect(Date.parse(String(row.timestamp)) - before).toBeLessThan(1500);
   });
 
-  it("never starts claude for a Cursor prompt", () => {
-    const { row, recorded } = run(["hook-cursor", "prompt_submitted"], PROMPT);
-    expect(row.prompt_intent).toBe("unclassified");
-    expect(recorded).toEqual([]);
-  });
-
   it("survives a child that exits without reading a large prompt", () => {
     const { row } = run(["hook", "prompt_submitted"], "x".repeat(4 * 1024 * 1024), {
       FAKE_CLAUDE_MODE: "exit-early",

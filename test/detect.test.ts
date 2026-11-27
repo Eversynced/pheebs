@@ -11,14 +11,13 @@ vi.mock("node:fs", () => ({
   existsSync: (...args: unknown[]) => existsSyncMock(...args),
 }));
 
-const { detectInstalledTools } = await import("../src/commands/detect.js");
-const { AI_TOOLS } = await import("../src/hooks/definitions.js");
+const { isClaudeCodeInstalled } = await import("../src/commands/detect.js");
 
 function commandNotFound(): never {
   throw new Error("not found");
 }
 
-describe("detectInstalledTools", () => {
+describe("isClaudeCodeInstalled", () => {
   beforeEach(() => {
     whichMock.mockReset();
     existsSyncMock.mockReset();
@@ -28,39 +27,33 @@ describe("detectInstalledTools", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns nothing when no tool is on PATH or on disk", () => {
+  it("is false when claude is neither on PATH nor on disk", () => {
     whichMock.mockImplementation(commandNotFound);
     existsSyncMock.mockReturnValue(false);
-    expect(detectInstalledTools()).toEqual([]);
+    expect(isClaudeCodeInstalled()).toBe(false);
   });
 
-  it("detects a tool by its config directory", () => {
+  it("detects it by its config directory", () => {
     whichMock.mockImplementation(commandNotFound);
     existsSyncMock.mockImplementation((p: string) => p.endsWith(".claude"));
-    expect(detectInstalledTools()).toEqual([AI_TOOLS.CLAUDE_CODE]);
+    expect(isClaudeCodeInstalled()).toBe(true);
   });
 
-  it("detects a tool by its CLI binary", () => {
+  it("detects it by its CLI binary", () => {
     whichMock.mockImplementation((_cmd: string, args: string[]) => {
-      // Windows looks the name up as `$PATH:cursor`.
-      if (args[0].replace(/^\$PATH:/, "") === "cursor") return Buffer.from("");
+      // Windows looks the name up as `$PATH:claude`.
+      if (args[0].replace(/^\$PATH:/, "") === "claude") return Buffer.from("");
       return commandNotFound();
     });
     existsSyncMock.mockReturnValue(false);
-    expect(detectInstalledTools()).toEqual([AI_TOOLS.CURSOR]);
-  });
-
-  it("detects every installed tool", () => {
-    whichMock.mockImplementation(commandNotFound);
-    existsSyncMock.mockReturnValue(true);
-    expect(detectInstalledTools()).toEqual([AI_TOOLS.CLAUDE_CODE, AI_TOOLS.CURSOR, AI_TOOLS.CODEX]);
+    expect(isClaudeCodeInstalled()).toBe(true);
   });
 
   it("looks a binary up on PATH alone with System32's `where` on Windows", () => {
     vi.stubEnv("SystemRoot", "C:\\Windows");
     whichMock.mockImplementation(commandNotFound);
     existsSyncMock.mockReturnValue(false);
-    onPlatform("win32", detectInstalledTools);
+    onPlatform("win32", isClaudeCodeInstalled);
     expect(whichMock).toHaveBeenCalledWith(
       "C:\\Windows\\System32\\where.exe",
       ["$PATH:claude"],

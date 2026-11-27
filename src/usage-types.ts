@@ -1,6 +1,6 @@
 import type { AiTool } from "./hooks/types.js";
 
-/** The tool whose transcripts carry usage here. Cursor's carry none (ledger: Cursor transcripts carry no token usage). */
+/** The tool whose transcripts carry usage here. */
 export type UsageTool = Extract<AiTool, "claude_code">;
 
 /** Integers only. An optional field is absent, never 0, when the transcript does not carry it. */

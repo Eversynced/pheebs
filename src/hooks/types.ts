@@ -1,7 +1,5 @@
 export const AI_TOOLS = {
   CLAUDE_CODE: "claude_code",
-  CURSOR: "cursor",
-  CODEX: "codex",
 } as const;
 
 export type AiTool = (typeof AI_TOOLS)[keyof typeof AI_TOOLS];
@@ -19,16 +17,13 @@ export const EVENTS = {
   CommandExpanded: "command_expanded",
   SubagentSpawned: "subagent_spawned",
   SubagentCompleted: "subagent_completed",
-  ToolInvoked: "tool_invoked",
   ToolUseCompleted: "tool_use_completed",
   ToolUseFailed: "tool_use_failed",
   ContextCompacted: "context_compacted",
-  CompactionCompleted: "compaction_completed",
   TaskCreated: "task_created",
   TaskCompleted: "task_completed",
   TurnEnded: "turn_ended",
   SessionEnd: "session_end",
-  PermissionRequested: "permission_requested",
   ArtifactFound: "artifact_found",
   SessionTokenUsage: "session_token_usage",
 } as const;
@@ -45,6 +40,4 @@ export interface HookDefinition {
 
 export const TOOL_LABELS: Record<AiTool, string> = {
   [AI_TOOLS.CLAUDE_CODE]: "Claude Code",
-  [AI_TOOLS.CURSOR]: "Cursor",
-  [AI_TOOLS.CODEX]: "Codex",
 };

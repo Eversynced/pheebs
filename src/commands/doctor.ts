@@ -2,15 +2,12 @@ import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { intro, log, note, outro } from "@clack/prompts";
-import { parse as parseToml } from "smol-toml";
 import { baseUrl, hasBackend } from "../backend-config.js";
 import { stripBom } from "../bom.js";
 import { resolveLogPath } from "../config.js";
 import { getDeveloperHandle } from "../developer-id.js";
 import {
   AI_TOOLS,
-  type AiTool,
-  CODEX_TRUST_WARNING,
   getHookDefinitionsForTool,
   isPheebsEntry,
   TOOL_LABELS,
@@ -27,8 +24,8 @@ import {
 import { readStoredToken } from "../token.js";
 import { TRANSPORT_ERROR_PATH } from "../transports/http.js";
 import { PHEEBS_VERSION } from "../version.js";
-import { commandExists, detectInstalledTools } from "./detect.js";
-import { resolveSettingsPath, scopesCollide } from "./path.js";
+import { commandExists, isClaudeCodeInstalled } from "./detect.js";
+import { resolveSettingsPath } from "./path.js";
 import { getLatestVersion, isNewer } from "./update.js";
 
 type DoctorScope = "both" | "project" | "user";
@@ -63,58 +60,8 @@ function checkPathReachable(): boolean {
   return false;
 }
 
-function initFlag(tool: AiTool): string {
-  if (tool === AI_TOOLS.CURSOR) return "`pheebs init --cursor`";
-  if (tool === AI_TOOLS.CODEX) return "`pheebs init --codex`";
-  return "`pheebs init`";
-}
-
-export function doctorCodex(settingsPath: string): DoctorResult {
-  const definitions = getHookDefinitionsForTool(AI_TOOLS.CODEX);
-  const hookKeys = [...new Set(definitions.map((d) => d.hookKey))];
-  const base = {
-    settingsPath,
-    definitionCount: definitions.length,
-    hookTypeCount: hookKeys.length,
-    registeredTypes: 0,
-  };
-
-  if (!existsSync(settingsPath)) {
-    return { ...base, issues: [], fatal: `${settingsPath} not found` };
-  }
-
-  let config: Record<string, unknown>;
-  try {
-    const raw = stripBom(readFileSync(settingsPath, "utf-8"));
-    config = parseToml(raw) as Record<string, unknown>;
-  } catch {
-    return { ...base, issues: [], fatal: `${settingsPath} is malformed` };
-  }
-
-  const hooks = (config.hooks as Record<string, unknown> | undefined) ?? {};
-  const issues: string[] = [];
-  let registeredTypes = 0;
-
-  for (const key of hookKeys) {
-    const entry = hooks[key];
-    if (entry === undefined) {
-      issues.push(`${key}: missing entirely`);
-      continue;
-    }
-
-    const candidates = Array.isArray(entry) ? entry : [entry];
-    if (candidates.some(isPheebsEntry)) {
-      registeredTypes++;
-    } else {
-      issues.push(`${key}: no pheebs entries found`);
-    }
-  }
-
-  return { ...base, registeredTypes, issues };
-}
-
-export function doctorJsonConfig(settingsPath: string, tool: AiTool): DoctorResult {
-  const definitions = getHookDefinitionsForTool(tool);
+export function doctorJsonConfig(settingsPath: string): DoctorResult {
+  const definitions = getHookDefinitionsForTool(AI_TOOLS.CLAUDE_CODE);
   const hookKeys = [...new Set(definitions.map((d) => d.hookKey))];
   const expectedCounts = new Map<string, number>();
   for (const def of definitions) {
@@ -188,98 +135,85 @@ function getLastEvent(
   }
 }
 
-function reportToolResult(result: DoctorResult, tool: AiTool): boolean {
+function reportToolResult(result: DoctorResult): boolean {
+  const label = TOOL_LABELS[AI_TOOLS.CLAUDE_CODE];
   if (result.fatal) {
-    log.error(`${TOOL_LABELS[tool]}: ${result.fatal}`);
-    log.info(`  Run ${initFlag(tool)} to fix.`);
+    log.error(`${label}: ${result.fatal}`);
+    log.info("  Run `pheebs init` to fix.");
     return false;
   }
 
   if (result.issues.length > 0) {
     log.warn(
-      `${TOOL_LABELS[tool]}: ${result.registeredTypes}/${result.hookTypeCount} hook types registered — ${result.issues.length} issue(s) in ${result.settingsPath}`,
+      `${label}: ${result.registeredTypes}/${result.hookTypeCount} hook types registered: ${result.issues.length} issue(s) in ${result.settingsPath}`,
     );
     for (const issue of result.issues) {
       log.warn(`  ${issue}`);
     }
-    log.info(`  Run ${initFlag(tool)} to fix.`);
+    log.info("  Run `pheebs init` to fix.");
     return false;
   }
 
   log.success(
-    `${TOOL_LABELS[tool]}: ${result.registeredTypes}/${result.hookTypeCount} hook types registered ← ${result.settingsPath}`,
+    `${label}: ${result.registeredTypes}/${result.hookTypeCount} hook types registered ← ${result.settingsPath}`,
   );
   return true;
 }
 
-function checkScope(tool: AiTool, project: boolean): DoctorResult {
-  const { path: settingsPath } = resolveSettingsPath(tool, project);
-  return tool === AI_TOOLS.CODEX ? doctorCodex(settingsPath) : doctorJsonConfig(settingsPath, tool);
+function checkScope(project: boolean): DoctorResult {
+  return doctorJsonConfig(resolveSettingsPath(project).path);
 }
 
 /** The scopes a check covers. "both" is the default because either one is a real install:
  *  reporting a user-level one as missing sends the developer to `pheebs init`, which in a
  *  terminal opens the wizard whose remove prompt defaults to yes, quietly turning a
  *  machine-wide install into a one-repo one. */
-function scopesToCheck(tool: AiTool, scope: DoctorScope): boolean[] {
+function scopesToCheck(scope: DoctorScope): boolean[] {
   if (scope === "project") return [true];
   if (scope === "user") return [false];
-  return scopesCollide(tool) ? [false] : [true, false];
+  return [true, false];
 }
 
-function diagnoseTools(tools: AiTool[], scope: DoctorScope): boolean {
+function diagnose(scope: DoctorScope): boolean {
   let allHealthy = true;
 
-  for (const tool of tools) {
-    const checked = scopesToCheck(tool, scope).map((project) => ({
-      project,
-      result: checkScope(tool, project),
-    }));
-    // Registered, not merely present: Claude Code writes `.claude/settings.local.json` itself
-    // for permissions, and counting that as an install reports a double install against a
-    // developer who has one — then tells them to run `pheebs uninstall`, which clears it.
-    const found = checked.filter((c) => !c.result.fatal && c.result.registeredTypes > 0);
+  const checked = scopesToCheck(scope).map((project) => ({
+    project,
+    result: checkScope(project),
+  }));
+  // Registered, not merely present: Claude Code writes `.claude/settings.local.json` itself
+  // for permissions, and counting that as an install reports a double install against a
+  // developer who has one, then tells them to run `pheebs uninstall`, which clears it.
+  const found = checked.filter((c) => !c.result.fatal && c.result.registeredTypes > 0);
 
-    if (found.length === 0) {
-      // Report against the scope an install would land in, so the hint matches the fix, but
-      // name every path looked at rather than implying only one was.
-      const [primary, ...rest] = checked;
-      const alsoChecked = rest.map((c) => c.result.settingsPath);
-      reportToolResult(
-        alsoChecked.length > 0
-          ? {
-              ...primary.result,
-              // A file that exists with no pheebs hooks in it, as `uninstall` leaves one, has
-              // no fatal of its own.
-              fatal: `${primary.result.fatal ?? `no pheebs hooks in ${primary.result.settingsPath}`} (also checked ${alsoChecked.join(", ")})`,
-            }
-          : primary.result,
-        tool,
-      );
-      allHealthy = false;
-      continue;
-    }
+  if (found.length === 0) {
+    const [primary, ...rest] = checked;
+    const alsoChecked = rest.map((c) => c.result.settingsPath);
+    reportToolResult(
+      alsoChecked.length > 0
+        ? {
+            ...primary.result,
+            fatal: `${primary.result.fatal ?? `no pheebs hooks in ${primary.result.settingsPath}`} (also checked ${alsoChecked.join(", ")})`,
+          }
+        : primary.result,
+    );
+    return false;
+  }
 
-    for (const { project, result } of found) {
-      if (!reportToolResult(result, tool)) {
-        allHealthy = false;
-      }
-      // Registered is not the same as will fire: a project-local Codex layer is dropped entirely
-      // until the developer trusts the project, so a clean report here would overstate the install.
-      if (project && tool === AI_TOOLS.CODEX && !scopesCollide(tool)) {
-        log.warn(`  ${CODEX_TRUST_WARNING}`);
-      }
-    }
-
-    // Claude Code merges the two settings files rather than overriding, so a double install
-    // doubles every event. That is a corrupted measurement, not a cosmetic problem, so it
-    // fails the check.
-    if (found.length > 1) {
-      log.error(
-        `${TOOL_LABELS[tool]}: installed at both scopes, so every event fires twice. Run \`pheebs uninstall\` (it clears every scope) and then the init you want.`,
-      );
+  for (const { result } of found) {
+    if (!reportToolResult(result)) {
       allHealthy = false;
     }
+  }
+
+  // Claude Code merges the two settings files rather than overriding, so a double install
+  // doubles every event. That is a corrupted measurement, not a cosmetic problem, so it
+  // fails the check.
+  if (found.length > 1) {
+    log.error(
+      `${TOOL_LABELS[AI_TOOLS.CLAUDE_CODE]}: installed at both scopes, so every event fires twice. Run \`pheebs uninstall\` (it clears every scope) and then the init you want.`,
+    );
+    allHealthy = false;
   }
 
   return allHealthy;
@@ -393,26 +327,19 @@ function checkVersion(): void {
   }
 }
 
-export async function runDoctor(options?: { scope?: DoctorScope; tool?: AiTool }): Promise<void> {
+export async function runDoctor(options?: { scope?: DoctorScope }): Promise<void> {
   const scope = options?.scope ?? "both";
-  const tool = options?.tool;
-  const explicit = tool !== undefined;
-  const tools: AiTool[] = tool !== undefined ? [tool] : detectInstalledTools();
 
-  if (tools.length === 0) {
+  if (!isClaudeCodeInstalled()) {
     intro("pheebs doctor");
-    log.warn("No tools detected (Claude Code, Cursor, or Codex).");
+    log.warn("Claude Code not detected.");
     outro("✗ nothing to check");
     process.exit(1);
   }
 
-  const heading = explicit
-    ? `pheebs doctor — ${TOOL_LABELS[tools[0]]}`
-    : `pheebs doctor — ${tools.map((t) => TOOL_LABELS[t]).join(", ")}`;
+  intro(`pheebs doctor: ${TOOL_LABELS[AI_TOOLS.CLAUDE_CODE]}`);
 
-  intro(heading);
-
-  const allHealthy = diagnoseTools(tools, scope);
+  const allHealthy = diagnose(scope);
 
   reportIdentity();
   const backendOk = checkBackend();

@@ -7,8 +7,8 @@
   <br/>
 </div>
 
-**Open-source, local-first telemetry for AI coding agents. See how Claude Code, Cursor, and Codex
-are actually used, without capturing code or prompts.**
+**Open-source, local-first telemetry for AI coding agents. See how Claude Code
+is actually used, without capturing code or prompts.**
 
 [![npm](https://img.shields.io/npm/v/pheebs)](https://www.npmjs.com/package/pheebs)
 [![CI](https://github.com/Eversynced/pheebs/actions/workflows/ci.yml/badge.svg)](https://github.com/Eversynced/pheebs/actions/workflows/ci.yml)
@@ -19,8 +19,7 @@ are actually used, without capturing code or prompts.**
 
 ## What Pheebs is
 
-Pheebs is an open-source, local-first telemetry CLI for AI coding agents (Claude Code, Cursor,
-and Codex). It installs as hooks in your agent, writes one JSONL line per event to your machine,
+Pheebs is an open-source, local-first telemetry CLI for AI coding agents (Claude Code). It installs as hooks in your agent, writes one JSONL line per event to your machine,
 and reports on how you work with the agent, right in your terminal.
 
 Adoption numbers say who has access. They say nothing about what happens inside a session: which
@@ -34,7 +33,7 @@ prompts through your own Claude Code login). No source code, no prompts, no file
 
 ```mermaid
 flowchart LR
-    A["Your agent<br/>Claude Code · Cursor · Codex"] -->|hook fires| B["pheebs"]
+    A["Your agent<br/>Claude Code"] -->|hook fires| B["pheebs"]
     B --> C["~/.pheebs/logs<br/>JSONL, always"]
     B -->|only if you configure one| D["Your backend"]
 ```
@@ -49,8 +48,7 @@ Built by [Eversynced](https://eversynced.com), a nearshore engineering company.
 
 ## Quick start
 
-You need Node.js 20 or later on macOS, Linux, or Windows, and one of Claude Code, Cursor, or Codex
-with hooks support. A git repository is recommended: Pheebs reads the `org/repo` codebase id from
+You need Node.js 20 or later on macOS, Linux, or Windows, and Claude Code. A git repository is recommended: Pheebs reads the `org/repo` codebase id from
 its remote, and falls back to the folder name without one.
 
 ```bash
@@ -61,8 +59,7 @@ pheebs insights         # 4. read your own report
 ```
 
 Installing does **not** configure anything, so run `pheebs init` next. It asks for a backend
-endpoint and a token; leave both blank and Pheebs stays local-only. Add `--cursor` or `--codex` to
-configure the other tools. Pheebs then fires in the background during your sessions, and nothing
+endpoint and a token; leave both blank and Pheebs stays local-only. Pheebs then fires in the background during your sessions, and nothing
 changes about how you work.
 
 No backend is needed to get a report: with none set, `pheebs insights` reads your local log.
@@ -84,15 +81,15 @@ Repertoire
 
 Competency          State      % recurring
 ------------------------------------------
-Models              Recurring          33%
+Models              Recurring          40%
 Artifacts           Recurring          33%
 MCP                 Recurring         100%
 Evals               Recurring          60%
 Context management  Recurring          50%
 Orchestration       Adopted             0%
 
-Coverage index: 9 / 23 = 39%
-█████████░░░░░░░░░░░░░░
+Coverage index: 9 / 22 = 41%
+█████████░░░░░░░░░░░░░
 
 Sessions: 66 over 4 active week(s)
 Compaction: 12 auto, 3 manual
@@ -142,15 +139,10 @@ practice and signal means is defined in the [AI Proficiency Model](./docs/ai-pro
 
 ## Supported tools
 
-| Tool | Status | Hook entries |
-|---|---|---|
-| **Claude Code** | Fully supported | 15 entries across 14 hook types |
-| **Cursor** | Supported | 13 entries across 13 hook types |
-| **Codex** | Fully supported | 10 entries across 10 hook types |
+Claude Code only: 15 hook entries across 14 hook types, plus OpenTelemetry metrics.
 
-**Fully supported** = hooks + OpenTelemetry metrics. **Supported** = hooks only.
-
-All tools share the same log format and remote transport. The `ai_tool` field identifies the source.
+Claude Code is the only supported agent. `pheebs hook-cursor` and `pheebs hook-codex` are
+no-ops, so an old Cursor or Codex hook breaks nothing. `pheebs uninstall` clears it.
 
 ## Privacy
 
@@ -274,8 +266,7 @@ When OpenTelemetry is on, the project file carries your token, so `init` adds it
 `.git/info/exclude` (local and uncommitted, unlike `.gitignore`) and tells you, having checked with
 git that the entry took. Outside a repo it says nothing, since there is nothing to commit the token
 into. It warns instead when git would still commit the file: most often because the file is
-already tracked, which no ignore rule undoes. The same applies to `.codex/config.toml` on a
-project-scoped Codex install.
+already tracked, which no ignore rule undoes.
 
 To instrument every repo on the machine instead:
 
@@ -293,25 +284,6 @@ rather than only the current one. The file is local, holds nothing but paths phe
 and is never sent anywhere.
 
 So the way back to a single install is `pheebs uninstall` followed by the `init` you want.
-
-### Multi-tool setup
-
-To configure hooks for Cursor or Codex in addition to Claude Code:
-
-```bash
-pheebs init --cursor
-pheebs init --codex
-```
-
-Each tool writes to its own config location, and they don't interfere with each other. Cursor
-sessions are recorded only through the Cursor install: the Claude Code hook path ignores Cursor
-payloads, so a Cursor session is never counted twice.
-
-**Codex needs your trust first.** It reads `<cwd>/.codex/config.toml`, but drops the whole project
-layer until you trust the project in its TUI, and skips any handler without a matching
-`trusted_hash`. Both are your own security decision about a directory, so pheebs writes neither. A
-project-local Codex install is inert until you grant that trust, and `init` and `doctor` both say
-so.
 
 ### What the generated config looks like
 
@@ -346,8 +318,6 @@ authenticated with your token.
 
 ```bash
 pheebs doctor            # checks Claude Code config, both scopes
-pheebs doctor --cursor   # checks Cursor config
-pheebs doctor --codex    # checks Codex config
 pheebs doctor --global   # checks user-level config only
 pheebs doctor --project  # checks project-local config only
 ```
@@ -407,25 +377,21 @@ Local logs are daily files, one per codebase:
 ## CLI reference
 
 ```
-pheebs init [--global] [--cursor|--codex] [--no-otel]
-pheebs doctor [--global|--project] [--cursor|--codex]
+pheebs init [--global] [--no-otel]
+pheebs doctor [--global|--project]
 pheebs config <list | get <key> | set <key> <value> | unset <key>>
 pheebs insights [--days <n>] [--json] [--team | --local]
-pheebs scan [--cursor|--codex]
+pheebs scan
 pheebs flush
 pheebs update
 pheebs uninstall
 pheebs hook <event_name> [--trigger-type <type>]
-pheebs hook-cursor <event_name>
-pheebs hook-codex <event_name>
 ```
 
 | Command | Description |
 |---|---|
 | `init` | Register hooks (and OTel config) for the current repo, configure the endpoint, and set your token |
 | `init --global`, `-g` | Write to user-level config instead of project-local |
-| `init --cursor` | Configure Cursor hooks |
-| `init --codex` | Configure Codex hooks |
 | `init --no-otel` | Skip OpenTelemetry configuration |
 | `doctor` | Verify hooks in both scopes, the endpoint, your token status, and the send queue |
 | `doctor --project`, `-p` | Check only the project-local config (`--global` checks only user-level) |
@@ -437,14 +403,12 @@ pheebs hook-codex <event_name>
 | `scan` | Scan the current repo for AI-config artifacts, recording presence and counts, never paths or contents |
 | `flush` | Send queued events to the backend now, instead of waiting for the background sender |
 | `update` | Update pheebs to the latest npm release |
-| `uninstall` | Remove pheebs hooks and OTel config from every scope and every repo `init` wrote to |
+| `uninstall` | Remove pheebs hooks and OTel config from every scope and every repo `init` wrote to, and from an old Cursor or Codex install |
 | `config list` | Show all settings and their source |
 | `config get <key>` | Print one setting's value |
 | `config set <key> <value>` | Set `base-url`, `auto-update`, `classify`, or `token` |
 | `config unset <key>` | Reset a setting to its default (clears the token) |
 | `hook <event>` | Handle a Claude Code hook event (called by hooks, not manually) |
-| `hook-cursor <event>` | Handle a Cursor hook event |
-| `hook-codex <event>` | Handle a Codex hook event |
 
 ## What Pheebs captures
 
@@ -467,45 +431,6 @@ pheebs hook-codex <event_name>
 | `TaskCompleted` | `task_completed` | `task_id`, `task_subject`, `teammate_name` | Are background tasks part of the workflow? |
 | `Stop` | `turn_ended` | `stop_hook_active`, `background_task_count`, `session_cron_count` | When do turns end, and what's running in the background? |
 | `SessionEnd` | `session_end` | `reason` | When and why do sessions end? |
-
-### Cursor
-
-| Hook | Event | Extra fields | What Pheebs is looking at |
-|---|---|---|---|
-| `sessionStart` | `session_started` | `is_background_agent`, `effort`, `fast_mode` | How are sessions starting, are background agents involved, and how is the model configured? |
-| `beforeSubmitPrompt` | `prompt_submitted` | `model`, `composer_mode`, `command_name`, `prompt_length`, `effort`, `fast_mode`, `rule_attachment_count` | What models/modes are used, which slash commands / skills are invoked, how much context is front-loaded, and are rules attached to the prompt? `command_name` is derived from a leading `/command` and `prompt_length` is the prompt's character count; the prompt text itself is never stored. `rule_attachment_count` counts attachments whose `type` is `rule`; the attachment's `file_path` is never read. |
-| `subagentStart` | `subagent_spawned` | `agent_type`, `agent_id`, `subagent_model`, `is_parallel_worker` | How often are subagents being delegated to? |
-| `subagentStop` | `subagent_completed` | `agent_type`, `status`, `subagent_duration_ms`, `tool_call_count` | How do subagent runs end? |
-| `beforeShellExecution` | `tool_invoked` | `tool_name` | What tools is the agent reaching for? |
-| `afterShellExecution` | `tool_use_completed` | `tool_name`, `duration_ms` | How long do tool calls take? |
-| `beforeMCPExecution` | `tool_invoked` | `tool_name` | Are MCP tools part of the workflow? |
-| `afterMCPExecution` | `tool_use_completed` | `tool_name`, `duration_ms` | How reliable are MCP tool calls? |
-| `afterFileEdit` | `tool_use_completed` | `tool_name` | How often does the agent edit files? |
-| `postToolUseFailure` | `tool_use_failed` | `tool_name`, `failure_type`, `is_interrupt` | Which tools fail, and why? |
-| `preCompact` | `context_compacted` | `trigger_type`, `context_usage_percent`, `context_tokens` | How deep do sessions get before compaction? |
-| `stop` | `turn_ended` | `status`, `loop_count`, `effort`, `fast_mode` | When do turns end, and how many loops did they take? |
-| `sessionEnd` | `session_end` | `reason`, `session_duration_ms`, `is_background_agent` | When and why do sessions end? |
-
-Cursor events also capture `conversation_id`, `generation_id`, `cursor_version`, `loop_count`, and token counts when available.
-
-`effort` and `fast_mode` come from Cursor's `model_params` list, which rides on those three events and on no tool event. Cursor sends it **only from its GUI**. Its headless CLI carries no effort signal at all, so an absent `effort` on Cursor is as often the surface as an unset level. `fast_mode` is the vendor's undocumented `fast` setting, passed through verbatim as the string it arrives as.
-
-### Codex
-
-| Hook | Event | Extra fields | What Pheebs is looking at |
-|---|---|---|---|
-| `SessionStart` | `session_started` | `model`, `start_source`, `permission_mode` | How are sessions starting, and with what model? |
-| `UserPromptSubmit` | `prompt_submitted` | `model`, `command_name`, `prompt_length`, `permission_mode` | How often are prompts submitted, which slash commands / skills are invoked, and how much context is front-loaded? `command_name` is derived from a leading `/command` and `prompt_length` is the prompt's character count; the prompt text itself is never stored. |
-| `SubagentStart` | `subagent_spawned` | `agent_id`, `agent_type` | How often are subagents being delegated to? |
-| `SubagentStop` | `subagent_completed` | `agent_id`, `agent_type`, `stop_hook_active` | How do subagent runs end? |
-| `PreToolUse` | `tool_invoked` | `tool_name`, `tool_pattern`, `permission_mode` | What tools does Codex reach for? |
-| `PostToolUse` | `tool_use_completed` | `tool_name`, `tool_pattern`, `permission_mode` | Do tool calls succeed? |
-| `PermissionRequest` | `permission_requested` | `tool_name`, `permission_type`, `approved` | How often does the sandbox ask for permission? |
-| `PreCompact` | `context_compacted` | `trigger_type` | How deep do sessions get before compaction? |
-| `PostCompact` | `compaction_completed` | `trigger_type` | What happens after compaction? |
-| `Stop` | `turn_ended` | `model`, `input_tokens`, `output_tokens`, `duration_ms`, `stop_hook_active`, `permission_mode` | Turn length and token usage. |
-
-`permission_mode` is Codex's own sandbox/approval setting, recorded verbatim on the five events that carry it and absent on the two compaction events. It is captured as a raw fact, not as a reading of how a developer chose to work: its value is **constant per harness** rather than per session mode, and a session driven in plan mode does not report `plan`. Anything inferring deliberate autonomy choices from it would be wrong.
 
 ### Derived tags
 
@@ -553,7 +478,7 @@ For the full pipeline, the event envelope, and where a backend or a consumer plu
 
 ### Telemetry (OpenTelemetry)
 
-For tools that support native OpenTelemetry export (Claude Code, Codex), `pheebs init` also
+Claude Code supports native OpenTelemetry export, so `pheebs init` also
 configures OTLP export **through the Pheebs backend's `/otel` proxy**, authenticated with your
 token. The backend forwards it to its observability backend, which adds metrics and logs alongside
 the hook-based event data, and the client never holds an observability credential of its own.
@@ -584,7 +509,7 @@ for classification, and only when you have configured a backend with consent, or
 
 ### Which AI coding agents does Pheebs support?
 
-Claude Code, Cursor, and Codex. See [Supported tools](#supported-tools).
+Claude Code. See [Supported tools](#supported-tools).
 
 ### What does `pheebs insights` measure?
 
@@ -595,8 +520,8 @@ refinement-to-repair, wholesale-accept, and model fit). See [What you'll see](#w
 
 ### Will Pheebs slow down my agent?
 
-No. On Claude Code the hooks run asynchronously. On Cursor and Codex any network call is bounded
-by a timeout, and events are sent by a detached background process rather than from the hook.
+No. The hooks run asynchronously, any network call is bounded by a timeout, and events are sent
+by a detached background process rather than from the hook.
 Remote failures degrade silently and never reach your session.
 
 ### Does Pheebs instrument every repo on my machine?

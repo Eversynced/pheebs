@@ -66,7 +66,7 @@ describe("installs registry", () => {
     const offline = settingsFile("offline.json");
 
     recordInstall(AI_TOOLS.CLAUDE_CODE, here);
-    recordInstall(AI_TOOLS.CODEX, offline);
+    recordInstall(AI_TOOLS.CLAUDE_CODE, offline);
     rmSync(offline);
 
     // Pruned from the list, because a consumer cannot act on a path that is not there...
@@ -79,7 +79,7 @@ describe("installs registry", () => {
   it("does not let an unrelated init drop an unreachable record", async () => {
     const { recordInstall } = await loadInstalls();
     const offline = settingsFile("offline.json");
-    recordInstall(AI_TOOLS.CODEX, offline);
+    recordInstall(AI_TOOLS.CLAUDE_CODE, offline);
     rmSync(offline);
 
     recordInstall(AI_TOOLS.CLAUDE_CODE, settingsFile("other.json"));
@@ -94,13 +94,13 @@ describe("installs registry", () => {
     const skipped = settingsFile("skipped.json");
 
     recordInstall(AI_TOOLS.CLAUDE_CODE, cleared);
-    recordInstall(AI_TOOLS.CODEX, skipped);
+    recordInstall(AI_TOOLS.CLAUDE_CODE, skipped);
     forgetInstalls([cleared]);
 
-    expect(listInstalls()).toEqual([{ tool: AI_TOOLS.CODEX, path: skipped }]);
+    expect(listInstalls()).toEqual([{ tool: AI_TOOLS.CLAUDE_CODE, path: skipped }]);
   });
 
-  it("rejects entries a consumer would act on wrongly", async () => {
+  it("keeps a Cursor or Codex record from before their removal, for uninstall, and rejects entries a consumer would act on wrongly", async () => {
     // The resync writes the token into `path`, and uninstall rewrites it in `tool`'s format,
     // so a bad entry is not inert.
     writeRegistry([
@@ -109,11 +109,11 @@ describe("installs registry", () => {
       { tool: AI_TOOLS.CLAUDE_CODE },
       { path: settingsFile("no-tool.json") },
       null,
-      { tool: AI_TOOLS.CODEX, path: settingsFile("good.json") },
+      { tool: "codex", path: settingsFile("good.json") },
     ]);
     const { listInstalls } = await loadInstalls();
 
-    expect(listInstalls()).toEqual([{ tool: AI_TOOLS.CODEX, path: join(home, "good.json") }]);
+    expect(listInstalls()).toEqual([{ tool: "codex", path: join(home, "good.json") }]);
   });
 
   it("returns nothing when the registry is missing, malformed, or not a list", async () => {
@@ -123,7 +123,7 @@ describe("installs registry", () => {
     writeRegistry("{ not json");
     expect((await loadInstalls()).listInstalls()).toEqual([]);
 
-    writeRegistry({ tool: AI_TOOLS.CODEX });
+    writeRegistry({ tool: "codex" });
     expect((await loadInstalls()).listInstalls()).toEqual([]);
   });
 
@@ -134,7 +134,7 @@ describe("installs registry", () => {
 
     // A directory where the temp file wants to go: the rename never happens.
     mkdirSync(`${registryPath()}.${process.pid}`, { recursive: true });
-    recordInstall(AI_TOOLS.CODEX, settingsFile("second.json"));
+    recordInstall(AI_TOOLS.CLAUDE_CODE, settingsFile("second.json"));
 
     expect(listInstalls()).toEqual([{ tool: AI_TOOLS.CLAUDE_CODE, path }]);
   });

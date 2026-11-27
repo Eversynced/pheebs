@@ -177,7 +177,6 @@ const PRACTICES: Record<string, Practice> = {
     blind: (days) => days.every((d) => d.md1_models.size === 0),
     cells: all("0.3.0"),
   },
-  MD2: { fired: (days) => new Set(days.map((d) => d.ai_tool)).size >= 2, cells: all("0.2.4") },
   MD3: {
     fired: distinct("md3_efforts"),
     cells: { claude_code: { since: "0.9.0" }, cursor: { since: "1.0.0" }, codex: "n/a" },
@@ -251,7 +250,7 @@ const PRACTICES: Record<string, Practice> = {
 // and when both can be judged the stronger state is the one the engineer has shown. The compaction
 // split is a team stat and sits outside every share and the index.
 const COMPETENCIES: { name: string; anchors: string[]; stats: string[] }[] = [
-  { name: "Models", anchors: ["MD1"], stats: ["MD2", "MD3", "MD4", "MD5", "MD6"] },
+  { name: "Models", anchors: ["MD1"], stats: ["MD3", "MD4", "MD5", "MD6"] },
   { name: "Artifacts", anchors: ["AR2"], stats: ["AR1", "AR3"] },
   { name: "MCP", anchors: ["MC1"], stats: ["MC2"] },
   { name: "Evals", anchors: ["EV1"], stats: ["EV2", "EV3", "EV4", "EV5"] },

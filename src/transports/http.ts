@@ -85,7 +85,7 @@ export class HttpTransport implements RemoteTransport {
       const scope = scopeKey(baseUrl(), stored.token);
       const dir = scopeDir(scope);
       // Old scopes' queues are removed by the flusher, off the hook path: a backlog of thousands of
-      // files is not something Cursor or Codex should wait on.
+      // files is not something the hook should wait on.
       const late =
         entry.event === EVENTS.PromptSubmitted &&
         Date.now() - Date.parse(entry.timestamp) >= LATE_PROMPT_MS;

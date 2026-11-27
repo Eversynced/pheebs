@@ -88,6 +88,16 @@ describe("repertoireSection", () => {
   });
 });
 
+describe("multi-harness use", () => {
+  it("is not a practice: Claude Code rows over several active weeks never report it", () => {
+    const rows = base();
+    const states = practiceStatesOf(rows, TODAY);
+    expect(states).not.toHaveProperty("MD2");
+    expect(Object.keys(states)).toHaveLength(22);
+    expect(repertoireSection(rows, TODAY).coverage_index).toMatchObject({ applicable: 20 });
+  });
+});
+
 describe("practiceStatesOf", () => {
   it("places a practice by how many of the last four active weeks it fired in", () => {
     const verify = (day: string) =>
@@ -135,7 +145,7 @@ describe("practiceStatesOf", () => {
 
     const mixed = practiceStatesOf([...base("codex"), ...base("claude_code")], TODAY);
     expect(mixed.MD4).toBe("unobserved");
-    expect(mixed.MD2).toBe("adopted");
+    expect(mixed).not.toHaveProperty("MD2");
   });
 
   it("finds split-phase delivery on an effort the plan segment did not use", () => {
@@ -147,11 +157,11 @@ describe("practiceStatesOf", () => {
       ]),
     ];
     expect(practiceStatesOf(rows, TODAY).MD6).toBe("recurring");
-    // MD1 and MD3 to MD6 recur, and single-harness MD2 does not.
+    // MD1 and MD3 to MD6 all recur.
     expect(repertoireSection(rows, TODAY).competencies).toContainEqual({
       name: "Models",
       state: "recurring",
-      recurring_share: 5 / 6,
+      recurring_share: 1,
     });
   });
 

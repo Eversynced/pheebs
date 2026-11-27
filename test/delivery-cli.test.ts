@@ -180,10 +180,9 @@ const queued = () => {
 };
 
 describe("hook delivery", () => {
-  // Cursor and Codex wait for the hook process, so its lifetime is the agent's stall.
   it("exits promptly when the backend is unreachable", () => {
     configure("http://10.255.255.1");
-    const { status, ms } = runHook(["hook-codex", "turn_ended"], { session_id: "s1" });
+    const { status, ms } = runHook(["hook", "turn_ended"], { session_id: "s1" });
     expect(status).toBe(0);
     expect(ms).toBeLessThan(3000);
   });
@@ -207,7 +206,7 @@ describe("hook delivery", () => {
   it("queues in the hook and delivers from a background flusher, once per event", async () => {
     configure(await startExampleBackend());
     for (let i = 0; i < 3; i++) {
-      const { status, ms } = runHook(["hook-codex", "turn_ended"], { session_id: "s1" }, 500);
+      const { status, ms } = runHook(["hook", "turn_ended"], { session_id: "s1" }, 500);
       expect(status).toBe(0);
       expect(ms).toBeLessThan(3000);
     }
@@ -227,11 +226,11 @@ describe("hook delivery", () => {
   // linger: the flusher already waiting on earlier events sends them all at once.
   it("sends at once when a turn ends, taking the events lingering before it", async () => {
     configure(await startExampleBackend());
-    runHook(["hook-codex", "tool_invoked"], { session_id: "s1", tool_name: "Read" });
+    runHook(["hook", "tool_use_completed"], { session_id: "s1", tool_name: "Read" });
     await new Promise((r) => setTimeout(r, 1500));
     expect(storedRows()).toEqual([]);
 
-    const { status, ms } = runHook(["hook-codex", "turn_ended"], { session_id: "s1" });
+    const { status, ms } = runHook(["hook", "turn_ended"], { session_id: "s1" });
     expect(status).toBe(0);
     expect(ms).toBeLessThan(3000);
     await until(() => storedRows().length === 2 && queued() === 0, 5000);
@@ -246,8 +245,8 @@ describe("hook delivery", () => {
   it("falls back to one /ingest per event against a backend that does not batch", async () => {
     const received: Array<Record<string, unknown>> = [];
     configure(await startOldBackend(received));
-    runHook(["hook-codex", "turn_ended"], { session_id: "s1" }, 300);
-    runHook(["hook-codex", "turn_ended"], { session_id: "s1" }, 300);
+    runHook(["hook", "turn_ended"], { session_id: "s1" }, 300);
+    runHook(["hook", "turn_ended"], { session_id: "s1" }, 300);
 
     await until(() => received.length === 2 && queued() === 0);
     expect(received.map((r) => r.event_id).sort()).toEqual(loggedIds().sort());
@@ -256,7 +255,7 @@ describe("hook delivery", () => {
   it("keeps the queue while offline and drains it once the backend is reachable", async () => {
     const port = await freePort();
     configure(`http://127.0.0.1:${port}`);
-    runHook(["hook-codex", "turn_ended"], { session_id: "s1" }, 200);
+    runHook(["hook", "turn_ended"], { session_id: "s1" }, 200);
     await until(() => {
       try {
         return JSON.parse(readFileSync(scopeFiles("state.json")[0], "utf-8")).attempts >= 1;
@@ -283,9 +282,10 @@ describe("hook delivery", () => {
 
   it("doctor reports the queue for the configured backend and token", () => {
     configure("http://10.255.255.1");
-    runHook(["hook-codex", "turn_ended"], { session_id: "s1" });
+    runHook(["hook", "turn_ended"], { session_id: "s1" });
+    mkdirSync(join(home, ".claude"), { recursive: true });
     const doctor = (): string =>
-      spawnSync(process.execPath, [cliPath, "doctor", "--codex"], {
+      spawnSync(process.execPath, [cliPath, "doctor"], {
         cwd: home,
         env: env(60_000),
         encoding: "utf-8",
@@ -299,7 +299,7 @@ describe("hook delivery", () => {
 
   it("unsetting the token discards the queue, since nothing would send or expire it", () => {
     configure("http://10.255.255.1");
-    runHook(["hook-codex", "turn_ended"], { session_id: "s1" });
+    runHook(["hook", "turn_ended"], { session_id: "s1" });
     const flushers = scopeFiles("flush.lock").map(flusherPid);
     const result = spawnSync(process.execPath, [cliPath, "config", "unset", "token"], {
       env: env(60_000),
@@ -317,7 +317,7 @@ describe("hook delivery", () => {
 
   it("uninstall removes the send queue along with the hooks", () => {
     configure("http://10.255.255.1");
-    runHook(["hook-codex", "turn_ended"], { session_id: "s1" });
+    runHook(["hook", "turn_ended"], { session_id: "s1" });
     expect(queued()).toBe(1);
     // Uninstall removes the lock along with the queue, so the flusher is found before it goes.
     const flushers = scopeFiles("flush.lock").map(flusherPid);
@@ -342,7 +342,7 @@ describe("hook delivery", () => {
     const atB: unknown[] = [];
     configure(await startOldBackend(atA));
     const first = oldBackend;
-    runHook(["hook-codex", "tool_invoked"], { session_id: "s1", tool_name: "Read" }, 1500);
+    runHook(["hook", "tool_use_completed"], { session_id: "s1", tool_name: "Read" }, 1500);
     oldBackend = undefined;
     const b = await startOldBackend(atB);
     writeFileSync(join(home, ".pheebs", "config.json"), JSON.stringify({ baseUrl: b }));

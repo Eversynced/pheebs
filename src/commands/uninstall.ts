@@ -1,5 +1,4 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { stripBom } from "../bom.js";
 import {
   AI_TOOLS,
@@ -8,14 +7,20 @@ import {
   isPheebsEntry,
 } from "../hooks/definitions.js";
 import { forgetInstalls, listInstalls } from "../installs.js";
-import { syncClaudeOtelEnv, syncCodexOtel } from "../otel.js";
+import {
+  isLegacyTool,
+  type LegacyTool,
+  legacyConfigPaths,
+  removeLegacyInstall,
+} from "../legacy.js";
+import { syncClaudeOtelEnv } from "../otel.js";
 import { removeOutbox } from "../outbox.js";
 import { removeSessions } from "../usage-sessions.js";
 import { resolveSettingsPath } from "./path.js";
 
 /** Returns whether the file was dealt with. A malformed one is left alone and reported, so
  *  the caller can keep its registry entry rather than forgetting a repo it never cleared. */
-export function removeFromJsonConfig(settingsPath: string, tool: AiTool): boolean {
+export function removeFromJsonConfig(settingsPath: string): boolean {
   if (!existsSync(settingsPath)) return true;
 
   let settings: Record<string, unknown>;
@@ -29,7 +34,9 @@ export function removeFromJsonConfig(settingsPath: string, tool: AiTool): boolea
   const hooks = settings.hooks as Record<string, unknown[]> | undefined;
   if (!hooks) return true;
 
-  const hookKeys = [...new Set(getHookDefinitionsForTool(tool).map((d) => d.hookKey))];
+  const hookKeys = [
+    ...new Set(getHookDefinitionsForTool(AI_TOOLS.CLAUDE_CODE).map((d) => d.hookKey)),
+  ];
   let removed = 0;
 
   for (const key of hookKeys) {
@@ -51,64 +58,20 @@ export function removeFromJsonConfig(settingsPath: string, tool: AiTool): boolea
     delete settings.hooks;
   }
 
-  if (tool === AI_TOOLS.CLAUDE_CODE) {
-    syncClaudeOtelEnv(settings, false);
-  }
+  syncClaudeOtelEnv(settings, false);
 
   writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
   console.log(`pheebs: removed ${removed} hook entries from ${settingsPath}`);
   return true;
 }
 
-/** Returns whether the file was dealt with, for the reason on `removeFromJsonConfig`. */
-export function removeFromTomlConfig(settingsPath: string): boolean {
-  if (!existsSync(settingsPath)) return true;
-
-  let config: Record<string, unknown>;
-  try {
-    config = parseToml(stripBom(readFileSync(settingsPath, "utf-8"))) as Record<string, unknown>;
-  } catch {
-    console.warn(`pheebs: ${settingsPath} is malformed, skipping`);
-    return false;
-  }
-
-  const hooks = config.hooks as Record<string, unknown[]> | undefined;
-  if (!hooks) return true;
-
-  const hookKeys = [...new Set(getHookDefinitionsForTool(AI_TOOLS.CODEX).map((d) => d.hookKey))];
-  let removed = 0;
-
-  for (const key of hookKeys) {
-    const entries = Array.isArray(hooks[key]) ? hooks[key] : [hooks[key]].filter(Boolean);
-    const before = entries.length;
-    const filtered = entries.filter((e) => !isPheebsEntry(e));
-    removed += before - filtered.length;
-
-    if (filtered.length === 0) {
-      delete hooks[key];
-    } else {
-      hooks[key] = filtered;
-    }
-  }
-
-  if (Object.keys(hooks).length === 0) {
-    delete config.hooks;
-  }
-
-  syncCodexOtel(config, false);
-
-  writeFileSync(settingsPath, `${stringifyToml(config)}\n`);
-  console.log(`pheebs: removed ${removed} hook entries from ${settingsPath}`);
-  return true;
-}
-
 /** Best-effort per file: one unwritable or malformed settings file must not strand the repos
  *  later in the sweep, which would leave their hooks calling a binary that is about to go. */
-function removeFrom(tool: AiTool, settingsPath: string): boolean {
+function removeFrom(tool: AiTool | LegacyTool, settingsPath: string): boolean {
   try {
-    return tool === AI_TOOLS.CODEX
-      ? removeFromTomlConfig(settingsPath)
-      : removeFromJsonConfig(settingsPath, tool);
+    return isLegacyTool(tool)
+      ? removeLegacyInstall(tool, settingsPath)
+      : removeFromJsonConfig(settingsPath);
   } catch {
     console.warn(`pheebs: could not clear ${settingsPath}, skipping`);
     return false;
@@ -124,11 +87,12 @@ function removeFrom(tool: AiTool, settingsPath: string): boolean {
  * the registry is cleaned up too.
  */
 export async function runUninstall(): Promise<void> {
-  const targets = new Map<string, AiTool>();
+  const targets = new Map<string, AiTool | LegacyTool>();
 
-  for (const tool of Object.values(AI_TOOLS)) {
-    targets.set(resolveSettingsPath(tool, false).path, tool);
-    targets.set(resolveSettingsPath(tool, true).path, tool);
+  targets.set(resolveSettingsPath(false).path, AI_TOOLS.CLAUDE_CODE);
+  targets.set(resolveSettingsPath(true).path, AI_TOOLS.CLAUDE_CODE);
+  for (const { tool, path } of legacyConfigPaths()) {
+    targets.set(path, tool);
   }
 
   for (const { tool, path } of listInstalls()) {

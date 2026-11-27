@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { AI_TOOLS, type AiTool } from "./hooks/definitions.js";
+import { LEGACY_TOOLS, type LegacyTool } from "./legacy.js";
 import { readJsonFile, restrictToOwner } from "./pheebs-store.js";
 
 /**
@@ -22,11 +23,12 @@ import { readJsonFile, restrictToOwner } from "./pheebs-store.js";
 const INSTALLS_PATH = join(homedir(), ".pheebs", "installs.json");
 
 export interface InstallRecord {
-  tool: AiTool;
+  /** Cursor and Codex only on a record written before their removal, which `uninstall` still clears. */
+  tool: AiTool | LegacyTool;
   path: string;
 }
 
-const TOOLS = new Set<string>(Object.values(AI_TOOLS));
+const TOOLS = new Set<string>([...Object.values(AI_TOOLS), ...LEGACY_TOOLS]);
 
 /** `tool` is checked against the real set because the consumers act on it: the resync writes
  *  the token into the path, and `uninstall` rewrites it in that tool's format. */

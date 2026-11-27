@@ -5,9 +5,8 @@ import { basename, dirname } from "node:path";
 /**
  * Keep a token-bearing config file out of git.
  *
- * A project-scoped install writes the Bearer token into the repo (`.claude/settings.local.json`,
- * `.codex/config.toml`). Nothing in a fresh repo ignores the Codex path, so a `git add -A`
- * commits the token, and on a public repo that is a leak with no way back.
+ * A project-scoped install writes the Bearer token into the repo (`.claude/settings.local.json`).
+ * Nothing in a fresh repo is guaranteed to ignore it, so a `git add -A` can commit the token, and on a public repo that is a leak with no way back.
  *
  * `.git/info/exclude` rather than `.gitignore`: ignoring a file is the developer's decision
  * about their own repo, and an entry there is local and uncommitted, so pheebs is not editing
