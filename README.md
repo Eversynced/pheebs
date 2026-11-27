@@ -81,15 +81,15 @@ Repertoire
 
 Competency          State      % recurring
 ------------------------------------------
-Models              Recurring          33%
+Models              Recurring          40%
 Artifacts           Recurring          33%
 MCP                 Recurring         100%
 Evals               Recurring          60%
 Context management  Recurring          50%
 Orchestration       Adopted             0%
 
-Coverage index: 9 / 23 = 39%
-█████████░░░░░░░░░░░░░░
+Coverage index: 9 / 22 = 41%
+█████████░░░░░░░░░░░░░
 
 Sessions: 66 over 4 active week(s)
 Compaction: 12 auto, 3 manual
