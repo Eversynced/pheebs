@@ -27,7 +27,8 @@ describe("repertoire section from the shared parity fixture", () => {
     expect(sectionOf(c)).toEqual(c.expected);
   });
 
-  // The client still reads a plan on a model nothing names as Insufficient data, not Unobserved.
+  // These cases still carry the backend's coverage counts, which include multi-harness use, a practice
+  // the client dropped, and one reads a plan on a model nothing names as Insufficient data, not Unobserved.
   it.fails.each(cases.filter((c) => c.known_divergence))("$name", (c) => {
     expect(sectionOf(c)).toEqual(c.expected);
   });

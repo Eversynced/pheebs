@@ -149,6 +149,7 @@
     },
     {
       "name": "window edges: the first window day counts, the day before does not, and a version first seen on the cutoff day is judged",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -266,6 +267,7 @@
     },
     {
       "name": "two harnesses: recurring over the last four active weeks, patterns, and a ship whose test ran before the window",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -501,6 +503,7 @@
     },
     {
       "name": "Codex only, upgraded inside the window: practices that need the new version wait, n/a ones leave the index",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -639,6 +642,7 @@
     },
     {
       "name": "split-phase delivery is judged only from client 1.0.0, so a 0.9.5 client leaves it out of the index",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -731,6 +735,7 @@
     },
     {
       "name": "split-phase delivery: a plan on one model, a deliberate switch, then execution on another, three weeks running",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -1129,6 +1134,7 @@
     },
     {
       "name": "multi-model use: Cursor's default and unknown name no model, so one real model is not two",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -1235,6 +1241,7 @@
     },
     {
       "name": "multi-model use: one model's effort, speed, quantization and prefix spellings are one model",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -1341,6 +1348,7 @@
     },
     {
       "name": "multi-model use: two models stay two once their spellings merge, and a Claude id is left as it is",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -1447,6 +1455,7 @@
     },
     {
       "name": "multi-model use: no model observed in the window reads Insufficient data, not Unobserved",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -1552,6 +1561,7 @@
     },
     {
       "name": "subagent model: a model chosen for a subagent on a finished tool call is a second model",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -1669,6 +1679,7 @@
     },
     {
       "name": "subagent model: the same value on any other event is not counted",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -1808,6 +1819,7 @@
     },
     {
       "name": "subagent model: default names no model, so it is not a second one",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -1925,6 +1937,7 @@
     },
     {
       "name": "subagent model: a variant of the session's model merges with it",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -2042,6 +2055,7 @@
     },
     {
       "name": "split-phase delivery: a plan on one model, then a subagent on another, three weeks running",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -2245,6 +2259,7 @@
     },
     {
       "name": "split-phase delivery: a subagent on the planning model under another spelling is not a split",
+      "known_divergence": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
         {
@@ -2415,6 +2430,7 @@
     },
     {
       "name": "split-phase delivery: a subagent after a plan on a model nothing names is undecided",
+      "known_divergence": true,
       "client_only": true,
       "today": "2026-10-21T12:00:00.000Z",
       "events": [
