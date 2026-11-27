@@ -302,7 +302,8 @@ describe("uninstall of a Codex config with unusual shapes", () => {
     };
     expect(after.otel).toBeUndefined();
     expect(after.analytics).toBe(true);
-    expect(statSync(codex).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX file modes.
+    if (process.platform !== "win32") expect(statSync(codex).mode & 0o777).toBe(0o600);
     expect(result.stderr).toContain("could not read");
     expect(result.stderr).not.toContain("malformed");
   });

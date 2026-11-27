@@ -73,6 +73,25 @@ describe("hook stdin", () => {
   });
 });
 
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Poll a condition for up to five seconds, blocking, and return its last value.
+function waitFor<T>(probe: () => T): T {
+  let value = probe();
+  for (let i = 0; !value && i < 50; i++) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    value = probe();
+  }
+  return value;
+}
+
 describe("Claude Code hook given a Cursor payload", () => {
   const cursorStart = {
     hook_event_name: "sessionStart",
@@ -135,16 +154,23 @@ describe("Claude Code hook given a Cursor payload", () => {
       });
       const root = join(home, ".pheebs", "outbox");
       if (!existsSync(root)) return [];
-      const files = readdirSync(root, { recursive: true, withFileTypes: true }).filter((e) =>
-        e.isFile(),
-      );
-      // A flusher outlives its hook by design; stop the one this run started.
-      for (const lock of files.filter((e) => e.name === "flush.lock")) {
-        try {
-          process.kill(
-            Number(readFileSync(join(lock.parentPath, lock.name), "utf-8").split("\n")[0]),
-          );
-        } catch {}
+      const list = () =>
+        readdirSync(root, { recursive: true, withFileTypes: true }).filter((e) => e.isFile());
+      const files = list();
+      // A flusher outlives its hook by design: wait for the one this run started to take its
+      // lock, then stop it and wait until it is gone, or it keeps writing into the directory
+      // being removed.
+      if (files.some((e) => e.name.endsWith(".json"))) {
+        const lockOf = () => list().find((e) => e.name === "flush.lock");
+        const lock = waitFor(lockOf);
+        const pid =
+          lock && Number(readFileSync(join(lock.parentPath, lock.name), "utf-8").split("\n")[0]);
+        if (pid) {
+          try {
+            process.kill(pid);
+          } catch {}
+          waitFor(() => !isAlive(pid));
+        }
       }
       return files.filter((e) => e.name.endsWith(".json")).map((e) => e.name);
     } finally {
