@@ -1,0 +1,69 @@
+{
+  "local": true,
+  "days": 30,
+  "sections": {
+    "repertoire": {
+      "enabled": true,
+      "sessions": 3,
+      "active_weeks": 3,
+      "coverage_index": {
+        "recurring": 1,
+        "applicable": 20
+      },
+      "artifact_breadth": 1,
+      "compaction": {
+        "auto": 0,
+        "manual": 0
+      },
+      "competencies": [
+        {
+          "name": "Models",
+          "state": "insufficient_data",
+          "recurring_share": 0
+        },
+        {
+          "name": "Artifacts",
+          "state": "adopted",
+          "recurring_share": 0
+        },
+        {
+          "name": "MCP",
+          "state": "unobserved",
+          "recurring_share": 0
+        },
+        {
+          "name": "Evals",
+          "state": "adopted",
+          "recurring_share": 0
+        },
+        {
+          "name": "Context management",
+          "state": "unobserved",
+          "recurring_share": 0
+        },
+        {
+          "name": "Orchestration",
+          "state": "recurring",
+          "recurring_share": 0.2
+        }
+      ]
+    },
+    "judgement_signals": {
+      "enabled": true,
+      "verification_coverage": {
+        "value": 0.5,
+        "unit": "share",
+        "trend": [
+          0,
+          1
+        ]
+      },
+      "unavailable": {
+        "pushback_rate": "needs_backend",
+        "refinement_to_repair": "needs_backend",
+        "wholesale_accept": "needs_backend",
+        "model_fit": "needs_backend"
+      }
+    }
+  }
+}
