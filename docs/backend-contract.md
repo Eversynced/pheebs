@@ -77,9 +77,8 @@ as `vcs_action != 'other'`, or every worktree creation reads as shipped work. A 
 strongest action, so `git worktree add ../x && git commit` is `commit`, and `command_sequence`
 still shows the `worktree` segment.
 
-`worktree` is seen only when `git worktree add` is typed in a shell. Claude Code `--worktree`,
-Cursor parallel agents and Codex app worktrees create worktrees without a shell command, so they
-never set it. Any count is a lower bound: read its absence as unknown, never as no worktree use.
+`worktree` is seen only when `git worktree add` is typed in a shell. Claude Code `--worktree`
+creates a worktree without a shell command, so it never sets it. Any count is a lower bound: read its absence as unknown, never as no worktree use.
 
 Contract 1.10.0 adds the `session_token_usage` event: the tokens a Claude Code session used,
 summed by model from the transcript after the session ends, so cost and session fit do not need
@@ -106,6 +105,20 @@ the transcript has them `cache_read_tokens`, `cache_write_tokens` and `reasoning
   total can be too high and another's too low: a background session that ends before its parent can
   carry tokens the parent made, when its copy of a line names no requester. Do not read one
   session's total as only what that session spent.
+
+Contract 1.11.0 deprecates Cursor and Codex. The client captures Claude Code only, so it always
+sends `ai_tool: claude_code`, and nothing is removed from the schema. A backend may still hold or
+receive the deprecated values, because an older client keeps sending them and an event queued
+before the upgrade is still sent:
+
+- `ai_tool` values `cursor` and `codex`.
+- Events `tool_invoked`, `compaction_completed` and `permission_requested`.
+- Properties `rule_attachment_count`, `fast_mode`, `status`, `failure_type`, `permission_type`,
+  `approved`, `conversation_id` and `generation_id`, each marked `deprecated: true`.
+
+A backend written for 1.10.0 needs no change, and one that validates strictly should keep
+accepting these. The repo scan is unchanged, so `artifact_type` keeps `codex_skills` and
+`cursor_commands`: they describe files in a repository, not the agent in use.
 
 ## `/ingest/batch` (optional)
 
@@ -404,10 +417,10 @@ A saving can also be negative. Cache-read pricing does not scale with the model 
 cache-heavy session a cheaper model can cost more. Do not assume the figure is positive. A row
 summed over zero sessions is zero, though, never negative.
 
-**Claude Code only, today.** The numbers come from joining per-session token counts to prices, and
-only Claude Code emits that telemetry. For a Cursor or Codex developer there is nothing to compute,
-and `available: false` with `insufficient_data` beats a report of zeros, which reads as "you saved
-nothing" rather than "we cannot see this".
+**Claude Code only.** The numbers come from joining per-session token counts to prices, and
+only Claude Code emits that telemetry. For a developer whose log has no such sessions there is
+nothing to compute, and `available: false` with `insufficient_data` beats a report of zeros, which
+reads as "you saved nothing" rather than "we cannot see this".
 
 ## `/insights/team` (optional, manager-only)
 

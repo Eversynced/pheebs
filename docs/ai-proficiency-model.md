@@ -3,7 +3,7 @@
 **Last updated:** Sep 24, 2026
 
 > **Scope.** This repository is the capture client. It implements Layer 1: hooks that emit generic
-> events from Claude Code, Cursor, and Codex, and a repo scan for AI-config artifacts. Layer 2 is
+> events from Claude Code (rows from Cursor and Codex, captured before their removal, remain in old logs), and a repo scan for AI-config artifacts. Layer 2 is
 > not implemented here. Its signals are computed by a backend from the captured events, using
 > fields defined in [`openapi.yaml`](../openapi.yaml) and
 > [`backend-contract.md`](./backend-contract.md). Read the model below as what the facts are read
@@ -22,7 +22,7 @@ Both dimensions are measured by Pheebs from telemetry. How Pheebs detects profic
 
 # Layer 1: AI harness repertoire
 
-Computed over a trailing 4-week window, using a shared event vocabulary across Claude Code, Cursor, and Codex, a repo artifact scan, and native OpenTelemetry.
+Computed over a trailing 4-week window, using a shared event vocabulary from Claude Code, a repo artifact scan, and native OpenTelemetry.
 
 ## The unit: a practice
 
@@ -49,7 +49,7 @@ The two differ in what they claim about the future, and the difference is worth 
 
 Never report a measurement gap as Unobserved. Unobserved says the engineer did not do the thing; if the detector could not have seen it, that sentence is false, and the model exists to make behaviour legible rather than to manufacture a verdict. The conditions that produce *Insufficient data* are listed under [Windows and placement](#windows-and-placement).
 
-A competency inherits the state of its anchor practice. Anchors are the core practices of a competency; most are available and detectable on all three harnesses, and the ones that are not are marked *anchor where applicable*. Harness-specific practices feed the coverage index only. A competency with **no judgeable anchor on the engineer's harness mix** reads Insufficient data: the harness gives us nothing to judge it by, which is a statement about our reach and not about the engineer. An anchor sets the competency's state only while it is both applicable and judgeable.
+A competency inherits the state of its anchor practice. Anchors are the core practices of a competency; most are available and detectable on Claude Code, and the ones that are not are marked *anchor where applicable*. Harness-specific practices feed the coverage index only. A competency with **no judgeable anchor on the engineer's harness** reads Insufficient data: the harness gives us nothing to judge it by, which is a statement about our reach and not about the engineer. An anchor sets the competency's state only while it is both applicable and judgeable.
 
 ## Scope
 
@@ -57,10 +57,10 @@ A practice states an AI harness capability was invoked, is configured, or recurs
 
 ## Competencies and their practices
 
-Twenty-four practices across the six competencies. Anchors come first in each competency table. Across all practices:
-- Twenty-three are per-engineer practices.
+Twenty-three practices across the six competencies. Anchors come first in each competency table. Across all practices:
+- Twenty-two are per-engineer practices.
 - One is a team stat: the session context compaction split.
-- Three of the twenty-three per-engineer practices are patterns (composite event sequences): split-phase delivery, fix loop, test-gated ship.
+- Three of the twenty-two per-engineer practices are patterns (composite event sequences): split-phase delivery, fix loop, test-gated ship.
 
 ### Models
 
@@ -69,7 +69,6 @@ Which AI models are run for a task: the models, effort settings, and autonomy mo
 | Practice | What it states |
 | :-- | :-- |
 | Multi-model use (anchor) | 2+ distinct models in the window |
-| Multi-harness use | 2+ AI harnesses in the window |
 | Effort variation | 2+ distinct effort settings in the window |
 | Plan-mode use | Plan-mode segments in sessions |
 | Autonomy variation | 2+ distinct permission modes in the window |
@@ -116,7 +115,7 @@ The context-window features in use: compaction, and the save, resume, and clear 
 | Resume and clear lifecycle (anchor where applicable) | Sessions started via resume or clear |
 | Compaction split (team stat) | The auto vs manual compaction ratio |
 
-Both anchors here are harness-limited, so on a harness that reports neither manual compaction nor session origin the competency reads Insufficient data. Context management is no longer the only competency that can lose its anchor this way: Artifacts rests on a single anchor, and as of 2026-09-11 that anchor is unobservable on Codex. The registry records which harness each gap applies to, and which gaps are settled rather than merely unverified.
+Both anchors here are harness-limited, so on a harness that reports neither manual compaction nor session origin the competency reads Insufficient data. Artifacts also rests on a single anchor, which was unobservable on Codex, so a Codex row in an old log cannot grade it. The registry records which harness each gap applies to, and which gaps are settled rather than merely unverified.
 
 ### Orchestration
 
@@ -147,16 +146,16 @@ Coordinating more than one agent or session: sub-agents for parallel or isolated
 1. fewer than 2 active weeks in the window;
 2. a detector not yet observable to the engineer for a full window;
 3. a practice whose support on the engineer's harness has not been established — the detector exists there but has never produced the value the practice needs;
-4. a competency with no judgeable anchor on the engineer's harness mix, whether its anchors are n/a or unverified;
+4. a competency with no judgeable anchor on the engineer's harness, whether its anchors are n/a or unverified;
 5. multi-model use (MD1) when no event in the window carries a model: one model is a fact, no model is a gap, so the engineer is not read as having used one.
 
 ## Engineer view
 
 ### The coverage index
 
-Per engineer: the share of applicable practices at Recurring. *Applicable* means the feature exists on the engineer's harness mix. Team stats (the compaction split) sit outside the index.
+Per engineer: the share of applicable practices at Recurring. *Applicable* means the feature exists on the engineer's harness. Team stats (the compaction split) sit outside the index.
 
-An engineer on more than one harness still gets one index. States pool practices across the harnesses so a practice recurring in the harness mix is counted as met.
+Multi-harness use is no longer a practice, so coverage index scores shift slightly for engineers who were recurring on it.
 
 Example:
 
@@ -165,7 +164,7 @@ Pam works in Claude Code only, with 4 active weeks in the window:
 
 Competency           State       % recurring
 ---------------------------------------------
-Models               Recurring     33%
+Models               Recurring     40%
 Artifacts            Recurring     33%
 MCP                  Recurring     100%
 Evals                Recurring     60%
@@ -173,8 +172,8 @@ Context management   Recurring     50%
 Orchestration        Adopted       0%
 
 
-Coverage index: 9 / 23 = 39%
-█████████░░░░░░░░░░░░░░
+Coverage index: 9 / 22 = 41%
+█████████░░░░░░░░░░░░░
 ```
 
 The competency states are the profile, the index is the trend line.

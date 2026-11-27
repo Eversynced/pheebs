@@ -597,7 +597,7 @@ function competencyStates(practices: Record<string, PracticeState>): Competency[
     const anchorStates = anchors
       .map((id) => practices[id])
       .filter((s): s is CompetencyState => s !== "n/a" && s !== "insufficient_data");
-    // No judgeable anchor on this harness mix: the harness gave us nothing to judge it by.
+    // No judgeable anchor on this harness: the harness gave us nothing to judge it by.
     const state =
       anchorStates.length === 0
         ? "insufficient_data"

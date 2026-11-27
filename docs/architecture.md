@@ -6,23 +6,24 @@ How an agent event becomes a row you can query, and where your own code plugs in
 
 ```mermaid
 flowchart TD
-    A["AI coding agent<br/>(Claude Code, Cursor, Codex)"] -->|hook fires| B["pheebs hook[-cursor|-codex] &lt;event&gt;"]
-    B --> C["Handler<br/>validate event, read stdin,<br/>run per-tool extractor"]
+    A["Claude Code"] -->|hook fires| B["pheebs hook &lt;event&gt;"]
+    B --> C["Handler<br/>validate event, read stdin,<br/>run extractor"]
     C --> D["Event envelope<br/>(the schema below)"]
     D --> E["Local JSONL log<br/>~/.pheebs/events.jsonl"]
     D -->|token set| Q["Send queue<br/>~/.pheebs/outbox/"]
     Q --> R["pheebs flush<br/>detached, one at a time"]
     R --> F["POST /ingest/batch<br/>your backend"]
-    A -.->|native OTLP, Claude Code and Codex| G["POST /otel proxy<br/>your backend"]
+    A -.->|native OTLP| G["POST /otel proxy<br/>your backend"]
     F --> H["Your storage"]
     G --> I["Your OTel destination"]
     H --> J["Layer 2<br/>classifiers, cost analysis, dashboards"]
 ```
 
-Cursor also runs the hooks in a project's `.claude/settings.json`. Pheebs records Cursor
-sessions only through its Cursor install (`pheebs init --cursor`), so the Claude Code path ignores
-those payloads rather than logging them as `claude_code` (`isCursorPayload` in
-[`src/hooks/handler.ts`](../src/hooks/handler.ts)).
+Cursor also runs the hooks in a project's `.claude/settings.json`. Pheebs does not record
+Cursor, so the hook ignores those payloads rather than logging them as `claude_code`
+(`isCursorPayload` in [`src/hooks/handler.ts`](../src/hooks/handler.ts)). An install made when
+Cursor and Codex were supported still calls `pheebs hook-cursor` and `pheebs hook-codex`, which exit
+without doing anything until `pheebs uninstall` removes them.
 
 Local logging always happens. The send is skipped entirely when no
 endpoint and token are configured, which is the default: Pheebs ships local-only.
@@ -32,8 +33,8 @@ endpoint and token are configured, which is the default: Pheebs ships local-only
 No hook waits on the network to deliver an event. It writes the envelope to the send queue, one
 file per event, and starts a detached `pheebs flush` unless one is already running or a backoff
 is pending, then exits.
-Cursor and Codex wait for the hook process, so this is what keeps a slow or unreachable backend
-from stalling them ([`src/transports/http.ts`](../src/transports/http.ts)). Prompt
+The agent can wait for the hook process, so this is what keeps a slow or unreachable backend
+from stalling it ([`src/transports/http.ts`](../src/transports/http.ts)). Prompt
 classification is the one call a hook still makes, bounded at 2.5 seconds.
 
 The flusher lets the oldest event wait up to a minute, so one request carries a burst of hooks,
@@ -59,8 +60,7 @@ session's byte offsets forward. The readers are in [`src/transcript-usage.ts`](.
 it counts each `message.id` and `requestId` once, skips a request another session's file already counted
 (a background, resumed or forked session's file starts with a copy) and a line that names another session
 as the requester, never counts a line stamped before the session was first seen or not stamped at all,
-and adds the subagent files below the transcript. Cursor has no reader, because its transcripts carry no usage, and Codex is not read (see the
-[ledger](./spike-findings-ledger.md)).
+and adds the subagent files below the transcript. Only Claude Code transcripts are read.
 
 The lookup searches `CLAUDE_CONFIG_DIR`, `~/.claude` and each `~/.claude-*` directory with a
 `projects` folder, one folder level down. A transcript in a config directory outside those is not found, and its
@@ -177,13 +177,12 @@ Consumer-side correlation has a few rules that are properties of the capture
 layer, not preferences. They apply to any storage engine.
 
 **Anchor on `tool_use_completed` and `tool_use_failed`, never `tool_invoked`.**
-Cursor and Codex fire `tool_invoked` for the same execution that later produces
-a completion event, so including it double-counts.
+Rows from an older Cursor or Codex client can carry `tool_invoked`
+for the same execution that later produces a completion event, so including it
+double-counts. Claude Code never emitted it.
 
-**Pass and fail are uniform across all three tools.** Claude Code and Cursor
-fire `tool_use_failed` on a failed call and `tool_use_completed` on success.
-Codex has no failure hook, so the handler derives the outcome from the raw tool
-result and rewrites the event to `tool_use_failed`. A `test_run` on
+**Pass and fail are two events.** Claude Code fires `tool_use_failed` on a
+failed call and `tool_use_completed` on success. A `test_run` on
 `tool_use_completed` passed; on `tool_use_failed` it failed. Test-gated
 ship counts a test of either outcome, because running the tests is the gate.
 
@@ -260,14 +259,9 @@ timestamps instead of one.
   that some write follow the test through `&&` links, while `vcs_action` reports
   the strongest write in the row. So `npm test && git commit -m x; git push`
   reads as a gated push, though only the commit was gated.
-- **Codex outcome coverage is a lower bound.** Codex `PostToolUse` intercepts
-  simple shell calls only, not `unified_exec` and not non-shell tools. Failures
-  on uninstrumented calls never reach a hook. Claude Code and Cursor emit a
-  dedicated failure event and are not subject to this gap.
 - **Some fields are absent rather than zero.** `lines_changed` stays unset when
-  the shape is unrecognized, and `rule_attachment_count` is omitted for a
-  rule-less list, because a `0` would be indistinguishable from a surface that
-  does not populate the field. Treat absent and zero as different.
+  the shape is unrecognized, because a `0` would be indistinguishable from a
+  surface that does not populate the field. Treat absent and zero as different.
 
 Findings of this kind are recorded in
 [`spike-findings-ledger.md`](./spike-findings-ledger.md) as they are verified.

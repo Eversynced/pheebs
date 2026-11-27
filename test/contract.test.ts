@@ -27,13 +27,45 @@ describe("openapi.yaml", () => {
     );
   });
 
+  it("carries the version that deprecated Cursor and Codex, and marks what they produced", () => {
+    expect(spec).toContain('\n  version: "1.11.0"\n');
+    const deprecated = [
+      "rule_attachment_count",
+      "fast_mode",
+      "status",
+      "failure_type",
+      "permission_type",
+      "approved",
+      "conversation_id",
+      "generation_id",
+    ];
+    for (const field of deprecated) {
+      expect(spec).toMatch(
+        new RegExp(`\\n {8}${field}:\\n(?: {10}.*\\n)*? {10}deprecated: true\\n`),
+      );
+    }
+    expect(spec.split("Deprecated in 1.11.0:").length - 1).toBe(deprecated.length);
+    const doc = readFileSync(
+      join(import.meta.dirname, "..", "docs", "backend-contract.md"),
+      "utf-8",
+    );
+    const start = doc.indexOf("Contract 1.11.0");
+    expect(start).toBeGreaterThan(-1);
+    const paragraph = doc.slice(start, doc.indexOf("\n## ", start));
+    for (const name of [...deprecated, ...DEPRECATED_EVENTS, "cursor", "codex"]) {
+      expect(paragraph).toContain(`\`${name}\``);
+    }
+  });
+
+  it("keeps the Cursor and Codex ai_tool values a backend may still receive", () => {
+    expect(spec).toContain("\n          enum: [claude_code, cursor, codex]\n");
+    expect(spec).toContain("`cursor` and `codex` are deprecated in 1.11.0");
+    expect(spec).toContain("`permission_requested` are deprecated in\n            1.11.0");
+  });
+
   it("documents the subagent model fields an Agent call carries", () => {
     expect(spec).toContain("\n        subagent_model:\n");
     expect(spec).toContain("\n        requested_model:\n");
-  });
-
-  it("carries the version that introduced session_token_usage", () => {
-    expect(spec).toContain('\n  version: "1.10.0"\n');
   });
 
   it("documents the fields a session_token_usage event carries", () => {

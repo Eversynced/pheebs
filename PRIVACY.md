@@ -53,7 +53,7 @@ Present on every event:
 | `event` | one of 16 event names (see [`src/hooks/types.ts`](./src/hooks/types.ts)) |
 | `developer` | your token's id once the token has been validated, otherwise `dev-XXXXXX` (a truncated hash of your git email), otherwise `unknown`. Resolved locally, with no network call ([`src/developer-id.ts`](./src/developer-id.ts)) |
 | `codebase` | `PHEEBS_CODEBASE_ID` if set, else `org/repo` from your git remote, else `local/<folder-name>` (no remote, or started outside a repo), else `unknown` |
-| `ai_tool` | `claude_code` \| `cursor` \| `codex` |
+| `ai_tool` | `claude_code`. Rows written by an earlier version can also say `cursor` or `codex` |
 | `session_id` | the agent's own session identifier |
 | `version` | the Pheebs version that wrote the row |
 | `event_id` | a random, time-ordered id for this one event, so a backend can store a resend once |
@@ -82,7 +82,7 @@ queue is discarded if you point Pheebs at a different backend or token, or unset
 - **Prompt text**, except through classification (below). `prompt_length` — a character count —
   is recorded instead.
 - **Command strings.** A shell command is read in-process to derive a tag and then discarded.
-- **Tool output.** Codex's `tool_response` is read to determine pass/fail and never persisted.
+- **Tool output.** A Claude Code `tool_response` is read to count changed lines and never persisted.
 - **Git history, authorship, or diffs.** The repo scan uses git only to locate the repo root.
 
 The one path-derived value in the whole system is the **name** of your working directory — not
@@ -100,7 +100,7 @@ value is read in-process, a short tag is derived, and only the tag is persisted.
 | `vcs_action` | a `vcs` command | `worktree`, `commit`, `push`, `pr_create`, `other` |
 | `command_sequence` | a chained shell command | each segment's tag joined by its operators, such as `test_run && push`; absent for a single command |
 | `command_name` | a leading `/command`, or `tool_input.skill` | the command or skill name |
-| `mcp_server_name` | the `mcp__<server>__<method>` tool name (Claude Code, Codex), or Cursor's own field | the server name only |
+| `mcp_server_name` | the `mcp__<server>__<method>` tool name (Claude Code) | the server name only |
 | `role` | the sub-agent's `agent_type` | `review`, `generate` |
 
 `git commit -m "fix the auth bug"` records `tool_intent: "vcs"` and `vcs_action: "commit"`. The
@@ -132,17 +132,6 @@ subagent ran on (`subagent_model`, read from the result's `resolvedModel`), the 
 (`requested_model`) and its `agent_type`. Each model id is kept only if it is a short model-id token,
 and the subagent's prompt and output in the same response are never read.
 
-**Cursor also:** `conversation_id`, `generation_id`, `composer_mode`, `cursor_version`, `sandbox`,
-`status`, `loop_count`, token counts (`input_tokens`, `output_tokens`, `cache_read_tokens`,
-`cache_write_tokens`), sub-agent detail (`subagent_model`, `is_parallel_worker`,
-`subagent_duration_ms`, `message_count`, `tool_call_count`), `failure_type`, `attachment_count`,
-`rule_attachment_count` (how many of those attachments were rules — read off each entry's `type`;
-the `file_path` beside it is a real path and is never read), `effort` (the same field Claude Code
-fills, here on three events rather than all) and `fast_mode` (the vendor's own `fast` model
-setting), `session_duration_ms`, `is_background_agent`, and compaction detail
-(`context_usage_percent`, `context_tokens`, `context_window_size`, `messages_to_compact`,
-`is_first_compaction`).
-
 **Session token usage:** for Claude Code, after a session ends or goes quiet, the
 background process reads the agent's transcript on your machine, adds up the tokens by model, and
 queues one `session_token_usage` event per model with `model`, `from_subagent`, `input_tokens`,
@@ -152,9 +141,7 @@ paths are read past and dropped. No transcript path is stored: a hook records on
 tool, codebase, timestamps (including when it first saw the session, so usage from before you installed is never counted) and a hash of the backend address in `~/.pheebs/sessions/` (owner-only on
 macOS and Linux, your profile folder's permissions on Windows, local, never sent, removed after 30
 idle days, and by `pheebs uninstall`), only when a backend and token are set, and the background process finds the file
-from the session id. One state file beside the records (byte positions per session, named by a hash, and digests of request ids, with no id, text or path) is kept 180 days, names the backend address (a hash) it was built for, so a resumed session is not counted twice and a copied history is skipped, and `pheebs uninstall` removes it too. Cursor's transcripts carry no usage and Codex's are not read, so neither sends one.
-
-**Codex also:** `input_tokens`, `output_tokens`, `permission_type`, `approved`.
+from the session id. One state file beside the records (byte positions per session, named by a hash, and digests of request ids, with no id, text or path) is kept 180 days, names the backend address (a hash) it was built for, so a resumed session is not counted twice and a copied history is skipped, and `pheebs uninstall` removes it too.
 
 > **Two of these are free text.** `task_subject` and `teammate_name` (Claude Code background
 > tasks) are recorded **verbatim** — a task subject is a human- or model-written title, e.g.
@@ -167,7 +154,7 @@ field ships beside the tag deliberately, so a consumer is not locked into our cl
 
 ## OpenTelemetry
 
-`pheebs init` also configures your **agent's own** OpenTelemetry exporter (Claude Code and Codex)
+`pheebs init` also configures your **agent's own** OpenTelemetry exporter (Claude Code)
 to send through the backend's `/otel` proxy ([`src/otel.ts`](./src/otel.ts)). This is a separate
 channel from everything above: that data is produced by the agent, not by Pheebs, it never appears
 in `~/.pheebs/logs/`, and Pheebs does not choose what it contains — the agent's own telemetry
@@ -227,8 +214,7 @@ either. Pheebs's backend never receives it, so the tenant's `prompt_collection` 
 required. Your opt-out still is: an opted-out token
 gets `prompt_intent: "unclassified"` and nothing is run ([`src/classify-local.ts`](./src/classify-local.ts)).
 
-- **Claude Code only.** Cursor and Codex prompts record `unclassified`, because sending them to
-  Anthropic would add a recipient those sessions never used.
+- **Claude Code only.** A prompt from any other agent is never sent anywhere.
 - **No second transcript, no telemetry.** The child runs with `--no-session-persistence`, and
   hooks, settings, MCP servers and OpenTelemetry are switched off in it, so the classification
   call is not exported as your own usage.

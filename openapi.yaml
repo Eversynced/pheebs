@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Pheebs backend contract
-  version: "1.10.0"
+  version: "1.11.0"
   description: |
     The routes a Pheebs backend answers. The client holds only a base URL and a
     per-developer token, so anything implementing this contract is a Pheebs backend.
@@ -229,8 +229,7 @@ paths:
             enum: [traces, metrics, logs]
       requestBody:
         description: |
-          The client always configures protobuf (`http/protobuf` for Claude Code, `binary` for
-          Codex). A backend that implements only the JSON variant drops every export.
+          The client always configures protobuf (`http/protobuf` for Claude Code). A backend that implements only the JSON variant drops every export.
         required: true
         content:
           application/x-protobuf:
@@ -435,6 +434,10 @@ components:
             - permission_requested
             - artifact_found
             - session_token_usage
+          description: |
+            `tool_invoked`, `compaction_completed` and `permission_requested` are deprecated in
+            1.11.0: only Cursor and Codex produced them, and the client stops sending them. A
+            backend may still hold or receive them from an older client, so keep accepting them.
         codebase:
           type: string
           description: |
@@ -444,6 +447,10 @@ components:
         ai_tool:
           type: string
           enum: [claude_code, cursor, codex]
+          description: |
+            `cursor` and `codex` are deprecated in 1.11.0: the client stops sending them, because
+            Cursor and Codex support was removed, so a new client always sends `claude_code`. A
+            backend may still hold or receive them from an older client.
         session_id:
           type: string
           description: |
@@ -467,8 +474,8 @@ components:
           type: string
           description: |
             For `ai_tool: claude_code`, present on `session_started` and `session_token_usage`
-            only; recurring hooks do not carry it. Cursor and Codex copy it off any payload that
-            has it, on any event. On `session_token_usage`, the model the counts belong to (a
+            only; recurring hooks do not carry it. An older Cursor or Codex client copied it off any
+            payload that had it, on any event. On `session_token_usage`, the model the counts belong to (a
             Claude Code id has its context suffix stripped).
         from_model:
           type: string
@@ -494,7 +501,7 @@ components:
           type: string
           description: |
             The vendor's own `source` value, passed through verbatim — treat it as an opaque
-            string. Emitted on `session_started` by claude_code and codex; Cursor never sets it.
+            string. Emitted on `session_started` by claude_code. An older client also sent it for codex.
         expansion_type:
           type: string
           description: On `command_expanded`, e.g. `slash_command`.
@@ -509,8 +516,8 @@ components:
           type: string
           description: |
             The model a subagent ran on. For `ai_tool: claude_code`, on an `Agent` call's
-            `tool_use_completed`, from the result's `resolvedModel`, a full model id. Cursor sets it
-            on `subagent_spawned`, passed through verbatim, and reports `default` on Auto. Kept only
+            `tool_use_completed`, from the result's `resolvedModel`, a full model id. An older Cursor client set it
+            on `subagent_spawned`, passed through verbatim, and reported `default` on Auto. Kept only
             when it is a short id token.
         requested_model:
           type: string
@@ -533,7 +540,8 @@ components:
           description: |
             On `context_compacted`, and for Codex also on `compaction_completed`. The
             `auto`/`manual` pair is guaranteed only for `claude_code` (it comes from the hook's
-            own CLI argument); Cursor and Codex pass the vendor's raw value through.
+            own CLI argument); an older Cursor or Codex client passed the vendor's raw value through.
+            The Cursor and Codex values, and `compaction_completed`, are deprecated in 1.11.0.
         tool_intent:
           type: string
           enum: [test_run, build, typecheck, lint, vcs, read, edit, other]
@@ -550,8 +558,7 @@ components:
             by `tool_intent = 'vcs'`, or chained writes are missed. `worktree` is `git worktree add`
             only. It is not a ship: count commits, pushes and PRs by listing `commit`, `push` and
             `pr_create`, never as `vcs_action != 'other'`. It is seen only when `git worktree add`
-            is typed in a shell, so Claude Code `--worktree`, Cursor parallel agents and Codex app
-            worktrees never set it. A count is a lower bound; absence does not mean no worktree use.
+            is typed in a shell, so Claude Code `--worktree` never sets it. A count is a lower bound; absence does not mean no worktree use.
         command_sequence:
           type: string
           description: |
@@ -574,7 +581,10 @@ components:
         rule_attachment_count:
           type: integer
           minimum: 1
+          deprecated: true
           description: |
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
+
             Cursor only, on `prompt_submitted`: how many rule files were attached to the prompt.
             Never accompanied by a path — the vendor entry's `file_path` is not read. Absent
             means "no rule seen", which is NOT the same as a measured zero: Cursor populates
@@ -587,12 +597,14 @@ components:
           type: string
           description: |
             The reasoning effort level, from whichever field the harness puts it in. Claude Code
-            carries it on every event; Cursor carries it on `session_started`, `prompt_submitted`
-            and `turn_ended` only, and only from its GUI — its CLI sends no effort at all, so
-            absence on Cursor is as often the surface as the setting.
+            carries it on every event. An older Cursor client carried it on `session_started`,
+            `prompt_submitted` and `turn_ended` only, and only from its GUI.
         fast_mode:
           type: string
+          deprecated: true
           description: |
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
+
             Cursor only, on the same three events as `effort`. The vendor's undocumented `fast`
             model setting, passed through verbatim — a STRING, and the only value observed is
             `"true"`. Do not treat it as a boolean: `"false"` would be truthy.
@@ -655,20 +667,38 @@ components:
             On `session_token_usage`: where the counts were read. Only `transcript` exists.
         status:
           type: string
-          description: Cursor — how a turn or sub-agent run ended.
+          deprecated: true
+          description: |
+            Cursor: how a turn or sub-agent run ended.
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         failure_type:
           type: string
-          description: Cursor — on `tool_use_failed`.
+          deprecated: true
+          description: |
+            Cursor: on `tool_use_failed`.
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         permission_type:
           type: string
-          description: Codex — on `permission_requested`.
+          deprecated: true
+          description: |
+            Codex: on `permission_requested`.
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         approved:
           type: boolean
-          description: Codex — on `permission_requested`.
+          deprecated: true
+          description: |
+            Codex: on `permission_requested`.
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         conversation_id:
           type: string
+          deprecated: true
+          description: |
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         generation_id:
           type: string
+          deprecated: true
+          description: |
+            Deprecated in 1.11.0: the client stops sending it, because Cursor and Codex support was removed. A backend may still hold or receive it from an older client.
         requests_verification:
           type: boolean
           description: Rides on the prompt event beside `prompt_intent`, not only in ClassifyResponse.
@@ -1037,7 +1067,7 @@ components:
             coverage_index:
               type: object
               description: |
-                Practices at Recurring over practices that apply on this engineer's harness mix.
+                Practices at Recurring over practices that apply on this engineer's harness.
                 Reported as its two parts rather than a percentage, so the consumer renders the
                 share and the denominator without the backend deciding the rounding.
               properties:
